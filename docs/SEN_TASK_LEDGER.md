@@ -23,7 +23,7 @@
 
 ## 当前版本与下一步顺序
 
-- Android：`v0.3.2-vts-frozen-parity`，**本轮制作，待构建与实机确认**。
+- Android：`v0.3.2-vts-frozen-parity`，**构建成功，待实机确认**。
 - Windows：`Sen VTS Parameter Capture v0.1.0`，**核心采集流程已电脑确认**。
 - 固定顺序：首先解决完全静止时长期存在的缺刘海、头顶右侧白块、嘴只剩小点、手指/指甲分离和丝袜透明度错误。静态显示通过以前，不把表情、动作、兔耳角度、鞋子绑腿或蝴蝶结列为当前任务。
 
@@ -31,6 +31,10 @@
 
 ### 2026-08-29 · v0.3.2 VTS静态冻结对照（本轮制作）
 
+- 远程源码 commit：`f6ad4f6486ff47f8cba9bf3c0710626a91987d81`。
+- Android Actions run：`33276813221`，结论 `success`；Java编译、APK生成和产物上传全部成功。
+- APK：`3,751,867` bytes，SHA-256 `65e0f5ba103471d956a46438d53b8ad05b8b1d0954479852f94c5ce7a3d13a3e`。
+- Actions ZIP：`3,232,877` bytes，SHA-256 `ba9a5b288aa3bf12aed304bde89700b8bbe0dbf276fdcacf1a845a93c848fbfc`。
 - 本轮唯一目的：判断“相同VTS最终参数下仍显示错误”还是“此前从未真正复现完整VTS最终状态”。不移植动作、表情切换、物理、九轴或AI功能。
 - 导入 `Sen.vts-profile.json` 的全部581项当前值，不再排除203项动态值；冻结模式停用表达式管理器、物理更新和每帧参数恢复，只在初始化时计算一次Drawable。
 - 参数通过Core ParameterView直接写入，故意绕过Framework的范围裁剪。直接证据：VTS采集的 `Warning2=-1`，但模型声明最小值为0；v0.3.1把 `VTS_Add`改成普通`Add`会丢失这个状态。
