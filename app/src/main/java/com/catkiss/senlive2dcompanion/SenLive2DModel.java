@@ -24,10 +24,11 @@ final class SenLive2DModel extends CubismUserModel {
     private ICubismModelSetting setting;
     private File homeDirectory;
     private String appearanceDetail = "";
+    private boolean frozenSnapshot;
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
-              SenVtsAppearance appearance) throws IOException {
+              SenVtsAppearance appearance, SenVtsProfile frozenProfile) throws IOException {
         homeDirectory = modelFile.getParentFile();
         if (homeDirectory == null) throw new IOException("model3 所在目录无效");
 
@@ -50,20 +51,36 @@ final class SenLive2DModel extends CubismUserModel {
         // Reclaim it before decoding 26 textures one by one.
         System.gc();
 
-        loadExpressions(listener);
-        loadPhysicsAndPose(listener);
+        frozenSnapshot = frozenProfile != null;
+        if (!frozenSnapshot) {
+            loadExpressions(listener);
+            loadPhysicsAndPose(listener);
+        }
 
         Map<String, Float> layout = new HashMap<>();
         if (setting.getLayoutMap(layout)) modelMatrix.setupFromLayout(layout);
-        model.saveParameters();
+        appearanceDetail = "";
+        if (frozenSnapshot) {
+            applyFrozenProfile(frozenProfile, listener);
+        } else {
+            model.saveParameters();
+        }
         applyVtsArtMeshColors(appearance, listener);
-        updateScheduler.sortUpdatableList();
+        if (frozenSnapshot) {
+            // Calculate all Drawable vertices once from the captured VTS values. No scheduler is
+            // allowed to overwrite them afterwards; this build is a strict renderer parity test.
+            model.update();
+        } else {
+            updateScheduler.sortUpdatableList();
+        }
 
         listener.onStatus("原生渲染：正在创建 OpenGL 渲染器…");
         setupRenderer(CubismRendererAndroid.create(width, height));
         setupTextures(textures, listener);
 
-        for (String expression : startupExpressions) setExpression(expression);
+        if (!frozenSnapshot) {
+            for (String expression : startupExpressions) setExpression(expression);
+        }
     }
 
     void reloadRenderer(int width, int height, NativeTextureManager textures,
@@ -75,6 +92,7 @@ final class SenLive2DModel extends CubismUserModel {
 
     void update(float deltaSeconds) {
         if (model == null) return;
+        if (frozenSnapshot) return;
         model.loadParameters();
         model.saveParameters();
         updateScheduler.onLateUpdate(model, deltaSeconds);
@@ -90,6 +108,7 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void setExpression(String name) {
+        if (frozenSnapshot) return;
         ACubismMotion motion = expressions.get(name);
         if (motion != null) expressionManager.startMotionPriority(motion, 3);
     }
@@ -149,7 +168,6 @@ final class SenLive2DModel extends CubismUserModel {
 
     private void applyVtsArtMeshColors(SenVtsAppearance appearance,
                                        SenRenderer.Listener listener) {
-        appearanceDetail = "";
         if (appearance == null) return;
         listener.onStatus("正在叠加 VTS 逐部件颜色…");
 
@@ -171,8 +189,48 @@ final class SenLive2DModel extends CubismUserModel {
             overrides.setDrawableScreenColorEnabled(index, true);
             applied++;
         }
-        appearanceDetail = "VTS逐部件染色 " + applied + "项"
-                + (missing == 0 ? "" : " · 缺失 " + missing + "项");
+        appendAppearanceDetail("VTS逐部件染色 " + applied + "项"
+                + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
+    }
+
+    private void applyFrozenProfile(SenVtsProfile profile, SenRenderer.Listener listener) {
+        listener.onStatus("正在写入VTS完整冻结状态…\n"
+                + "关闭表情、物理、呼吸与每帧参数更新");
+
+        int modelCount = model.getParameterCount();
+        Map<String, Integer> actual = new HashMap<>();
+        for (int i = 0; i < modelCount; i++) {
+            actual.put(model.getParameterId(i).getString(), i);
+        }
+
+        int applied = 0;
+        int outsideDeclaredRange = 0;
+        int missing = 0;
+        for (Map.Entry<String, Float> entry : profile.parameters.entrySet()) {
+            Integer index = actual.get(entry.getKey());
+            if (index == null) {
+                missing++;
+                continue;
+            }
+            float value = entry.getValue();
+            if (value < model.getParameterMinimumValue(index)
+                    || value > model.getParameterMaximumValue(index)) {
+                outsideDeclaredRange++;
+            }
+            // Deliberately bypass Framework setParameterValue(): it clamps to the parameter's
+            // declared range, while VTube Studio captured Warning2=-1 even though its declared
+            // minimum is 0. VTS_Add relies on preserving that exact out-of-range result.
+            model.getModel().getParameterViews()[index].setValue(value);
+            applied++;
+        }
+        appendAppearanceDetail("VTS冻结参数 " + applied + "项"
+                + " · 越界直写 " + outsideDeclaredRange + "项"
+                + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
+    }
+
+    private void appendAppearanceDetail(String detail) {
+        if (detail == null || detail.isEmpty()) return;
+        appearanceDetail = appearanceDetail.isEmpty() ? detail : appearanceDetail + " · " + detail;
     }
 
     private void setupTextures(NativeTextureManager textures,

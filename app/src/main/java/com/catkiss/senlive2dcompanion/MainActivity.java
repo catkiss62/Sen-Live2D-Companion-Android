@@ -8,6 +8,8 @@ import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -57,6 +59,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private File importRoot;
     private File appearanceExpressionFile;
     private File appearanceVtubeFile;
+    private File profileFile;
     private GLSurfaceView glSurfaceView;
     private SenRenderer renderer;
     private TextView statusText;
@@ -65,6 +68,15 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private FrameLayout loadingOverlay;
     private TextView loadingText;
     private boolean applyVtsPreset = true;
+    private boolean freezeVtsSnapshot = true;
+    private boolean adjustmentEnabled;
+    private float stageScale = 1.0f;
+    private float stageTranslateX;
+    private float stageTranslateY;
+    private float lastTouchX;
+    private float lastTouchY;
+    private ScaleGestureDetector scaleGestureDetector;
+    private Button adjustmentButton;
     private long nativeLoadStartedAt;
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
@@ -81,6 +93,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         importRoot = new File(getFilesDir(), "sen-import-temp");
         appearanceExpressionFile = new File(getFilesDir(), "xiaojingyu.exp3.json");
         appearanceVtubeFile = new File(getFilesDir(), "Sen Customizable Model_2K.vtube.json");
+        profileFile = new File(getFilesDir(), "Sen.vts-profile.json");
         //noinspection ResultOfMethodCallIgnored
         modelRoot.mkdirs();
         restoreMetadata();
@@ -121,7 +134,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.3.1 · 等待模型与VTS外观文件");
+        statusText.setText("v0.3.2 · VTS静态冻结对照");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -137,6 +150,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         glSurfaceView.setRenderer(renderer);
         glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         glSurfaceView.setPreserveEGLContextOnPause(true);
+        installStageAdjustmentGestures();
         stage.addView(glSurfaceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         page.addView(stage, new LinearLayout.LayoutParams(
@@ -165,34 +179,62 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
-        Button vtsButton = panelButton("应用小鲸鱼完整外观");
+        Button vtsButton = panelButton("冻结VTS采集状态");
         vtsButton.setOnClickListener(v -> {
-            if (!appearanceExpressionFile.isFile() || !appearanceVtubeFile.isFile()) {
-                toastLong("请先点顶部“导入外观”，依次选择 xiaojingyu.exp3.json 和当前 .vtube.json");
+            if (!profileFile.isFile() || !appearanceVtubeFile.isFile()) {
+                toastLong("请点顶部“导入外观”，同时选择 Sen.vts-profile.json 和当前 .vtube.json");
                 return;
             }
             applyVtsPreset = true;
+            freezeVtsSnapshot = true;
             loadNativeModel();
         });
         controls.addView(vtsButton, weightedButtonParams());
 
+        Button layeredButton = panelButton("旧分层状态对照");
+        layeredButton.setOnClickListener(v -> {
+            if (!appearanceExpressionFile.isFile() || !appearanceVtubeFile.isFile()) {
+                toastLong("旧分层对照需要 xiaojingyu.exp3.json 和当前 .vtube.json");
+                return;
+            }
+            applyVtsPreset = true;
+            freezeVtsSnapshot = false;
+            loadNativeModel();
+        });
+        controls.addView(layeredButton, weightedButtonParams());
+
         Button rawButton = panelButton("查看原始状态");
         rawButton.setOnClickListener(v -> {
             applyVtsPreset = false;
+            freezeVtsSnapshot = false;
             loadNativeModel();
         });
         controls.addView(rawButton, weightedButtonParams());
         panel.addView(controls);
 
         TextView memoryNote = new TextView(this);
-        memoryNote.setText("原始默认状态 + xiaojingyu增量 + VTS逐ArtMesh染色 · 旧581项快照已停用");
+        memoryNote.setText("冻结模式：581项VTS最终值直接写入且不做范围裁剪；关闭表情、物理和每帧更新，仅验证静态底层显示");
         memoryNote.setTextColor(Color.rgb(186, 164, 204));
         memoryNote.setTextSize(10);
         memoryNote.setPadding(dp(3), dp(3), 0, dp(3));
         panel.addView(memoryNote);
 
+        LinearLayout adjustmentControls = new LinearLayout(this);
+        adjustmentControls.setOrientation(LinearLayout.HORIZONTAL);
+        adjustmentButton = panelButton("调整模型：关闭");
+        adjustmentButton.setOnClickListener(v -> {
+            adjustmentEnabled = !adjustmentEnabled;
+            adjustmentButton.setText(adjustmentEnabled ? "调整模型：开启" : "调整模型：关闭");
+            toastLong(adjustmentEnabled ? "单指拖动，双指缩放" : "模型位置已锁定");
+        });
+        adjustmentControls.addView(adjustmentButton, weightedButtonParams());
+        Button resetTransformButton = panelButton("还原位置与大小");
+        resetTransformButton.setOnClickListener(v -> resetStageTransform());
+        adjustmentControls.addView(resetTransformButton, weightedButtonParams());
+        panel.addView(adjustmentControls);
+
         TextView expressionHeading = new TextView(this);
-        expressionHeading.setText("ZIP 表情（单独测试后，点“应用小鲸鱼完整外观”恢复）");
+        expressionHeading.setText("ZIP 表情（冻结模式停用；静态正确之前不作为本轮验收内容）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
         expressionHeading.setTextSize(12);
         expressionHeading.setPadding(0, dp(5), 0, dp(3));
@@ -211,6 +253,61 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         updateSummary();
+    }
+
+    private void installStageAdjustmentGestures() {
+        scaleGestureDetector = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        if (!adjustmentEnabled) return false;
+                        stageScale = Math.max(0.35f,
+                                Math.min(6.0f, stageScale * detector.getScaleFactor()));
+                        applyStageTransform();
+                        return true;
+                    }
+                });
+        glSurfaceView.setOnTouchListener((view, event) -> {
+            if (!adjustmentEnabled) return false;
+            scaleGestureDetector.onTouchEvent(event);
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_POINTER_UP:
+                    lastTouchX = event.getX();
+                    lastTouchY = event.getY();
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (event.getPointerCount() == 1 && !scaleGestureDetector.isInProgress()) {
+                        float dx = event.getX() - lastTouchX;
+                        float dy = event.getY() - lastTouchY;
+                        int width = Math.max(1, view.getWidth());
+                        int height = Math.max(1, view.getHeight());
+                        stageTranslateX += dx * 2.0f / width;
+                        stageTranslateY -= dy * 2.0f / height;
+                        lastTouchX = event.getX();
+                        lastTouchY = event.getY();
+                        applyStageTransform();
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return true;
+        });
+    }
+
+    private void applyStageTransform() {
+        if (renderer != null) {
+            renderer.setStageTransform(stageScale, stageTranslateX, stageTranslateY);
+        }
+    }
+
+    private void resetStageTransform() {
+        stageScale = 1.0f;
+        stageTranslateX = 0.0f;
+        stageTranslateY = 0.0f;
+        applyStageTransform();
+        toastLong("模型位置与大小已还原");
     }
 
     private void onModelZipPicked(Uri uri) {
@@ -282,8 +379,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             try {
                 boolean importedExpression = false;
                 boolean importedColors = false;
+                boolean importedProfile = false;
                 int expressionParameters = 0;
                 SenVtsAppearance appearance = null;
+                SenVtsProfile profile = null;
                 for (Uri uri : uris) {
                     String text = readUtf8Uri(uri, 5 * 1024 * 1024);
                     JSONObject json = new JSONObject(text);
@@ -301,8 +400,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                         appearance = SenVtsAppearance.parse(text);
                         writeUtf8File(appearanceVtubeFile, text);
                         importedColors = true;
+                    } else if (SenVtsProfile.SCHEMA.equals(json.optString("schema", ""))) {
+                        profile = SenVtsProfile.parse(text);
+                        writeUtf8File(profileFile, text);
+                        importedProfile = true;
                     } else {
-                        throw new IOException("请选择 xiaojingyu.exp3.json 或当前 .vtube.json");
+                        throw new IOException("请选择 Sen.vts-profile.json、xiaojingyu.exp3.json 或当前 .vtube.json");
                     }
                 }
 
@@ -327,20 +430,27 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 if (appearance == null && appearanceVtubeFile.isFile()) {
                     appearance = SenVtsAppearance.parse(readUtf8File(appearanceVtubeFile));
                 }
+                if (profile == null && profileFile.isFile()) {
+                    profile = SenVtsProfile.parse(readUtf8File(profileFile));
+                }
                 String summary = "xiaojingyu "
                         + (appearanceExpressionFile.isFile()
                         ? (expressionParameters > 0 ? expressionParameters + "项" : "已保存") : "未导入")
-                        + " · " + (appearance == null ? "逐部件颜色未导入" : appearance.summary());
+                        + " · " + (appearance == null ? "逐部件颜色未导入" : appearance.summary())
+                        + " · " + (profile == null ? "冻结参数未导入" : profile.summary());
                 prefs.edit().putString("vts_appearance_summary", summary).apply();
                 boolean expressionChanged = importedExpression;
                 boolean colorsChanged = importedColors;
+                boolean profileChanged = importedProfile;
                 runOnUiThread(() -> {
                     applyVtsPreset = true;
+                    if (profileFile.isFile()) freezeVtsSnapshot = true;
                     rebuildExpressionButtons();
                     updateSummary();
                     toastLong("外观导入成功："
                             + (expressionChanged ? "xiaojingyu增量 " : "")
-                            + (colorsChanged ? "VTS逐部件颜色" : ""));
+                            + (colorsChanged ? "VTS逐部件颜色 " : "")
+                            + (profileChanged ? "VTS冻结参数" : ""));
                     loadNativeModel();
                 });
             } catch (Throwable error) {
@@ -365,7 +475,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         nativeLoadStartedAt = SystemClock.elapsedRealtime();
         showLoading("正在启动 Android 原生 Cubism 5…");
         List<String> startup = new ArrayList<>();
-        if (applyVtsPreset) {
+        if (applyVtsPreset && !freezeVtsSnapshot) {
             if (expressionNames.contains("xiaojingyu")) startup.add("xiaojingyu");
             else startup.addAll(savedVtsExpressions);
         }
@@ -381,8 +491,29 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 return;
             }
         }
+        SenVtsProfile frozenProfile = null;
+        if (applyVtsPreset && freezeVtsSnapshot) {
+            if (!profileFile.isFile()) {
+                hideLoading();
+                String message = "冻结模式需要 Sen.vts-profile.json，请点“导入外观”选择参数包";
+                setStatus(message);
+                toastLong(message);
+                return;
+            }
+            try {
+                frozenProfile = SenVtsProfile.parse(readUtf8File(profileFile));
+            } catch (IOException error) {
+                hideLoading();
+                String message = "已保存的VTS冻结参数无效：" + readableError(error);
+                setStatus(message);
+                toastLong(message);
+                return;
+            }
+        }
         SenVtsAppearance selectedAppearance = appearance;
-        glSurfaceView.queueEvent(() -> renderer.requestModel(modelFile, startup, selectedAppearance));
+        SenVtsProfile selectedFrozenProfile = frozenProfile;
+        glSurfaceView.queueEvent(() -> renderer.requestModel(
+                modelFile, startup, selectedAppearance, selectedFrozenProfile));
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -523,8 +654,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     String name = expressionNames.get(index);
                     Button button = panelButton(name);
                     button.setTextSize(10);
-                    button.setOnClickListener(v -> glSurfaceView.queueEvent(
-                            () -> renderer.applyExpression(name)));
+                    button.setOnClickListener(v -> {
+                        if (freezeVtsSnapshot) {
+                            toastLong("冻结模式不会运行表情；请先完成静态显示验收");
+                            return;
+                        }
+                        glSurfaceView.queueEvent(() -> renderer.applyExpression(name));
+                    });
                     row.addView(button, weightedButtonParams());
                 } else {
                     row.addView(new View(this), weightedButtonParams());
@@ -538,7 +674,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (summaryText == null) return;
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
         String appearance = prefs.getString("vts_appearance_summary",
-                "尚未导入 xiaojingyu.exp3.json 与当前 .vtube.json");
+                "尚未导入 Sen.vts-profile.json、xiaojingyu.exp3.json 与当前 .vtube.json");
         summaryText.setText(diagnostics
                 + "\n" + appearance
                 + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
@@ -561,7 +697,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - nativeLoadStartedAt);
             setStatus(detail + " · "
                     + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
-            toastLong("Sen 已加载，请检查颜色、头发、眼睛和部件状态");
+            toastLong(freezeVtsSnapshot
+                    ? "VTS冻结状态已加载：请检查白块、刘海、嘴、手指和丝袜"
+                    : "Sen 已加载，请检查颜色、头发、眼睛和部件状态");
         });
     }
 

@@ -39,14 +39,24 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private boolean frameworkReady;
     private boolean contextRecreated;
     private long lastFrameNanos;
+    private volatile float stageScale = 1.0f;
+    private volatile float stageTranslateX;
+    private volatile float stageTranslateY;
 
     SenRenderer(Context context, Listener listener) {
         this.context = context.getApplicationContext();
         this.listener = listener;
     }
 
-    void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance) {
-        pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance);
+    void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
+                      SenVtsProfile frozenProfile) {
+        pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance, frozenProfile);
+    }
+
+    void setStageTransform(float scale, float translateX, float translateY) {
+        stageScale = Math.max(0.35f, Math.min(6.0f, scale));
+        stageTranslateX = Math.max(-4.0f, Math.min(4.0f, translateX));
+        stageTranslateY = Math.max(-4.0f, Math.min(4.0f, translateY));
     }
 
     void applyExpression(String name) {
@@ -120,6 +130,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
                 model.fitHeight(2.0f);
                 projection.scale(1.0f / aspectRatio, 1.0f);
             }
+            projection.scaleRelative(stageScale, stageScale);
+            projection.translateRelative(stageTranslateX, stageTranslateY);
             model.draw(projection);
         } catch (Throwable error) {
             listener.onError(error);
@@ -155,7 +167,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             SenLive2DModel next = new SenLive2DModel();
             model = next;
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
-                    listener, request.startupExpressions, request.appearance);
+                    listener, request.startupExpressions, request.appearance,
+                    request.frozenProfile);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();
@@ -181,11 +194,14 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         final File modelFile;
         final List<String> startupExpressions;
         final SenVtsAppearance appearance;
+        final SenVtsProfile frozenProfile;
 
-        ModelRequest(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance) {
+        ModelRequest(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
+                     SenVtsProfile frozenProfile) {
             this.modelFile = modelFile;
             this.startupExpressions = new ArrayList<>(startupExpressions);
             this.appearance = appearance;
+            this.frozenProfile = frozenProfile;
         }
     }
 }
