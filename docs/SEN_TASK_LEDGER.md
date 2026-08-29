@@ -33,6 +33,7 @@
 
 - 远程源码 commit：`446b3feb74b6e4e7f637fae5ca1bb9ec3e65ea06`。
 - Android Actions run：`33255401361`，结论 `success`；Framework低显存贴图补丁与APK构建步骤均成功。
+- 总账/工作流收尾 commit：`b479362b31e73cc157ec765c77e47a4fca052371`；更新路径过滤后的复核 run `33255534635` 同样为 `success`，功能源码与交付APK内容不变。
 - Windows Actions run：`33255401296`，结论 `success`；EXE构建与带说明文件的ZIP封装步骤均成功。
 - `Sen-Live2D-v0.2.1-native-texture-fix.apk`：3,735,483 bytes，SHA-256 `89fe4d804a37668a41092d70cf7a6f33600974ce87ed8fd68c1a78705bfcabc5`。
 - `Sen-VTS-Parameter-Capture-Windows.zip`：12,851,236 bytes，SHA-256 `dd0e7b1306a320a0ad563d41f408b524c2ea83f08293f01c5e83b7cfcf0d4b2c`；内含EXE、使用说明和第三方声明。
