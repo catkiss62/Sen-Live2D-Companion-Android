@@ -720,11 +720,12 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void onStageError(String error) {
             runOnUiThread(() -> {
-                String message = "渲染失败：" + (error == null ? "未知错误" : error);
+                // JavaScript errors are not always renderer errors. For example,
+                // an optional sample button once crashed only when touch ended.
+                String message = "舞台运行失败：" + (error == null ? "未知错误" : error);
                 setStatus(message);
                 toastLong(message);
             });
         }
     }
 }
-

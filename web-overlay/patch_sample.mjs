@@ -73,6 +73,13 @@ patchFile(
 );
 
 patchFile(
+  'lappview.ts',
+  `    // 歯車にタップしたか\n    if (this._gear.isHit(posX, posY)) {\n      lapplive2dmanager.nextScene();\n    }`,
+  `    // The Sen stage intentionally omits the sample gear sprite. Treat it as\n    // an optional control so releasing a touch on the model cannot crash with\n    // "Cannot read properties of null (reading 'isHit')".\n    if (this._gear?.isHit(posX, posY)) {\n      lapplive2dmanager.nextScene();\n    }`,
+  'null-safe optional gear hit test'
+);
+
+patchFile(
   'lappsubdelegate.ts',
   `  public release(): void {\n    this._resizeObserver.unobserve(this._canvas);\n    this._resizeObserver.disconnect();\n    this._resizeObserver = null;\n\n    this._live2dManager.release();\n    this._live2dManager = null;\n\n    this._view.release();\n    this._view = null;\n\n    this._textureManager.release();\n    this._textureManager = null;\n\n    this._glManager.release();\n    this._glManager = null;\n  }`,
   `  public release(): void {\n    if (this._resizeObserver) {\n      if (this._canvas) this._resizeObserver.unobserve(this._canvas);\n      this._resizeObserver.disconnect();\n      this._resizeObserver = null;\n    }\n    if (this._live2dManager) {\n      this._live2dManager.release();\n      this._live2dManager = null;\n    }\n    if (this._view) {\n      this._view.release();\n      this._view = null;\n    }\n    if (this._textureManager) {\n      this._textureManager.release();\n      this._textureManager = null;\n    }\n    if (this._glManager) {\n      this._glManager.release();\n      this._glManager = null;\n    }\n  }`,
