@@ -27,6 +27,18 @@
 - Windows：`Sen VTS Parameter Capture v0.1.0`，**已制作待电脑确认**。
 - 固定顺序：先确认 v0.2.1 是否从黑影恢复为有颜色贴图；再采集 VTS“正常待机”参数包；然后接入 Android 参数包导入；最后才处理九轴、物理和动作。
 
+## 最近构建记录
+
+### 2026-08-29 · v0.2.1 / VTS采集器v0.1.0
+
+- 远程源码 commit：`446b3feb74b6e4e7f637fae5ca1bb9ec3e65ea06`。
+- Android Actions run：`33255401361`，结论 `success`；Framework低显存贴图补丁与APK构建步骤均成功。
+- Windows Actions run：`33255401296`，结论 `success`；EXE构建与带说明文件的ZIP封装步骤均成功。
+- `Sen-Live2D-v0.2.1-native-texture-fix.apk`：3,735,483 bytes，SHA-256 `89fe4d804a37668a41092d70cf7a6f33600974ce87ed8fd68c1a78705bfcabc5`。
+- `Sen-VTS-Parameter-Capture-Windows.zip`：12,851,236 bytes，SHA-256 `dd0e7b1306a320a0ad563d41f408b524c2ea83f08293f01c5e83b7cfcf0d4b2c`；内含EXE、使用说明和第三方声明。
+- 两个产物均为“已制作待确认”，不能因 Actions 成功而写成“实机已确认”。
+- 从本轮起 APK 工作流限制为源码、Core、Framework、补丁和构建文件变更时触发；单独更新总账/README不再浪费APK构建。
+
 ## 已确认的模型事实
 
 - 用户提供的是 `Sen Customizable Model_2K`，模型不能提交到公开仓库或打入 APK。

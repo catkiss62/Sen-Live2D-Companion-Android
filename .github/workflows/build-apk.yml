@@ -4,6 +4,15 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'Core/**'
+      - 'Framework'
+      - '.gitmodules'
+      - 'patches/**'
+      - '*.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: read
