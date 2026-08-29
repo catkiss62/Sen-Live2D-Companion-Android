@@ -23,11 +23,20 @@
 
 ## 当前版本与下一步顺序
 
-- Android：`v0.2.1-native-texture-fix`，**已制作待确认**。
-- Windows：`Sen VTS Parameter Capture v0.1.0`，**已制作待电脑确认**。
-- 固定顺序：先确认 v0.2.1 是否从黑影恢复为有颜色贴图；再采集 VTS“正常待机”参数包；然后接入 Android 参数包导入；最后才处理九轴、物理和动作。
+- Android：`v0.3.0-vts-profile-static`，**已制作待实机确认**。
+- Windows：`Sen VTS Parameter Capture v0.1.0`，**核心采集流程已电脑确认**。
+- 固定顺序：先实机确认 v0.3.0 是否同时恢复2K贴图颜色与“小鲸鱼”静态外观；确认静态画面后，再处理兔耳角度、鞋子绑腿、蝴蝶结，最后才接九轴、物理和动作。
 
 ## 最近构建记录
+
+### 2026-08-29 · v0.3.0 VTS静态参数导入
+
+- 远程源码 commit：`c2c70a693bec2d5c10bb1b69e16bba57ff6f947f`。
+- Android Actions run：`33272637867`，结论 `success`；产物 `Sen-Live2D-Renderer-Test-APK`。
+- APK：`3,735,483` bytes，SHA-256 `182245a28b23958472ab15ab53fa457813e505603a545f78ce46f67be9106a44`。
+- 用户提供的 `Sen.vts-profile.json` 仅用于离线校验，未提交仓库：581个参数全部能匹配 Sen 模型；应用378个静态参数，排除203个 VTS跟踪/物理输出，模型缺失参数0个。
+- 采集器已由用户成功连接VTube Studio并导出参数包；参数包检测到活动的 `Watermark.exp3.json` 与 `xiaojingyu.exp3.json`，说明连接、授权、采集和保存主流程已走通。
+- 构建成功只确认代码可编译，颜色、头发、眼睛和部件状态仍必须由目标手机实机确认。
 
 ### 2026-08-29 · v0.2.1 / VTS采集器v0.1.0
 
@@ -59,7 +68,7 @@
 
 ## 待实机确认
 
-### v0.3.0-vts-profile-static（本轮制作中）
+### v0.3.0-vts-profile-static（已制作待实机确认）
 
 - [ ] Android 新增 `Sen.vts-profile.json` 文件选择与本地保存，不把用户采集参数提交到公开仓库。
 - [ ] 校验 `sen-vts-profile` schema、Sen 模型名、参数数量和快照；优先选择 `xiaojingyu.exp3.json` 处于活动状态的快照。
@@ -67,6 +76,7 @@
 - [ ] 下方测试面板保留“应用小鲸鱼参数 / 查看原始状态”对照；导入结果显示已应用、被排除和模型中缺失的参数数量。
 - [ ] 当前用户 profile 已确认包含581个 Live2D 参数、26张2K贴图信息，并检测到活动表情 `Watermark.exp3.json` 与 `xiaojingyu.exp3.json`；表达式 API 的 `parameters` 为空，因此以完整参数快照作为首轮静态复现来源。
 - [ ] 鞋子细化暂不阻塞本轮：用户确认 `Shoes=1.49` 的单侧外观约由鞋体、已染色鞋带和未染色绑腿三个绘制部件组成，后续优先按未染色区域识别绑腿。
+- [ ] CDI进一步确认模型存在独立部件“鞋子”(Part103)、“皮鞋”(Part104)、“高跟鞋”(Part106)、“绑带”(Part80)和“腿环”(Part108)；首个静态复现包不强行隐藏，待画面正常后逐个切换确认未染色绑腿对应项。
 
 ### v0.2.1-native-texture-fix（本轮）
 
@@ -77,11 +87,11 @@
 
 ### Sen VTS Parameter Capture v0.1.0（电脑端，本轮）
 
-- [ ] Windows EXE 能连接电脑端 VTube Studio 的官方 WebSocket API；首次连接能正常弹出授权。
-- [ ] VTS 载入 Sen 后，能读取当前模型、Live2D 参数、输入参数、活动表情、热键和物理设置。
+- [x] Windows EXE 能连接电脑端 VTube Studio 的官方 WebSocket API；首次连接能正常弹出授权。
+- [x] VTS 载入 Sen 后，能读取当前模型、Live2D 参数、输入参数、活动表情、热键和物理设置。
 - [ ] “正常待机”和手动开启的表情/动作能分别命名采集；每次连续读取9帧并取中位数。
-- [ ] 能保存 `Sen.vts-profile.json`，且文件不包含贴图、moc3或授权令牌。
-- [ ] 当前版本只负责采集，不直接修改 VTS 或 Android 模型；Android 导入在静态贴图确认后制作。
+- [x] 能保存 `Sen.vts-profile.json`，且文件不包含贴图、moc3或授权令牌。
+- [x] 当前版本只负责采集，不直接修改 VTS；Android v0.3.0 已开始导入它输出的参数包。
 
 ### v0.2.0-native-renderer-test
 
