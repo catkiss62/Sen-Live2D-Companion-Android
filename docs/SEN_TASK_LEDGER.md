@@ -23,19 +23,23 @@
 
 ## 当前版本与下一步顺序
 
-- Android：`v0.3.1-vts-layered-appearance`，**本轮制作，待构建与实机确认**。
+- Android：`v0.3.1-vts-layered-appearance`，**已制作待实机确认**。
 - Windows：`Sen VTS Parameter Capture v0.1.0`，**核心采集流程已电脑确认**。
 - 固定顺序：先实机确认 v0.3.1 的“原始默认状态 + xiaojingyu增量 + VTS逐ArtMesh染色”；确认静态画面后，再处理兔耳角度、鞋子绑腿、蝴蝶结，最后才接九轴、物理和动作。
 
 ## 最近构建记录
 
-### 2026-08-29 · v0.3.1 VTS分层外观（本轮制作）
+### 2026-08-29 · v0.3.1 VTS分层外观
 
 - 用户补充了实际 `xiaojingyu.exp3.json` 与当前 `Sen Customizable Model_2K.vtube.json`，两者只用于离线分析与 App 私有导入，不提交公开仓库。
 - `xiaojingyu` 只有55项修改：54项 `Add`、1项VTS专用 `VTS_Add`；它是相对原模型默认值的增量，不能单独当完整模型状态，也不能与API最终快照混用。
 - 当前 `.vtube.json` 另有79项 `ArtMeshMultiplyAndScreenColors`，直接保存紫色头发、服装、尾巴、鞋子等逐Drawable乘算/屏幕色；颜色并不全是Live2D参数。
 - v0.3.1 停用旧581项快照，改为三层顺序：原模型默认值 → `xiaojingyu`增量 → 79项VTS ArtMesh颜色；支持分别或同时导入两个JSON。
-- 远程 commit、Actions run与APK校验值待本轮构建完成后补记。
+- 远程源码 commit：`1eb9ea0338539ef5444dd3a884f413fc8cd014cc`。
+- Android Actions run：`33273797043`，结论 `success`；Java编译、APK生成和产物上传全部成功。
+- APK：`3,735,487` bytes，SHA-256 `0097a46bf2f395b153a2a9393491fdd576487a6435aa8322e20283885002025d`。
+- Actions ZIP：`3,226,598` bytes，SHA-256 `b33063e92cf7d46805c03935f0a7418c8d824105c0dfda9e921a19cead1ee926`。
+- 构建成功只确认代码和官方Cubism接口可编译；三层外观是否与VTS一致仍必须由目标手机实机确认。
 
 ### 2026-08-29 · v0.3.0 VTS静态参数导入
 
