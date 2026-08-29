@@ -17,8 +17,8 @@
 
 ## 技术方案
 
-- Android 原生壳 + `WebViewAssetLoader`。
-- WebView 内使用 Live2D 官方 Cubism Web Framework 5.3 兼容版本，不使用 Pixi Cubism 4 插件。
+- v0.1.x 使用 Android 原生壳 + `WebViewAssetLoader`，WebView 内使用 Live2D 官方 Cubism Web Framework 5.3 兼容版本，不使用 Pixi Cubism 4 插件。
+- **实机已经证明 Web 方案不适合 Sen 的超大型 `.moc3`。下一版应改用官方 Cubism SDK for Java（Android 原生 OpenGL），不再继续围绕 WebView 黑屏打补丁。** Java Core 不在 GitHub 开源仓库中，必须由用户在 Live2D 官方下载页同意许可后下载 SDK 压缩包，再交给开发者接入。
 - 构建时固定拉取 `CubismWebSamples` commit `b1de66b...`，其 Framework submodule 固定为 `d4da0aa...`。
 - 仓库和 APK 都不包含 Cubism Core。运行时优先使用用户导入的 `live2dcubismcore.min.js`，没有时才访问 Live2D 官方 Core 地址。
 - 模型 ZIP 只解压到 App 私有目录；仓库和 APK 不含模型。
@@ -63,7 +63,8 @@
 
 ## 实机已确认
 
-尚无。本节只记录用户明确反馈“效果正确/可以确认”的内容。
+- v0.1.4 导入 Sen 2K ZIP 后，上半区保持黑色，进度一直停在“moc3 已读取，正在创建 Cubism 5 模型…”。这说明程序尚未到达表情、物理、贴图解码、贴图上传或首帧采样阶段；1K兼容贴图不会触发，也不能解决当前故障。
+- 此前的 `null.release()` 与 `null.isHit()` 均已不再出现，但这只代表官方示例空对象防护生效，不代表模型已经渲染成功。
 
 ## 踩坑点（后续 AI 必读）
 
@@ -82,9 +83,19 @@
 - 1K兼容模式只在 App 私有目录生成替代贴图和一个替代 `model3.json`，复用原始 `.moc3`、物理、表情和动作；不得覆盖或修改用户购买的原始2K贴图。
 - 若1K首帧采样仍全黑，则下一步检查模型矩阵、绘制参数和默认部件状态；不要继续无条件降到更低分辨率。
 
+### 停在“正在创建 Cubism 5 模型”时还没有读取贴图
+
+- 该状态位于 `this.loadModel(arrayBuffer, ...)` 内部，主要包括把 `.moc3` 复制到 Cubism Core 内存、激活 MOC、再创建 Core Model。它是同步调用；WebView 主线程卡在这里时，后续进度、超时回调和1K自动回退都无法执行。
+- Sen 的 `.moc3` 为 `145,951,936` bytes（约139.2 MiB）。使用同一官方 Cubism Core 5.1.0 在桌面进程中拆分测量：MOC 激活后进程约488 MiB，Core Model 创建后约503 MiB，尚未加载任何贴图。
+- 模型规模为581个参数、229个部件、1742个 Drawable，模型画布为4234×8344。开启官方 MOC consistency 检查还会额外复制整份 `.moc3`；它不是最终内存占用的根因，但 Web 版必须关闭这次不必要的复制。
+- Web Cubism Core 使用 WebAssembly 线性内存，扩容与大块复制会放大 Android WebView 渲染进程的峰值。即使随后切到1K贴图，也不能消除创建模型之前已经出现的约500 MiB压力。
+- VTube Studio 能正常显示不能反证 WebView 方案可行；VTube Studio 使用原生渲染，不经过 JavaScript/WebAssembly/WebView 这套内存路径。
+- 后续不要从 VTube Studio APK 拆取 Core：那既不是可维护的 SDK 来源，也可能违反其软件许可。应使用 Live2D 官方 Cubism SDK for Java 压缩包中的 Core；官方 RedistributableFiles 清单允许在许可条款下把对应运行库随 APK 分发。
+
 ## 下一阶段（静态显示通过后）
 
-1. 解析 `.vtube.json` 的 62 个 ParameterSettings，移植 VTube Studio 的输入范围、输出范围和平滑。
-2. 对比并移植 VTS 物理参数，再恢复触屏九轴跟随。
-3. 识别并接入模型自带 `daiji.motion3.json` 与适合桌宠的随机动作。
-4. 重新接入 DeepSeek 对话、情绪标签、TTS 口型和摸头反应。
+1. 用户从 Live2D 官方下载最新版 Cubism SDK for Java，并提供完整 ZIP；基于官方 Java Sample/Framework 建立原生 OpenGL 静态渲染验证版。
+2. 静态显示正确后，解析 `.vtube.json` 的 62 个 ParameterSettings，移植 VTube Studio 的输入范围、输出范围和平滑。
+3. 对比并移植 VTS 物理参数，再恢复触屏九轴跟随。
+4. 识别并接入模型自带 `daiji.motion3.json` 与适合桌宠的随机动作。
+5. 重新接入 DeepSeek 对话、情绪标签、TTS 口型和摸头反应。
