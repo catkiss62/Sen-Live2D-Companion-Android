@@ -18,12 +18,21 @@
 ## 技术方案
 
 - v0.1.x 使用 Android 原生壳 + `WebViewAssetLoader`，WebView 内使用 Live2D 官方 Cubism Web Framework 5.3 兼容版本，不使用 Pixi Cubism 4 插件。
-- **实机已经证明 Web 方案不适合 Sen 的超大型 `.moc3`。下一版应改用官方 Cubism SDK for Java（Android 原生 OpenGL），不再继续围绕 WebView 黑屏打补丁。** Java Core 不在 GitHub 开源仓库中，必须由用户在 Live2D 官方下载页同意许可后下载 SDK 压缩包，再交给开发者接入。
-- 构建时固定拉取 `CubismWebSamples` commit `b1de66b...`，其 Framework submodule 固定为 `d4da0aa...`。
-- 仓库和 APK 都不包含 Cubism Core。运行时优先使用用户导入的 `live2dcubismcore.min.js`，没有时才访问 Live2D 官方 Core 地址。
+- **实机已经证明 Web 方案不适合 Sen 的超大型 `.moc3`。v0.2.0 已改用官方 Cubism SDK for Java 5 R5（Android 原生 OpenGL），不再继续围绕 WebView 黑屏打补丁。** 用户已从 Live2D 官方取得并提供完整 `CubismSdkForJava-5-r.5.zip`；Core AAR 校验完整。
+- `Framework` submodule 固定到官方 `CubismJavaFramework` tag `5-r.5` / commit `c2d4200...`；APK 收录官方许可清单允许再分发的 `Live2DCubismCore.aar`，不再需要联网或用户另行导入 Core。
+- 原生加载关闭 MOC consistency 重复检查；贴图逐张解码上传并立即回收 Bitmap，不生成 mipmap。App 开启 `largeHeap`，为139.2 MiB moc3的首次 Java byte[] 与 Core Model 创建留出空间。
 - 模型 ZIP 只解压到 App 私有目录；仓库和 APK 不含模型。
 
 ## 待实机确认
+
+### v0.2.0-native-renderer-test
+
+- [ ] 使用官方 `CubismJavaFramework` 5-r.5 与 `Live2DCubismCore.aar`，不经过 WebView/JavaScript/WebAssembly，能在实机完成139.2 MiB moc3的 Core Model 创建。
+- [ ] 原始26张2K贴图逐张解码上传，不生成 mipmap；加载进度能明确显示到第几张贴图。
+- [ ] Sen 静态画面与 VTube Studio 对照一致：无白色头发大块、眼球/眼眶/眼皮不错误重叠、剪贴蒙版与绘制顺序正确。
+- [ ] 自动应用 `.vtube.json` 的 `Watermark` 启动表情后水印消失；“查看原始状态”仍可对照水印原始状态。
+- [ ] 上方约2/3为原生模型预览，下方约1/3保留 ZIP 表情测试按钮。
+- [ ] App 无需联网或单独导入 Web Core；APK 内的 Java Core AAR可在用户 arm64-v8a 设备正常加载。
 
 ### v0.1.4-black-screen-fallback
 
@@ -94,7 +103,7 @@
 
 ## 下一阶段（静态显示通过后）
 
-1. 用户从 Live2D 官方下载最新版 Cubism SDK for Java，并提供完整 ZIP；基于官方 Java Sample/Framework 建立原生 OpenGL 静态渲染验证版。
+1. 构建并实机验证 v0.2.0 原生 OpenGL 静态渲染。
 2. 静态显示正确后，解析 `.vtube.json` 的 62 个 ParameterSettings，移植 VTube Studio 的输入范围、输出范围和平滑。
 3. 对比并移植 VTS 物理参数，再恢复触屏九轴跟随。
 4. 识别并接入模型自带 `daiji.motion3.json` 与适合桌宠的随机动作。

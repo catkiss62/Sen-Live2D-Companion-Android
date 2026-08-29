@@ -15,5 +15,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "SenLive2DCompanion"
+include(":Framework:framework")
 include(":app")
-

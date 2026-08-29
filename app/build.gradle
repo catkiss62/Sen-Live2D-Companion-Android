@@ -18,8 +18,8 @@ android {
         applicationId 'com.catkiss.senlive2dcompanion'
         minSdk 26
         targetSdk 34
-        versionCode 5
-        versionName '0.1.4-black-screen-fallback'
+        versionCode 6
+        versionName '0.2.0-native-renderer-test'
     }
 
     buildTypes {
@@ -38,5 +38,6 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.activity:activity:1.9.3'
-    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation project(":Framework:framework")
+    implementation files('../Core/android/Live2DCubismCore.aar')
 }

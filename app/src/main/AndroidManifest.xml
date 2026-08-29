@@ -4,6 +4,7 @@
 
     <application
         android:allowBackup="false"
+        android:largeHeap="true"
         android:label="Sen Live2D 测试"
         android:usesCleartextTraffic="false"
         android:theme="@style/AppTheme">
@@ -19,4 +20,3 @@
         </activity>
     </application>
 </manifest>
-

@@ -15,35 +15,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-
-      - name: Fetch pinned Live2D Cubism 5 Web SDK samples
-        run: |
-          git clone --recursive https://github.com/Live2D/CubismWebSamples.git /tmp/CubismWebSamples
-          git -C /tmp/CubismWebSamples checkout b1de66b0b1f1cb881d95fb6158622aeb6a2827bd
-          git -C /tmp/CubismWebSamples submodule update --init --recursive
-          test "$(git -C /tmp/CubismWebSamples/Framework rev-parse HEAD)" = "d4da0aa07e47d2c1e4f5fa7ea6047861ea5e5d0b"
-
-      - name: Apply Sen stage overlay
-        run: |
-          DEMO=/tmp/CubismWebSamples/Samples/TypeScript/Demo
-          cp web-overlay/index.html "$DEMO/index.html"
-          cp web-overlay/copy_resources.js "$DEMO/copy_resources.js"
-          cp web-overlay/vite.config.mts "$DEMO/vite.config.mts"
-          cp web-overlay/src/*.ts "$DEMO/src/"
-          node web-overlay/patch_sample.mjs "$DEMO/src/lappmodel.ts"
-
-      - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-
-      - name: Build official Cubism 5 web stage
-        working-directory: /tmp/CubismWebSamples/Samples/TypeScript/Demo
-        run: npm ci && npm run build:prod
-
-      - name: Package web stage as Android assets
-        run: |
-          mkdir -p app/src/main/assets/stage
-          cp -R /tmp/CubismWebSamples/Samples/TypeScript/Demo/dist/. app/src/main/assets/stage/
+          submodules: recursive
 
       - uses: actions/setup-java@v4
         with:

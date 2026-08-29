@@ -1,22 +1,15 @@
 package com.catkiss.senlive2dcompanion;
 
-import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.JavascriptInterface;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -27,11 +20,8 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.webkit.WebViewAssetLoader;
-import androidx.webkit.WebViewClientCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -53,15 +43,10 @@ import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
-    private static final int MOBILE_TEXTURE_MAX = 1024;
-    private static final String QUALITY_2K = "2k";
-    private static final String QUALITY_1K = "1k";
-    private static final String STAGE_URL =
-            "https://appassets.androidplatform.net/assets/stage/index.html";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final List<String> expressionNames = new ArrayList<>();
@@ -69,39 +54,31 @@ public class MainActivity extends AppCompatActivity {
 
     private SharedPreferences prefs;
     private File modelRoot;
-    private File runtimeRoot;
     private File importRoot;
-    private WebView webView;
-    private WebViewAssetLoader assetLoader;
+    private GLSurfaceView glSurfaceView;
+    private SenRenderer renderer;
     private TextView statusText;
     private TextView summaryText;
     private LinearLayout expressionArea;
     private FrameLayout loadingOverlay;
     private TextView loadingText;
     private boolean applyVtsPreset = true;
-    private boolean qualityFallbackInProgress;
-    private long stageLoadStartedAt;
+    private long nativeLoadStartedAt;
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(), this::onModelZipPicked);
-    private final ActivityResultLauncher<String[]> corePicker = registerForActivityResult(
-            new ActivityResultContracts.OpenDocument(), this::onCorePicked);
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
-        runtimeRoot = new File(getFilesDir(), "cubism-runtime");
         importRoot = new File(getFilesDir(), "sen-import-temp");
         //noinspection ResultOfMethodCallIgnored
         modelRoot.mkdirs();
-        //noinspection ResultOfMethodCallIgnored
-        runtimeRoot.mkdirs();
         restoreMetadata();
         buildUi();
-        configureWebView();
-        loadStage();
+        loadNativeModel();
     }
 
     private void buildUi() {
@@ -124,20 +101,15 @@ public class MainActivity extends AppCompatActivity {
                 new String[]{"application/zip", "application/octet-stream"}));
         toolbar.addView(importButton);
 
-        Button coreButton = compactButton("导入Core");
-        coreButton.setOnClickListener(v -> corePicker.launch(
-                new String[]{"application/javascript", "text/javascript", "text/plain", "application/octet-stream"}));
-        toolbar.addView(coreButton);
-
-        Button reloadButton = compactButton("重载");
-        reloadButton.setOnClickListener(v -> loadStage());
+        Button reloadButton = compactButton("重载原生模型");
+        reloadButton.setOnClickListener(v -> loadNativeModel());
         toolbar.addView(reloadButton);
 
         statusText = new TextView(this);
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.1 · 等待模型");
+        statusText.setText("v0.2 · 原生 Cubism 等待模型");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -146,8 +118,14 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
 
         FrameLayout stage = new FrameLayout(this);
-        webView = new WebView(this);
-        stage.addView(webView, new FrameLayout.LayoutParams(
+        glSurfaceView = new GLSurfaceView(this);
+        glSurfaceView.setEGLContextClientVersion(2);
+        glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 24, 0);
+        renderer = new SenRenderer(this, this);
+        glSurfaceView.setRenderer(renderer);
+        glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+        glSurfaceView.setPreserveEGLContextOnPause(true);
+        stage.addView(glSurfaceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         page.addView(stage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f));
@@ -162,7 +140,7 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView heading = new TextView(this);
-        heading.setText("Sen · Cubism 5 静态显示检查");
+        heading.setText("Sen · Cubism 5 原生静态显示检查");
         heading.setTextColor(Color.WHITE);
         heading.setTextSize(15);
         panel.addView(heading);
@@ -176,43 +154,36 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         Button vtsButton = panelButton("恢复VTS启动状态");
-        vtsButton.setOnClickListener(v -> {
-            applyVtsPreset = true;
-            evaluateStage("window.SenStage&&window.SenStage.applyExpressions("
-                    + new JSONArray(savedVtsExpressions) + ");");
-        });
+        vtsButton.setOnClickListener(v -> applyExpressions(savedVtsExpressions));
         controls.addView(vtsButton, weightedButtonParams());
 
         Button rawButton = panelButton("查看原始状态");
         rawButton.setOnClickListener(v -> {
             applyVtsPreset = false;
-            loadStage();
+            loadNativeModel();
         });
         controls.addView(rawButton, weightedButtonParams());
 
         Button reloadVtsButton = panelButton("重载VTS状态");
         reloadVtsButton.setOnClickListener(v -> {
             applyVtsPreset = true;
-            loadStage();
+            loadNativeModel();
         });
         controls.addView(reloadVtsButton, weightedButtonParams());
         panel.addView(controls);
 
-        LinearLayout qualityControls = new LinearLayout(this);
-        qualityControls.setOrientation(LinearLayout.HORIZONTAL);
-        Button quality2kButton = panelButton("画质：原始2K");
-        quality2kButton.setOnClickListener(v -> requestRenderQuality(QUALITY_2K, false, "手动切换原始2K"));
-        qualityControls.addView(quality2kButton, weightedButtonParams());
-        Button quality1kButton = panelButton("画质：1K兼容");
-        quality1kButton.setOnClickListener(v -> requestRenderQuality(QUALITY_1K, false, "手动切换1K兼容"));
-        qualityControls.addView(quality1kButton, weightedButtonParams());
-        panel.addView(qualityControls);
+        TextView memoryNote = new TextView(this);
+        memoryNote.setText("原始2K · 原生 OpenGL · 已关闭 moc3 重复检查与贴图 mipmap");
+        memoryNote.setTextColor(Color.rgb(186, 164, 204));
+        memoryNote.setTextSize(10);
+        memoryNote.setPadding(dp(3), dp(3), 0, dp(3));
+        panel.addView(memoryNote);
 
         TextView expressionHeading = new TextView(this);
         expressionHeading.setText("ZIP 表情（点按后如需取消，请点“重载VTS状态”）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
         expressionHeading.setTextSize(12);
-        expressionHeading.setPadding(0, dp(8), 0, dp(3));
+        expressionHeading.setPadding(0, dp(5), 0, dp(3));
         panel.addView(expressionHeading);
 
         expressionArea = new LinearLayout(this);
@@ -228,33 +199,6 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
         updateSummary();
-    }
-
-    @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
-    private void configureWebView() {
-        assetLoader = new WebViewAssetLoader.Builder()
-                .setDomain("appassets.androidplatform.net")
-                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
-                .addPathHandler("/model/", new WebViewAssetLoader.InternalStoragePathHandler(this, modelRoot))
-                .addPathHandler("/runtime/", new WebViewAssetLoader.InternalStoragePathHandler(this, runtimeRoot))
-                .build();
-
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        webView.setBackgroundColor(Color.TRANSPARENT);
-        webView.addJavascriptInterface(new StageBridge(), "AndroidStage");
-        webView.setWebViewClient(new WebViewClientCompat() {
-            @Nullable
-            @Override
-            public WebResourceResponse shouldInterceptRequest(@NonNull WebView view,
-                                                              @NonNull WebResourceRequest request) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
-            }
-        });
     }
 
     private void onModelZipPicked(Uri uri) {
@@ -276,13 +220,11 @@ public class MainActivity extends AppCompatActivity {
                 String modelRelative = relativePath(importRoot, modelFile);
                 String diagnostics = buildDiagnostics(modelFile, detectedExpressions, detectedSaved);
 
-                postLoading("正在替换 App 内的旧模型…");
+                postLoading("正在替换 App 私有目录中的旧模型…");
                 deleteChildren(modelRoot);
                 moveChildren(importRoot, modelRoot);
                 prefs.edit()
                         .putString("model_path", modelRelative)
-                        .remove("model_path_1k")
-                        .putString("render_quality", QUALITY_2K)
                         .putString("expressions", new JSONArray(detectedExpressions).toString())
                         .putString("saved_vts_expressions", new JSONArray(detectedSaved).toString())
                         .putString("diagnostics", diagnostics)
@@ -294,12 +236,11 @@ public class MainActivity extends AppCompatActivity {
                     savedVtsExpressions.clear();
                     savedVtsExpressions.addAll(detectedSaved);
                     applyVtsPreset = true;
-                    hideLoading();
                     rebuildExpressionButtons();
                     updateSummary();
                     toastLong("模型导入成功：表情 " + detectedExpressions.size()
                             + " 个，VTS 启动预设 " + detectedSaved.size() + " 个");
-                    loadStage();
+                    loadNativeModel();
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
@@ -317,44 +258,25 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void onCorePicked(Uri uri) {
-        if (uri == null) return;
-        showLoading("正在导入 Cubism Core…");
-        executor.execute(() -> {
-            File temporary = new File(runtimeRoot, "live2dcubismcore.importing.js");
-            File target = new File(runtimeRoot, "live2dcubismcore.min.js");
-            try (InputStream in = getContentResolver().openInputStream(uri);
-                 OutputStream out = new FileOutputStream(temporary)) {
-                if (in == null) throw new IOException("无法读取所选文件");
-                copy(in, out);
-                String head;
-                try (InputStream check = new FileInputStream(temporary)) {
-                    byte[] bytes = new byte[8192];
-                    int count = check.read(bytes);
-                    head = count <= 0 ? "" : new String(bytes, 0, count, StandardCharsets.UTF_8);
-                }
-                if (!head.contains("Live2DCubismCore") && !head.contains("CubismCore")) {
-                    throw new IOException("所选文件不像 live2dcubismcore.min.js");
-                }
-                if (target.exists() && !target.delete()) throw new IOException("无法替换旧 Core");
-                if (!temporary.renameTo(target)) throw new IOException("无法保存 Core");
-                runOnUiThread(() -> {
-                    hideLoading();
-                    updateSummary();
-                    toastLong("离线 Cubism Core 导入成功");
-                    loadStage();
-                });
-            } catch (Throwable error) {
-                //noinspection ResultOfMethodCallIgnored
-                temporary.delete();
-                runOnUiThread(() -> {
-                    hideLoading();
-                    String message = "Core 导入失败：" + readableError(error);
-                    setStatus(message);
-                    toastLong(message);
-                });
-            }
-        });
+    private void loadNativeModel() {
+        String relative = prefs.getString("model_path", "");
+        File modelFile = new File(modelRoot, relative);
+        if (relative.isBlank() || !modelFile.isFile()) {
+            hideLoading();
+            setStatus("请先导入 Sen 模型 ZIP");
+            return;
+        }
+        nativeLoadStartedAt = SystemClock.elapsedRealtime();
+        showLoading("正在启动 Android 原生 Cubism 5…");
+        List<String> startup = applyVtsPreset
+                ? new ArrayList<>(savedVtsExpressions) : new ArrayList<>();
+        glSurfaceView.queueEvent(() -> renderer.requestModel(modelFile, startup));
+    }
+
+    private void applyExpressions(List<String> names) {
+        for (String name : names) {
+            glSurfaceView.queueEvent(() -> renderer.applyExpression(name));
+        }
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -415,146 +337,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void loadStage() {
-        String quality = prefs.getString("render_quality", QUALITY_2K);
-        String relative = prefs.getString("model_path", "");
-        if (QUALITY_1K.equals(quality)) {
-            String mobileRelative = prefs.getString("model_path_1k", "");
-            if (!mobileRelative.isBlank() && new File(modelRoot, mobileRelative).isFile()) {
-                relative = mobileRelative;
-            } else {
-                quality = QUALITY_2K;
-            }
-        }
-        String url = STAGE_URL;
-        if (!relative.isBlank() && new File(modelRoot, relative).isFile()) {
-            String modelUrl = "https://appassets.androidplatform.net/model/" + encodePath(relative);
-            JSONArray saved = applyVtsPreset ? new JSONArray(savedVtsExpressions) : new JSONArray();
-            url += "?model=" + Uri.encode(modelUrl)
-                    + "&saved=" + Uri.encode(saved.toString())
-                    + "&quality=" + Uri.encode(quality);
-        }
-        stageLoadStartedAt = SystemClock.elapsedRealtime();
-        setStatus(relative.isBlank() ? "等待导入模型 ZIP"
-                : "正在启动 Cubism 5 渲染器 · " + (QUALITY_1K.equals(quality) ? "1K兼容" : "原始2K") + "…");
-        webView.loadUrl(url);
-    }
-
-    private void requestRenderQuality(String quality, boolean automatic, String reason) {
-        if (QUALITY_2K.equals(quality)) {
-            prefs.edit().putString("render_quality", QUALITY_2K).apply();
-            updateSummary();
-            loadStage();
-            return;
-        }
-        if (qualityFallbackInProgress) return;
-        String originalRelative = prefs.getString("model_path", "");
-        File originalModel = new File(modelRoot, originalRelative);
-        if (originalRelative.isBlank() || !originalModel.isFile()) {
-            toastLong("请先导入 Sen 模型 ZIP");
-            return;
-        }
-        String savedVariant = prefs.getString("model_path_1k", "");
-        if (!savedVariant.isBlank() && new File(modelRoot, savedVariant).isFile()) {
-            prefs.edit().putString("render_quality", QUALITY_1K).apply();
-            updateSummary();
-            loadStage();
-            return;
-        }
-
-        qualityFallbackInProgress = true;
-        showLoading((automatic ? "检测到2K黑屏，" : "") + "正在生成1K兼容贴图…\n原始2K文件会完整保留");
-        executor.execute(() -> {
-            try {
-                File variant = createOneKVariant(originalModel);
-                String variantRelative = relativePath(modelRoot, variant);
-                prefs.edit()
-                        .putString("model_path_1k", variantRelative)
-                        .putString("render_quality", QUALITY_1K)
-                        .apply();
-                runOnUiThread(() -> {
-                    qualityFallbackInProgress = false;
-                    hideLoading();
-                    updateSummary();
-                    toastLong((automatic ? "已自动" : "已") + "切换1K兼容模式 · " + reason);
-                    loadStage();
-                });
-            } catch (Throwable error) {
-                runOnUiThread(() -> {
-                    qualityFallbackInProgress = false;
-                    hideLoading();
-                    String message = "1K兼容贴图生成失败：" + readableError(error);
-                    setStatus(message);
-                    toastLong(message);
-                });
-            }
-        });
-    }
-
-    private File createOneKVariant(File originalModel) throws Exception {
-        File modelDirectory = originalModel.getParentFile();
-        if (modelDirectory == null) throw new IOException("模型目录无效");
-        String safeRoot = modelDirectory.getCanonicalPath() + File.separator;
-        JSONObject modelJson = new JSONObject(readUtf8File(originalModel));
-        JSONObject references = modelJson.optJSONObject("FileReferences");
-        JSONArray textures = references == null ? null : references.optJSONArray("Textures");
-        if (textures == null || textures.length() == 0) throw new IOException("model3 没有贴图列表");
-
-        File variantDirectory = new File(modelDirectory, ".sen-mobile-1k");
-        deleteRecursivelyIfExists(variantDirectory);
-        if (!variantDirectory.mkdirs() && !variantDirectory.isDirectory()) {
-            throw new IOException("无法创建1K贴图目录");
-        }
-
-        JSONArray mobileTextures = new JSONArray();
-        for (int i = 0; i < textures.length(); i++) {
-            String sourceRelative = textures.optString(i, "");
-            File source = new File(modelDirectory, sourceRelative);
-            if (!source.getCanonicalPath().startsWith(safeRoot) || !source.isFile()) {
-                throw new IOException("找不到原始贴图 " + (i + 1));
-            }
-            postLoading("正在生成1K兼容贴图 " + (i + 1) + "/" + textures.length()
-                    + "\n原始2K文件会完整保留");
-
-            BitmapFactory.Options bounds = new BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(source.getAbsolutePath(), bounds);
-            int largest = Math.max(bounds.outWidth, bounds.outHeight);
-            if (largest <= 0) throw new IOException("无法读取贴图尺寸：" + source.getName());
-            if (largest <= MOBILE_TEXTURE_MAX) {
-                mobileTextures.put(sourceRelative);
-                continue;
-            }
-
-            int sample = 1;
-            while (largest / sample > MOBILE_TEXTURE_MAX) sample *= 2;
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = sample;
-            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            Bitmap bitmap = BitmapFactory.decodeFile(source.getAbsolutePath(), options);
-            if (bitmap == null) throw new IOException("无法缩放贴图：" + source.getName());
-
-            File target = new File(variantDirectory,
-                    String.format(java.util.Locale.ROOT, "%02d-%s", i, source.getName()));
-            try (OutputStream out = new FileOutputStream(target)) {
-                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
-                    throw new IOException("无法保存1K贴图：" + source.getName());
-                }
-            } finally {
-                bitmap.recycle();
-            }
-            mobileTextures.put(relativePath(modelDirectory, target));
-        }
-
-        references.put("Textures", mobileTextures);
-        String originalName = originalModel.getName();
-        String variantName = originalName.replaceFirst("\\.model3\\.json$", ".mobile1k.model3.json");
-        if (variantName.equals(originalName)) variantName = originalName + ".mobile1k.model3.json";
-        File variant = new File(modelDirectory, variantName);
-        writeUtf8File(variant, modelJson.toString(2));
-        return variant;
-    }
-
     private void restoreMetadata() {
         expressionNames.clear();
         savedVtsExpressions.clear();
@@ -595,9 +377,8 @@ public class MainActivity extends AppCompatActivity {
                     String name = expressionNames.get(index);
                     Button button = panelButton(name);
                     button.setTextSize(10);
-                    button.setOnClickListener(v -> evaluateStage(
-                            "window.SenStage&&window.SenStage.applyExpressions(["
-                                    + JSONObject.quote(name) + "]);"));
+                    button.setOnClickListener(v -> glSurfaceView.queueEvent(
+                            () -> renderer.applyExpression(name)));
                     row.addView(button, weightedButtonParams());
                 } else {
                     row.addView(new View(this), weightedButtonParams());
@@ -610,11 +391,39 @@ public class MainActivity extends AppCompatActivity {
     private void updateSummary() {
         if (summaryText == null) return;
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
-        boolean localCore = new File(runtimeRoot, "live2dcubismcore.min.js").isFile();
-        summaryText.setText(diagnostics + "\nCore："
-                + (localCore ? "本地导入" : "Live2D 官方地址（联网）")
-                + " · 当前画质："
-                + (QUALITY_1K.equals(prefs.getString("render_quality", QUALITY_2K)) ? "1K兼容" : "原始2K"));
+        summaryText.setText(diagnostics
+                + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
+    }
+
+    @Override
+    public void onStatus(String status) {
+        runOnUiThread(() -> {
+            setStatus(status == null ? "" : status.replace('\n', ' '));
+            if (loadingOverlay.getVisibility() == View.VISIBLE && status != null) {
+                loadingText.setText(status);
+            }
+        });
+    }
+
+    @Override
+    public void onReady(String detail) {
+        runOnUiThread(() -> {
+            hideLoading();
+            long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - nativeLoadStartedAt);
+            setStatus(detail + " · "
+                    + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
+            toastLong("Sen 原生模型已加载，请检查水印、头发和眼睛");
+        });
+    }
+
+    @Override
+    public void onError(Throwable error) {
+        runOnUiThread(() -> {
+            hideLoading();
+            String message = "原生 Cubism 加载失败：" + readableError(error);
+            setStatus(message);
+            toastLong(message);
+        });
     }
 
     private FrameLayout buildLoadingOverlay() {
@@ -680,10 +489,6 @@ public class MainActivity extends AppCompatActivity {
         drawable.setColor(color);
         drawable.setCornerRadius(dp(radiusDp));
         return drawable;
-    }
-
-    private void evaluateStage(String script) {
-        webView.evaluateJavascript(script, null);
     }
 
     private void unzipSecure(Uri uri, File destination) throws Exception {
@@ -775,16 +580,6 @@ public class MainActivity extends AppCompatActivity {
         return base.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/');
     }
 
-    private String encodePath(String path) {
-        String[] segments = path.replace('\\', '/').split("/");
-        StringBuilder result = new StringBuilder();
-        for (String segment : segments) {
-            if (result.length() > 0) result.append('/');
-            result.append(Uri.encode(segment));
-        }
-        return result.toString();
-    }
-
     private String readUtf8File(File file) throws IOException {
         try (InputStream input = new FileInputStream(file);
              BufferedReader reader = new BufferedReader(
@@ -802,12 +597,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void copy(InputStream in, OutputStream out) throws IOException {
-        byte[] buffer = new byte[64 * 1024];
-        int count;
-        while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
-    }
-
     private void setStatus(String text) {
         statusText.setText(text);
     }
@@ -823,12 +612,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void hideLoading() {
-        loadingOverlay.setVisibility(View.GONE);
+        if (loadingOverlay != null) loadingOverlay.setVisibility(View.GONE);
     }
 
     private String readableError(Throwable error) {
         String message = error.getMessage();
-        return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
+        if (message == null || message.isBlank()) message = error.getClass().getSimpleName();
+        if (error instanceof OutOfMemoryError) return "内存不足（原生阶段）· " + message;
+        return message;
     }
 
     private String formatMiB(long bytes) {
@@ -844,64 +635,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onDestroy() {
-        executor.shutdownNow();
-        if (webView != null) webView.destroy();
-        super.onDestroy();
+    protected void onResume() {
+        super.onResume();
+        if (glSurfaceView != null) glSurfaceView.onResume();
     }
 
-    private final class StageBridge {
-        @JavascriptInterface
-        public void onStageStatus(String status) {
-            runOnUiThread(() -> {
-                if (status != null && status.startsWith("模型已就绪")) {
-                    long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - stageLoadStartedAt);
-                    setStatus(status + " · "
-                            + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
-                } else {
-                    setStatus(status == null ? "" : status);
-                }
-            });
-        }
+    @Override
+    protected void onPause() {
+        if (glSurfaceView != null) glSurfaceView.onPause();
+        super.onPause();
+    }
 
-        @JavascriptInterface
-        public void onStageError(String error) {
-            runOnUiThread(() -> {
-                // JavaScript errors are not always renderer errors. For example,
-                // an optional sample button once crashed only when touch ended.
-                String message = "舞台运行失败：" + (error == null ? "未知错误" : error);
-                setStatus(message);
-                toastLong(message);
-            });
-        }
-
-        @JavascriptInterface
-        public void onWebGlContextLost(String detail) {
-            runOnUiThread(() -> {
-                if (QUALITY_2K.equals(prefs.getString("render_quality", QUALITY_2K))) {
-                    requestRenderQuality(QUALITY_1K, true,
-                            detail == null ? "WebGL显存上下文丢失" : detail);
-                } else {
-                    String message = "1K模式仍发生 WebGL 上下文丢失："
-                            + (detail == null ? "未知原因" : detail);
-                    setStatus(message);
-                    toastLong(message);
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void onStageBlackFrame(String detail) {
-            runOnUiThread(() -> {
-                if (QUALITY_2K.equals(prefs.getString("render_quality", QUALITY_2K))) {
-                    requestRenderQuality(QUALITY_1K, true,
-                            detail == null ? "首帧采样全黑" : detail);
-                } else {
-                    String message = "1K首帧仍然全黑：" + (detail == null ? "未知原因" : detail);
-                    setStatus(message);
-                    toastLong(message);
-                }
-            });
-        }
+    @Override
+    protected void onDestroy() {
+        executor.shutdownNow();
+        super.onDestroy();
     }
 }

@@ -2,7 +2,5 @@
 .idea/
 build/
 app/build/
-app/src/main/assets/stage/
 local.properties
 *.iml
-
