@@ -2,6 +2,14 @@ plugins {
     id 'com.android.application'
 }
 
+configurations.configureEach {
+    resolutionStrategy {
+        force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+        force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
+}
+
 android {
     namespace 'com.catkiss.senlive2dcompanion'
     compileSdk 35
@@ -32,4 +40,3 @@ dependencies {
     implementation 'androidx.activity:activity:1.9.3'
     implementation 'androidx.webkit:webkit:1.12.1'
 }
-
