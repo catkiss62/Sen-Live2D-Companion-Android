@@ -59,6 +59,15 @@
 
 ## 待实机确认
 
+### v0.3.0-vts-profile-static（本轮制作中）
+
+- [ ] Android 新增 `Sen.vts-profile.json` 文件选择与本地保存，不把用户采集参数提交到公开仓库。
+- [ ] 校验 `sen-vts-profile` schema、Sen 模型名、参数数量和快照；优先选择 `xiaojingyu.exp3.json` 处于活动状态的快照。
+- [ ] 把 profile 中的颜色、发型、服装、兔耳、鞋袜等静态外观参数设为模型基线；排除 VTS 跟踪映射输出和 Cubism 物理输出，禁止把采集瞬间的头部朝向、呼吸、头发与耳朵摆动写死。
+- [ ] 下方测试面板保留“应用小鲸鱼参数 / 查看原始状态”对照；导入结果显示已应用、被排除和模型中缺失的参数数量。
+- [ ] 当前用户 profile 已确认包含581个 Live2D 参数、26张2K贴图信息，并检测到活动表情 `Watermark.exp3.json` 与 `xiaojingyu.exp3.json`；表达式 API 的 `parameters` 为空，因此以完整参数快照作为首轮静态复现来源。
+- [ ] 鞋子细化暂不阻塞本轮：用户确认 `Shoes=1.49` 的单侧外观约由鞋体、已染色鞋带和未染色绑腿三个绘制部件组成，后续优先按未染色区域识别绑腿。
+
 ### v0.2.1-native-texture-fix（本轮）
 
 - [ ] 26张2K贴图不生成 mipmap，官方 Java Framework 的每帧过滤同步改为 `GL_LINEAR`，人物不再是纯黑剪影。

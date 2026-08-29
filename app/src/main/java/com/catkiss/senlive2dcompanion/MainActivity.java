@@ -55,6 +55,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SharedPreferences prefs;
     private File modelRoot;
     private File importRoot;
+    private File profileFile;
     private GLSurfaceView glSurfaceView;
     private SenRenderer renderer;
     private TextView statusText;
@@ -63,10 +64,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private FrameLayout loadingOverlay;
     private TextView loadingText;
     private boolean applyVtsPreset = true;
+    private boolean applyCustomProfile = true;
     private long nativeLoadStartedAt;
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(), this::onModelZipPicked);
+
+    private final ActivityResultLauncher<String[]> vtsProfilePicker = registerForActivityResult(
+            new ActivityResultContracts.OpenDocument(), this::onVtsProfilePicked);
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -74,6 +79,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
+        profileFile = new File(getFilesDir(), "Sen.vts-profile.json");
         //noinspection ResultOfMethodCallIgnored
         modelRoot.mkdirs();
         restoreMetadata();
@@ -101,7 +107,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 new String[]{"application/zip", "application/octet-stream"}));
         toolbar.addView(importButton);
 
-        Button reloadButton = compactButton("重载原生模型");
+        Button profileButton = compactButton("导入参数");
+        profileButton.setOnClickListener(v -> vtsProfilePicker.launch(
+                new String[]{"application/json", "text/json", "text/plain", "application/octet-stream"}));
+        toolbar.addView(profileButton);
+
+        Button reloadButton = compactButton("重载");
         reloadButton.setOnClickListener(v -> loadNativeModel());
         toolbar.addView(reloadButton);
 
@@ -109,7 +120,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.2.1 · 原生 Cubism 等待模型");
+        statusText.setText("v0.3.0 · 等待模型与VTS参数");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -153,19 +164,29 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
-        Button vtsButton = panelButton("恢复VTS启动状态");
-        vtsButton.setOnClickListener(v -> applyExpressions(savedVtsExpressions));
+        Button vtsButton = panelButton("应用小鲸鱼参数");
+        vtsButton.setOnClickListener(v -> {
+            if (!profileFile.isFile()) {
+                toastLong("请先点顶部“导入参数”，选择 Sen.vts-profile.json");
+                return;
+            }
+            applyCustomProfile = true;
+            applyVtsPreset = true;
+            loadNativeModel();
+        });
         controls.addView(vtsButton, weightedButtonParams());
 
         Button rawButton = panelButton("查看原始状态");
         rawButton.setOnClickListener(v -> {
+            applyCustomProfile = false;
             applyVtsPreset = false;
             loadNativeModel();
         });
         controls.addView(rawButton, weightedButtonParams());
 
-        Button reloadVtsButton = panelButton("重载VTS状态");
+        Button reloadVtsButton = panelButton("仅VTS启动状态");
         reloadVtsButton.setOnClickListener(v -> {
+            applyCustomProfile = false;
             applyVtsPreset = true;
             loadNativeModel();
         });
@@ -258,6 +279,36 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         });
     }
 
+    private void onVtsProfilePicked(Uri uri) {
+        if (uri == null) return;
+        showLoading("正在读取 Sen VTS 参数包…");
+        executor.execute(() -> {
+            try {
+                String text = readUtf8Uri(uri, 5 * 1024 * 1024);
+                SenVtsProfile profile = SenVtsProfile.parse(text);
+                writeUtf8File(profileFile, text);
+                prefs.edit()
+                        .putString("vts_profile_summary", profile.summary())
+                        .apply();
+                runOnUiThread(() -> {
+                    applyCustomProfile = true;
+                    applyVtsPreset = true;
+                    updateSummary();
+                    toastLong("参数导入成功：" + profile.snapshotName + " · "
+                            + profile.parameters.size() + " 项");
+                    loadNativeModel();
+                });
+            } catch (Throwable error) {
+                runOnUiThread(() -> {
+                    hideLoading();
+                    String message = "参数导入失败：" + readableError(error);
+                    setStatus(message);
+                    toastLong(message);
+                });
+            }
+        });
+    }
+
     private void loadNativeModel() {
         String relative = prefs.getString("model_path", "");
         File modelFile = new File(modelRoot, relative);
@@ -270,13 +321,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         showLoading("正在启动 Android 原生 Cubism 5…");
         List<String> startup = applyVtsPreset
                 ? new ArrayList<>(savedVtsExpressions) : new ArrayList<>();
-        glSurfaceView.queueEvent(() -> renderer.requestModel(modelFile, startup));
-    }
-
-    private void applyExpressions(List<String> names) {
-        for (String name : names) {
-            glSurfaceView.queueEvent(() -> renderer.applyExpression(name));
+        SenVtsProfile profile = null;
+        if (applyCustomProfile && profileFile.isFile()) {
+            try {
+                profile = SenVtsProfile.parse(readUtf8File(profileFile));
+            } catch (IOException error) {
+                hideLoading();
+                String message = "已保存的VTS参数无效：" + readableError(error);
+                setStatus(message);
+                toastLong(message);
+                return;
+            }
         }
+        SenVtsProfile selectedProfile = profile;
+        glSurfaceView.queueEvent(() -> renderer.requestModel(modelFile, startup, selectedProfile));
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -391,7 +449,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void updateSummary() {
         if (summaryText == null) return;
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
+        String profile = prefs.getString("vts_profile_summary", "尚未导入 Sen.vts-profile.json");
         summaryText.setText(diagnostics
+                + "\n" + profile
                 + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
     }
 
@@ -412,7 +472,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - nativeLoadStartedAt);
             setStatus(detail + " · "
                     + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
-            toastLong("Sen 原生模型已加载，请检查水印、头发和眼睛");
+            toastLong("Sen 已加载，请检查颜色、头发、眼睛和部件状态");
         });
     }
 
@@ -588,6 +648,22 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             String line;
             while ((line = reader.readLine()) != null) result.append(line).append('\n');
             return result.toString();
+        }
+    }
+
+    private String readUtf8Uri(Uri uri, int maxBytes) throws IOException {
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("无法读取参数文件");
+            byte[] buffer = new byte[16 * 1024];
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            int count;
+            int total = 0;
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > maxBytes) throw new IOException("参数文件超过5 MiB限制");
+                output.write(buffer, 0, count);
+            }
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 
