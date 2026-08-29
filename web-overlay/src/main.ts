@@ -11,6 +11,7 @@ import { getActiveManager } from './lapplive2dmanager';
 type AndroidBridge = {
   onStageStatus?: (message: string) => void;
   onStageError?: (message: string) => void;
+  onWebGlContextLost?: (message: string) => void;
 };
 
 declare global {
@@ -47,6 +48,14 @@ if (document.readyState === 'complete') {
 } else {
   window.addEventListener('load', startStage, { passive: true, once: true });
 }
+
+document.addEventListener('webglcontextlost', (event: Event): void => {
+  event.preventDefault();
+  const quality = new URLSearchParams(window.location.search).get('quality') === '1k'
+    ? '1K兼容'
+    : '原始2K';
+  window.AndroidStage?.onWebGlContextLost?.(`${quality}加载时 WebGL 显存上下文丢失`);
+}, { capture: true, passive: false });
 
 window.addEventListener('beforeunload', (): void => {
   try {

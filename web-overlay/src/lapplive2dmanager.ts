@@ -16,6 +16,7 @@ import { LAppSubdelegate } from './lappsubdelegate';
 type AndroidBridge = {
   onStageStatus?: (message: string) => void;
   onStageError?: (message: string) => void;
+  onStageBlackFrame?: (message: string) => void;
 };
 
 let activeManager: LAppLive2DManager | null = null;
@@ -45,6 +46,12 @@ function modelRequest(): { dir: string; file: string; saved: string[] } | null {
     // Invalid saved-expression metadata should never block model rendering.
   }
   return { dir: raw.substring(0, slash + 1), file: raw.substring(slash + 1), saved };
+}
+
+function renderQuality(): string {
+  return new URLSearchParams(window.location.search).get('quality') === '1k'
+    ? '1K兼容'
+    : '原始2K';
 }
 
 export class LAppLive2DManager {
@@ -106,8 +113,40 @@ export class LAppLive2DManager {
         for (const name of pending) model.setExpression(name);
       }
       notifyStatus(pending.length > 0
-        ? `模型已就绪 · 已恢复 VTS 启动预设：${pending.join('、')}`
-        : '模型已就绪 · 原始状态');
+        ? `模型已就绪 · ${renderQuality()} · 已恢复 VTS 启动预设：${pending.join('、')} · 正在检查首帧`
+        : `模型已就绪 · ${renderQuality()} · 原始状态 · 正在检查首帧`);
+    }
+
+    if (state === 23 && !this._firstFrameChecked) {
+      this._frameCheckCounter++;
+      if (this._frameCheckCounter >= 4) {
+        this._firstFrameChecked = true;
+        if (gl.isContextLost()) return;
+
+        const pixel = new Uint8Array(4);
+        let visibleSamples = 0;
+        const columns = 11;
+        const rows = 15;
+        for (let row = 1; row < rows; row++) {
+          for (let column = 1; column < columns; column++) {
+            const sampleX = Math.min(width - 1, Math.floor(width * column / columns));
+            const sampleY = Math.min(height - 1, Math.floor(height * row / rows));
+            gl.readPixels(sampleX, sampleY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+            if (pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8) visibleSamples++;
+          }
+        }
+
+        const modelWidth = model.getModel()?.getCanvasWidth().toFixed(2) ?? '?';
+        const modelHeight = model.getModel()?.getCanvasHeight().toFixed(2) ?? '?';
+        if (visibleSamples === 0) {
+          const detail = `首帧采样全黑 · 画布${width}×${height} · 模型画布${modelWidth}×${modelHeight}`;
+          notifyStatus(detail);
+          const android = (globalThis as unknown as { AndroidStage?: AndroidBridge }).AndroidStage;
+          android?.onStageBlackFrame?.(detail);
+        } else {
+          notifyStatus(`模型已就绪 · ${renderQuality()} · 首帧可见(${visibleSamples}点) · 模型画布${modelWidth}×${modelHeight}`);
+        }
+      }
     }
 
     CubismWebGLOffscreenManager.getInstance().endFrameProcess(gl);
@@ -126,12 +165,14 @@ export class LAppLive2DManager {
 
     this.releaseAllModel();
     this._ready = false;
+    this._frameCheckCounter = 0;
+    this._firstFrameChecked = false;
     this._pendingExpressions = [...request.saved];
     const instance = new LAppModel();
     instance.setSubdelegate(this._subdelegate);
     instance.loadAssets(request.dir, request.file);
     this._models.push(instance);
-    notifyStatus('正在加载模型与 2K 贴图…');
+    notifyStatus(`正在加载模型与${renderQuality()}贴图…`);
   }
 
   public setViewMatrix(matrix: CubismMatrix44): void {
@@ -148,6 +189,8 @@ export class LAppLive2DManager {
     this._models = [];
     this._sceneIndex = 0;
     this._ready = false;
+    this._frameCheckCounter = 0;
+    this._firstFrameChecked = false;
     this._pendingExpressions = [];
     activeManager = this;
   }
@@ -172,9 +215,10 @@ export class LAppLive2DManager {
   private _models: LAppModel[];
   private _sceneIndex: number;
   private _ready: boolean;
+  private _frameCheckCounter: number;
+  private _firstFrameChecked: boolean;
   private _pendingExpressions: string[];
 
   beganMotion = (self: ACubismMotion): void => console.log('Motion began', self);
   finishedMotion = (self: ACubismMotion): void => console.log('Motion finished', self);
 }
-

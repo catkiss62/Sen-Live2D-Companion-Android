@@ -2,6 +2,8 @@ package com.catkiss.senlive2dcompanion;
 
 import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -55,6 +57,9 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
+    private static final int MOBILE_TEXTURE_MAX = 1024;
+    private static final String QUALITY_2K = "2k";
+    private static final String QUALITY_1K = "1k";
     private static final String STAGE_URL =
             "https://appassets.androidplatform.net/assets/stage/index.html";
 
@@ -74,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout loadingOverlay;
     private TextView loadingText;
     private boolean applyVtsPreset = true;
+    private boolean qualityFallbackInProgress;
     private long stageLoadStartedAt;
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
@@ -192,6 +198,16 @@ public class MainActivity extends AppCompatActivity {
         controls.addView(reloadVtsButton, weightedButtonParams());
         panel.addView(controls);
 
+        LinearLayout qualityControls = new LinearLayout(this);
+        qualityControls.setOrientation(LinearLayout.HORIZONTAL);
+        Button quality2kButton = panelButton("画质：原始2K");
+        quality2kButton.setOnClickListener(v -> requestRenderQuality(QUALITY_2K, false, "手动切换原始2K"));
+        qualityControls.addView(quality2kButton, weightedButtonParams());
+        Button quality1kButton = panelButton("画质：1K兼容");
+        quality1kButton.setOnClickListener(v -> requestRenderQuality(QUALITY_1K, false, "手动切换1K兼容"));
+        qualityControls.addView(quality1kButton, weightedButtonParams());
+        panel.addView(qualityControls);
+
         TextView expressionHeading = new TextView(this);
         expressionHeading.setText("ZIP 表情（点按后如需取消，请点“重载VTS状态”）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
@@ -265,6 +281,8 @@ public class MainActivity extends AppCompatActivity {
                 moveChildren(importRoot, modelRoot);
                 prefs.edit()
                         .putString("model_path", modelRelative)
+                        .remove("model_path_1k")
+                        .putString("render_quality", QUALITY_2K)
                         .putString("expressions", new JSONArray(detectedExpressions).toString())
                         .putString("saved_vts_expressions", new JSONArray(detectedSaved).toString())
                         .putString("diagnostics", diagnostics)
@@ -398,16 +416,143 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadStage() {
+        String quality = prefs.getString("render_quality", QUALITY_2K);
         String relative = prefs.getString("model_path", "");
+        if (QUALITY_1K.equals(quality)) {
+            String mobileRelative = prefs.getString("model_path_1k", "");
+            if (!mobileRelative.isBlank() && new File(modelRoot, mobileRelative).isFile()) {
+                relative = mobileRelative;
+            } else {
+                quality = QUALITY_2K;
+            }
+        }
         String url = STAGE_URL;
         if (!relative.isBlank() && new File(modelRoot, relative).isFile()) {
             String modelUrl = "https://appassets.androidplatform.net/model/" + encodePath(relative);
             JSONArray saved = applyVtsPreset ? new JSONArray(savedVtsExpressions) : new JSONArray();
-            url += "?model=" + Uri.encode(modelUrl) + "&saved=" + Uri.encode(saved.toString());
+            url += "?model=" + Uri.encode(modelUrl)
+                    + "&saved=" + Uri.encode(saved.toString())
+                    + "&quality=" + Uri.encode(quality);
         }
         stageLoadStartedAt = SystemClock.elapsedRealtime();
-        setStatus(relative.isBlank() ? "等待导入模型 ZIP" : "正在启动 Cubism 5 渲染器…");
+        setStatus(relative.isBlank() ? "等待导入模型 ZIP"
+                : "正在启动 Cubism 5 渲染器 · " + (QUALITY_1K.equals(quality) ? "1K兼容" : "原始2K") + "…");
         webView.loadUrl(url);
+    }
+
+    private void requestRenderQuality(String quality, boolean automatic, String reason) {
+        if (QUALITY_2K.equals(quality)) {
+            prefs.edit().putString("render_quality", QUALITY_2K).apply();
+            updateSummary();
+            loadStage();
+            return;
+        }
+        if (qualityFallbackInProgress) return;
+        String originalRelative = prefs.getString("model_path", "");
+        File originalModel = new File(modelRoot, originalRelative);
+        if (originalRelative.isBlank() || !originalModel.isFile()) {
+            toastLong("请先导入 Sen 模型 ZIP");
+            return;
+        }
+        String savedVariant = prefs.getString("model_path_1k", "");
+        if (!savedVariant.isBlank() && new File(modelRoot, savedVariant).isFile()) {
+            prefs.edit().putString("render_quality", QUALITY_1K).apply();
+            updateSummary();
+            loadStage();
+            return;
+        }
+
+        qualityFallbackInProgress = true;
+        showLoading((automatic ? "检测到2K黑屏，" : "") + "正在生成1K兼容贴图…\n原始2K文件会完整保留");
+        executor.execute(() -> {
+            try {
+                File variant = createOneKVariant(originalModel);
+                String variantRelative = relativePath(modelRoot, variant);
+                prefs.edit()
+                        .putString("model_path_1k", variantRelative)
+                        .putString("render_quality", QUALITY_1K)
+                        .apply();
+                runOnUiThread(() -> {
+                    qualityFallbackInProgress = false;
+                    hideLoading();
+                    updateSummary();
+                    toastLong((automatic ? "已自动" : "已") + "切换1K兼容模式 · " + reason);
+                    loadStage();
+                });
+            } catch (Throwable error) {
+                runOnUiThread(() -> {
+                    qualityFallbackInProgress = false;
+                    hideLoading();
+                    String message = "1K兼容贴图生成失败：" + readableError(error);
+                    setStatus(message);
+                    toastLong(message);
+                });
+            }
+        });
+    }
+
+    private File createOneKVariant(File originalModel) throws Exception {
+        File modelDirectory = originalModel.getParentFile();
+        if (modelDirectory == null) throw new IOException("模型目录无效");
+        String safeRoot = modelDirectory.getCanonicalPath() + File.separator;
+        JSONObject modelJson = new JSONObject(readUtf8File(originalModel));
+        JSONObject references = modelJson.optJSONObject("FileReferences");
+        JSONArray textures = references == null ? null : references.optJSONArray("Textures");
+        if (textures == null || textures.length() == 0) throw new IOException("model3 没有贴图列表");
+
+        File variantDirectory = new File(modelDirectory, ".sen-mobile-1k");
+        deleteRecursivelyIfExists(variantDirectory);
+        if (!variantDirectory.mkdirs() && !variantDirectory.isDirectory()) {
+            throw new IOException("无法创建1K贴图目录");
+        }
+
+        JSONArray mobileTextures = new JSONArray();
+        for (int i = 0; i < textures.length(); i++) {
+            String sourceRelative = textures.optString(i, "");
+            File source = new File(modelDirectory, sourceRelative);
+            if (!source.getCanonicalPath().startsWith(safeRoot) || !source.isFile()) {
+                throw new IOException("找不到原始贴图 " + (i + 1));
+            }
+            postLoading("正在生成1K兼容贴图 " + (i + 1) + "/" + textures.length()
+                    + "\n原始2K文件会完整保留");
+
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(source.getAbsolutePath(), bounds);
+            int largest = Math.max(bounds.outWidth, bounds.outHeight);
+            if (largest <= 0) throw new IOException("无法读取贴图尺寸：" + source.getName());
+            if (largest <= MOBILE_TEXTURE_MAX) {
+                mobileTextures.put(sourceRelative);
+                continue;
+            }
+
+            int sample = 1;
+            while (largest / sample > MOBILE_TEXTURE_MAX) sample *= 2;
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = sample;
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap bitmap = BitmapFactory.decodeFile(source.getAbsolutePath(), options);
+            if (bitmap == null) throw new IOException("无法缩放贴图：" + source.getName());
+
+            File target = new File(variantDirectory,
+                    String.format(java.util.Locale.ROOT, "%02d-%s", i, source.getName()));
+            try (OutputStream out = new FileOutputStream(target)) {
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                    throw new IOException("无法保存1K贴图：" + source.getName());
+                }
+            } finally {
+                bitmap.recycle();
+            }
+            mobileTextures.put(relativePath(modelDirectory, target));
+        }
+
+        references.put("Textures", mobileTextures);
+        String originalName = originalModel.getName();
+        String variantName = originalName.replaceFirst("\\.model3\\.json$", ".mobile1k.model3.json");
+        if (variantName.equals(originalName)) variantName = originalName + ".mobile1k.model3.json";
+        File variant = new File(modelDirectory, variantName);
+        writeUtf8File(variant, modelJson.toString(2));
+        return variant;
     }
 
     private void restoreMetadata() {
@@ -467,7 +612,9 @@ public class MainActivity extends AppCompatActivity {
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
         boolean localCore = new File(runtimeRoot, "live2dcubismcore.min.js").isFile();
         summaryText.setText(diagnostics + "\nCore："
-                + (localCore ? "本地导入" : "Live2D 官方地址（联网）"));
+                + (localCore ? "本地导入" : "Live2D 官方地址（联网）")
+                + " · 当前画质："
+                + (QUALITY_1K.equals(prefs.getString("render_quality", QUALITY_2K)) ? "1K兼容" : "原始2K"));
     }
 
     private FrameLayout buildLoadingOverlay() {
@@ -725,6 +872,35 @@ public class MainActivity extends AppCompatActivity {
                 String message = "舞台运行失败：" + (error == null ? "未知错误" : error);
                 setStatus(message);
                 toastLong(message);
+            });
+        }
+
+        @JavascriptInterface
+        public void onWebGlContextLost(String detail) {
+            runOnUiThread(() -> {
+                if (QUALITY_2K.equals(prefs.getString("render_quality", QUALITY_2K))) {
+                    requestRenderQuality(QUALITY_1K, true,
+                            detail == null ? "WebGL显存上下文丢失" : detail);
+                } else {
+                    String message = "1K模式仍发生 WebGL 上下文丢失："
+                            + (detail == null ? "未知原因" : detail);
+                    setStatus(message);
+                    toastLong(message);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void onStageBlackFrame(String detail) {
+            runOnUiThread(() -> {
+                if (QUALITY_2K.equals(prefs.getString("render_quality", QUALITY_2K))) {
+                    requestRenderQuality(QUALITY_1K, true,
+                            detail == null ? "首帧采样全黑" : detail);
+                } else {
+                    String message = "1K首帧仍然全黑：" + (detail == null ? "未知原因" : detail);
+                    setStatus(message);
+                    toastLong(message);
+                }
             });
         }
     }
