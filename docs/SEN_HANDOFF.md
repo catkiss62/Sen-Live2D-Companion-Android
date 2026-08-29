@@ -33,6 +33,7 @@
 - [ ] 自动应用 `.vtube.json` 的 `Watermark` 启动表情后水印消失；“查看原始状态”仍可对照水印原始状态。
 - [ ] 上方约2/3为原生模型预览，下方约1/3保留 ZIP 表情测试按钮。
 - [ ] App 无需联网或单独导入 Web Core；APK 内的 Java Core AAR可在用户 arm64-v8a 设备正常加载。
+- [ ] v0.2.0 固定使用仓库内公开 debug keystore；从本版开始后续测试包可直接覆盖安装。v0.1.x 临时签名与本版不同时，首次迁移需卸载旧版并重新导入 ZIP。
 
 ### v0.1.4-black-screen-fallback
 
@@ -100,6 +101,11 @@
 - Web Cubism Core 使用 WebAssembly 线性内存，扩容与大块复制会放大 Android WebView 渲染进程的峰值。即使随后切到1K贴图，也不能消除创建模型之前已经出现的约500 MiB压力。
 - VTube Studio 能正常显示不能反证 WebView 方案可行；VTube Studio 使用原生渲染，不经过 JavaScript/WebAssembly/WebView 这套内存路径。
 - 后续不要从 VTube Studio APK 拆取 Core：那既不是可维护的 SDK 来源，也可能违反其软件许可。应使用 Live2D 官方 Cubism SDK for Java 压缩包中的 Core；官方 RedistributableFiles 清单允许在许可条款下把对应运行库随 APK 分发。
+
+### 测试 APK 必须固定签名
+
+- GitHub 托管运行器是临时环境，不能依赖它自动生成的默认 debug keystore；否则不同构建的 APK 可能无法覆盖安装，卸载又会清除 App 私有目录里的大模型。
+- v0.2.0 起使用仓库内 `app/debug.keystore`，它只用于公开测试，不是正式发布密钥。不得把它误用于商店正式版或任何需要保密身份的签名。
 
 ## 下一阶段（静态显示通过后）
 
