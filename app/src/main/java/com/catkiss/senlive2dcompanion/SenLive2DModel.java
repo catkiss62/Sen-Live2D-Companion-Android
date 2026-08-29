@@ -1,8 +1,10 @@
 package com.catkiss.senlive2dcompanion;
 
 import com.live2d.sdk.cubism.framework.CubismModelSettingJson;
+import com.live2d.sdk.cubism.framework.CubismFramework;
 import com.live2d.sdk.cubism.framework.ICubismModelSetting;
 import com.live2d.sdk.cubism.framework.math.CubismMatrix44;
+import com.live2d.sdk.cubism.framework.model.CubismModelMultiplyAndScreenColor;
 import com.live2d.sdk.cubism.framework.model.CubismUserModel;
 import com.live2d.sdk.cubism.framework.motion.ACubismMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotion;
@@ -13,25 +15,19 @@ import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 final class SenLive2DModel extends CubismUserModel {
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
     private ICubismModelSetting setting;
     private File homeDirectory;
-    private String profileDetail = "";
+    private String appearanceDetail = "";
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
-              SenVtsProfile profile) throws IOException {
+              SenVtsAppearance appearance) throws IOException {
         homeDirectory = modelFile.getParentFile();
         if (homeDirectory == null) throw new IOException("model3 所在目录无效");
 
@@ -59,8 +55,8 @@ final class SenLive2DModel extends CubismUserModel {
 
         Map<String, Float> layout = new HashMap<>();
         if (setting.getLayoutMap(layout)) modelMatrix.setupFromLayout(layout);
-        applyProfileBase(profile, listener);
         model.saveParameters();
+        applyVtsArtMeshColors(appearance, listener);
         updateScheduler.sortUpdatableList();
 
         listener.onStatus("原生渲染：正在创建 OpenGL 渲染器…");
@@ -118,8 +114,8 @@ final class SenLive2DModel extends CubismUserModel {
         delete();
     }
 
-    String getProfileDetail() {
-        return profileDetail;
+    String getAppearanceDetail() {
+        return appearanceDetail;
     }
 
     private void loadExpressions(SenRenderer.Listener listener) throws IOException {
@@ -151,97 +147,32 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
-    private void applyProfileBase(SenVtsProfile profile, SenRenderer.Listener listener)
-            throws IOException {
-        profileDetail = "";
-        if (profile == null) return;
+    private void applyVtsArtMeshColors(SenVtsAppearance appearance,
+                                       SenRenderer.Listener listener) {
+        appearanceDetail = "";
+        if (appearance == null) return;
+        listener.onStatus("正在叠加 VTS 逐部件颜色…");
 
-        int modelCount = model.getParameterCount();
-        if (profile.expectedParameterCount > 0 && profile.expectedParameterCount != modelCount) {
-            listener.onStatus("VTS参数数量与模型不同，正在只应用能匹配的参数…\n"
-                    + profile.expectedParameterCount + " → " + modelCount);
-        } else {
-            listener.onStatus("正在应用 VTS 小鲸鱼静态外观参数…");
-        }
-
-        Set<String> dynamic = collectDynamicParameterIds();
-        Map<String, Integer> actual = new HashMap<>();
-        for (int i = 0; i < modelCount; i++) {
-            actual.put(model.getParameterId(i).getString(), i);
-        }
-
+        CubismModelMultiplyAndScreenColor overrides = model.getOverrideMultiplyAndScreenColor();
         int applied = 0;
-        int excluded = 0;
         int missing = 0;
-        for (Map.Entry<String, Float> entry : profile.parameters.entrySet()) {
-            if (dynamic.contains(entry.getKey())) {
-                excluded++;
-                continue;
-            }
-            Integer index = actual.get(entry.getKey());
-            if (index == null) {
+        for (SenVtsAppearance.ArtMeshColor entry : appearance.colors) {
+            int index = model.getDrawableIndex(
+                    CubismFramework.getIdManager().getId(entry.id));
+            if (index < 0) {
                 missing++;
                 continue;
             }
-            model.setParameterValue(index, entry.getValue());
+            overrides.setDrawableMultiplyColor(index,
+                    entry.multiply[0], entry.multiply[1], entry.multiply[2], entry.multiply[3]);
+            overrides.setDrawableMultiplyColorEnabled(index, true);
+            overrides.setDrawableScreenColor(index,
+                    entry.screen[0], entry.screen[1], entry.screen[2], entry.screen[3]);
+            overrides.setDrawableScreenColorEnabled(index, true);
             applied++;
         }
-        profileDetail = "VTS静态参数 " + applied + "项"
-                + " · 排除动态 " + excluded + "项"
+        appearanceDetail = "VTS逐部件染色 " + applied + "项"
                 + (missing == 0 ? "" : " · 缺失 " + missing + "项");
-    }
-
-    private Set<String> collectDynamicParameterIds() throws IOException {
-        Set<String> result = new HashSet<>();
-
-        try {
-            String physicsName = setting.getPhysicsFileName();
-            if (physicsName != null && !physicsName.isEmpty()) {
-                JSONObject root = new JSONObject(new String(
-                        NativeFileLoader.readFile(child(physicsName)), StandardCharsets.UTF_8));
-                JSONArray groups = root.optJSONArray("PhysicsSettings");
-                if (groups != null) {
-                    for (int i = 0; i < groups.length(); i++) {
-                        JSONObject group = groups.optJSONObject(i);
-                        JSONArray outputs = group == null ? null : group.optJSONArray("Output");
-                        if (outputs == null) continue;
-                        for (int j = 0; j < outputs.length(); j++) {
-                            JSONObject output = outputs.optJSONObject(j);
-                            JSONObject destination = output == null ? null
-                                    : output.optJSONObject("Destination");
-                            String id = destination == null ? "" : destination.optString("Id", "");
-                            if (!id.isEmpty()) result.add(id);
-                        }
-                    }
-                }
-            }
-
-            File vtubeFile = findSiblingWithSuffix(".vtube.json");
-            if (vtubeFile != null) {
-                JSONObject root = new JSONObject(new String(
-                        NativeFileLoader.readFile(vtubeFile), StandardCharsets.UTF_8));
-                JSONArray settings = root.optJSONArray("ParameterSettings");
-                if (settings != null) {
-                    for (int i = 0; i < settings.length(); i++) {
-                        JSONObject item = settings.optJSONObject(i);
-                        String id = item == null ? "" : item.optString("OutputLive2D", "");
-                        if (!id.isEmpty()) result.add(id);
-                    }
-                }
-            }
-        } catch (org.json.JSONException error) {
-            throw new IOException("无法解析模型的物理或VTS动态参数设置", error);
-        }
-        return result;
-    }
-
-    private File findSiblingWithSuffix(String suffix) {
-        File[] files = homeDirectory.listFiles();
-        if (files == null) return null;
-        for (File file : files) {
-            if (file.isFile() && file.getName().endsWith(suffix)) return file;
-        }
-        return null;
     }
 
     private void setupTextures(NativeTextureManager textures,

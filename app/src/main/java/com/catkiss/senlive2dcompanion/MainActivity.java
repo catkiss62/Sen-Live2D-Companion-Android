@@ -55,7 +55,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SharedPreferences prefs;
     private File modelRoot;
     private File importRoot;
-    private File profileFile;
+    private File appearanceExpressionFile;
+    private File appearanceVtubeFile;
     private GLSurfaceView glSurfaceView;
     private SenRenderer renderer;
     private TextView statusText;
@@ -64,14 +65,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private FrameLayout loadingOverlay;
     private TextView loadingText;
     private boolean applyVtsPreset = true;
-    private boolean applyCustomProfile = true;
     private long nativeLoadStartedAt;
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(), this::onModelZipPicked);
 
-    private final ActivityResultLauncher<String[]> vtsProfilePicker = registerForActivityResult(
-            new ActivityResultContracts.OpenDocument(), this::onVtsProfilePicked);
+    private final ActivityResultLauncher<String[]> vtsAppearancePicker = registerForActivityResult(
+            new ActivityResultContracts.OpenMultipleDocuments(), this::onVtsAppearancePicked);
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -79,7 +79,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
-        profileFile = new File(getFilesDir(), "Sen.vts-profile.json");
+        appearanceExpressionFile = new File(getFilesDir(), "xiaojingyu.exp3.json");
+        appearanceVtubeFile = new File(getFilesDir(), "Sen Customizable Model_2K.vtube.json");
         //noinspection ResultOfMethodCallIgnored
         modelRoot.mkdirs();
         restoreMetadata();
@@ -107,10 +108,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 new String[]{"application/zip", "application/octet-stream"}));
         toolbar.addView(importButton);
 
-        Button profileButton = compactButton("导入参数");
-        profileButton.setOnClickListener(v -> vtsProfilePicker.launch(
+        Button appearanceButton = compactButton("导入外观");
+        appearanceButton.setOnClickListener(v -> vtsAppearancePicker.launch(
                 new String[]{"application/json", "text/json", "text/plain", "application/octet-stream"}));
-        toolbar.addView(profileButton);
+        toolbar.addView(appearanceButton);
 
         Button reloadButton = compactButton("重载");
         reloadButton.setOnClickListener(v -> loadNativeModel());
@@ -120,7 +121,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.3.0 · 等待模型与VTS参数");
+        statusText.setText("v0.3.1 · 等待模型与VTS外观文件");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -164,13 +165,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
-        Button vtsButton = panelButton("应用小鲸鱼参数");
+        Button vtsButton = panelButton("应用小鲸鱼完整外观");
         vtsButton.setOnClickListener(v -> {
-            if (!profileFile.isFile()) {
-                toastLong("请先点顶部“导入参数”，选择 Sen.vts-profile.json");
+            if (!appearanceExpressionFile.isFile() || !appearanceVtubeFile.isFile()) {
+                toastLong("请先点顶部“导入外观”，依次选择 xiaojingyu.exp3.json 和当前 .vtube.json");
                 return;
             }
-            applyCustomProfile = true;
             applyVtsPreset = true;
             loadNativeModel();
         });
@@ -178,30 +178,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
         Button rawButton = panelButton("查看原始状态");
         rawButton.setOnClickListener(v -> {
-            applyCustomProfile = false;
             applyVtsPreset = false;
             loadNativeModel();
         });
         controls.addView(rawButton, weightedButtonParams());
-
-        Button reloadVtsButton = panelButton("仅VTS启动状态");
-        reloadVtsButton.setOnClickListener(v -> {
-            applyCustomProfile = false;
-            applyVtsPreset = true;
-            loadNativeModel();
-        });
-        controls.addView(reloadVtsButton, weightedButtonParams());
         panel.addView(controls);
 
         TextView memoryNote = new TextView(this);
-        memoryNote.setText("原始2K · 原生 OpenGL · 贴图 GL_LINEAR（无 mipmap）");
+        memoryNote.setText("原始默认状态 + xiaojingyu增量 + VTS逐ArtMesh染色 · 旧581项快照已停用");
         memoryNote.setTextColor(Color.rgb(186, 164, 204));
         memoryNote.setTextSize(10);
         memoryNote.setPadding(dp(3), dp(3), 0, dp(3));
         panel.addView(memoryNote);
 
         TextView expressionHeading = new TextView(this);
-        expressionHeading.setText("ZIP 表情（点按后如需取消，请点“重载VTS状态”）");
+        expressionHeading.setText("ZIP 表情（单独测试后，点“应用小鲸鱼完整外观”恢复）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
         expressionHeading.setTextSize(12);
         expressionHeading.setPadding(0, dp(5), 0, dp(3));
@@ -236,8 +227,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 postLoading("正在识别 model3、表情与 VTS 启动预设…");
                 File modelFile = findFirst(importRoot, ".model3.json");
                 if (modelFile == null) throw new IOException("ZIP 中没有找到 .model3.json");
+                installSavedAppearanceExpression(modelFile);
                 List<String> detectedExpressions = registerExpressions(modelFile);
                 List<String> detectedSaved = readSavedVtsExpressions(modelFile, detectedExpressions);
+                if (detectedExpressions.contains("xiaojingyu")) {
+                    detectedSaved.clear();
+                    detectedSaved.add("xiaojingyu");
+                }
                 String modelRelative = relativePath(importRoot, modelFile);
                 String diagnostics = buildDiagnostics(modelFile, detectedExpressions, detectedSaved);
 
@@ -279,29 +275,78 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         });
     }
 
-    private void onVtsProfilePicked(Uri uri) {
-        if (uri == null) return;
-        showLoading("正在读取 Sen VTS 参数包…");
+    private void onVtsAppearancePicked(List<Uri> uris) {
+        if (uris == null || uris.isEmpty()) return;
+        showLoading("正在读取 Sen VTS 外观文件…");
         executor.execute(() -> {
             try {
-                String text = readUtf8Uri(uri, 5 * 1024 * 1024);
-                SenVtsProfile profile = SenVtsProfile.parse(text);
-                writeUtf8File(profileFile, text);
-                prefs.edit()
-                        .putString("vts_profile_summary", profile.summary())
-                        .apply();
+                boolean importedExpression = false;
+                boolean importedColors = false;
+                int expressionParameters = 0;
+                SenVtsAppearance appearance = null;
+                for (Uri uri : uris) {
+                    String text = readUtf8Uri(uri, 5 * 1024 * 1024);
+                    JSONObject json = new JSONObject(text);
+                    if ("Live2D Expression".equals(json.optString("Type", ""))) {
+                        JSONArray parameters = json.optJSONArray("Parameters");
+                        if (parameters == null || parameters.length() == 0) {
+                            throw new IOException("xiaojingyu表情中没有参数");
+                        }
+                        validateXiaojingyuExpression(parameters);
+                        normalizeVtsExpressionBlends(parameters);
+                        writeUtf8File(appearanceExpressionFile, json.toString(2));
+                        expressionParameters = parameters.length();
+                        importedExpression = true;
+                    } else if (json.has("ArtMeshDetails")) {
+                        appearance = SenVtsAppearance.parse(text);
+                        writeUtf8File(appearanceVtubeFile, text);
+                        importedColors = true;
+                    } else {
+                        throw new IOException("请选择 xiaojingyu.exp3.json 或当前 .vtube.json");
+                    }
+                }
+
+                String relative = prefs.getString("model_path", "");
+                File modelFile = new File(modelRoot, relative);
+                if (!relative.isBlank() && modelFile.isFile()) {
+                    installSavedAppearanceExpression(modelFile);
+                    List<String> detectedExpressions = registerExpressions(modelFile);
+                    expressionNames.clear();
+                    expressionNames.addAll(detectedExpressions);
+                    if (detectedExpressions.contains("xiaojingyu")) {
+                        savedVtsExpressions.clear();
+                        savedVtsExpressions.add("xiaojingyu");
+                    }
+                    prefs.edit()
+                            .putString("expressions", new JSONArray(expressionNames).toString())
+                            .putString("saved_vts_expressions",
+                                    new JSONArray(savedVtsExpressions).toString())
+                            .apply();
+                }
+
+                if (appearance == null && appearanceVtubeFile.isFile()) {
+                    appearance = SenVtsAppearance.parse(readUtf8File(appearanceVtubeFile));
+                }
+                String summary = "xiaojingyu "
+                        + (appearanceExpressionFile.isFile()
+                        ? (expressionParameters > 0 ? expressionParameters + "项" : "已保存") : "未导入")
+                        + " · " + (appearance == null ? "逐部件颜色未导入" : appearance.summary());
+                prefs.edit().putString("vts_appearance_summary", summary).apply();
+                boolean expressionChanged = importedExpression;
+                boolean colorsChanged = importedColors;
                 runOnUiThread(() -> {
-                    applyCustomProfile = true;
                     applyVtsPreset = true;
+                    rebuildExpressionButtons();
                     updateSummary();
-                    toastLong("参数导入成功：" + profile.snapshotName + " · "
-                            + profile.parameters.size() + " 项");
+                    toastLong("外观导入成功："
+                            + (expressionChanged ? "xiaojingyu增量 " : "")
+                            + (colorsChanged ? "VTS逐部件颜色" : ""));
                     loadNativeModel();
                 });
             } catch (Throwable error) {
                 runOnUiThread(() -> {
                     hideLoading();
-                    String message = "参数导入失败：" + readableError(error);
+                    String message = "外观导入失败：" + readableError(error);
                     setStatus(message);
                     toastLong(message);
                 });
@@ -319,22 +364,25 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         nativeLoadStartedAt = SystemClock.elapsedRealtime();
         showLoading("正在启动 Android 原生 Cubism 5…");
-        List<String> startup = applyVtsPreset
-                ? new ArrayList<>(savedVtsExpressions) : new ArrayList<>();
-        SenVtsProfile profile = null;
-        if (applyCustomProfile && profileFile.isFile()) {
+        List<String> startup = new ArrayList<>();
+        if (applyVtsPreset) {
+            if (expressionNames.contains("xiaojingyu")) startup.add("xiaojingyu");
+            else startup.addAll(savedVtsExpressions);
+        }
+        SenVtsAppearance appearance = null;
+        if (applyVtsPreset && appearanceVtubeFile.isFile()) {
             try {
-                profile = SenVtsProfile.parse(readUtf8File(profileFile));
+                appearance = SenVtsAppearance.parse(readUtf8File(appearanceVtubeFile));
             } catch (IOException error) {
                 hideLoading();
-                String message = "已保存的VTS参数无效：" + readableError(error);
+                String message = "已保存的VTS逐部件颜色无效：" + readableError(error);
                 setStatus(message);
                 toastLong(message);
                 return;
             }
         }
-        SenVtsProfile selectedProfile = profile;
-        glSurfaceView.queueEvent(() -> renderer.requestModel(modelFile, startup, selectedProfile));
+        SenVtsAppearance selectedAppearance = appearance;
+        glSurfaceView.queueEvent(() -> renderer.requestModel(modelFile, startup, selectedAppearance));
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -363,6 +411,46 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         references.put("Expressions", expressions);
         writeUtf8File(modelFile, modelJson.toString(2));
         return names;
+    }
+
+    private void installSavedAppearanceExpression(File modelFile) throws IOException {
+        if (!appearanceExpressionFile.isFile()) return;
+        File directory = modelFile.getParentFile();
+        if (directory == null) throw new IOException("模型目录无效");
+        File target = new File(directory, "xiaojingyu.exp3.json");
+        try (InputStream input = new FileInputStream(appearanceExpressionFile);
+             OutputStream output = new FileOutputStream(target)) {
+            byte[] buffer = new byte[16 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+        }
+    }
+
+    private void normalizeVtsExpressionBlends(JSONArray parameters) throws Exception {
+        for (int i = 0; i < parameters.length(); i++) {
+            JSONObject parameter = parameters.optJSONObject(i);
+            if (parameter == null) continue;
+            String blend = parameter.optString("Blend", "Add");
+            if ("VTS_Add".equalsIgnoreCase(blend)) parameter.put("Blend", "Add");
+        }
+    }
+
+    private void validateXiaojingyuExpression(JSONArray parameters) throws IOException {
+        boolean hasEars = false;
+        boolean hasShoes = false;
+        boolean hasHair = false;
+        boolean hasApron = false;
+        for (int i = 0; i < parameters.length(); i++) {
+            JSONObject parameter = parameters.optJSONObject(i);
+            String id = parameter == null ? "" : parameter.optString("Id", "");
+            if ("RabbitEarrs".equals(id)) hasEars = true;
+            else if ("Shoes".equals(id)) hasShoes = true;
+            else if ("ParamHair_Hue4".equals(id)) hasHair = true;
+            else if ("ApronUpper".equals(id)) hasApron = true;
+        }
+        if (!hasEars || !hasShoes || !hasHair || !hasApron) {
+            throw new IOException("所选表情不是本次生成的 xiaojingyu.exp3.json");
+        }
     }
 
     private List<String> readSavedVtsExpressions(File modelFile, List<String> known) throws Exception {
@@ -449,9 +537,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void updateSummary() {
         if (summaryText == null) return;
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
-        String profile = prefs.getString("vts_profile_summary", "尚未导入 Sen.vts-profile.json");
+        String appearance = prefs.getString("vts_appearance_summary",
+                "尚未导入 xiaojingyu.exp3.json 与当前 .vtube.json");
         summaryText.setText(diagnostics
-                + "\n" + profile
+                + "\n" + appearance
                 + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
     }
 

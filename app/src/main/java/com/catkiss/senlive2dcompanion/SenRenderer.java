@@ -45,8 +45,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         this.listener = listener;
     }
 
-    void requestModel(File modelFile, List<String> startupExpressions, SenVtsProfile profile) {
-        pendingRequest = new ModelRequest(modelFile, startupExpressions, profile);
+    void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance) {
+        pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance);
     }
 
     void applyExpression(String name) {
@@ -155,7 +155,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             SenLive2DModel next = new SenLive2DModel();
             model = next;
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
-                    listener, request.startupExpressions, request.profile);
+                    listener, request.startupExpressions, request.appearance);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();
@@ -164,7 +164,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     private String readyDetail() {
-        String profile = model == null ? "" : model.getProfileDetail();
+        String profile = model == null ? "" : model.getAppearanceDetail();
         return "原生 Cubism 5 已就绪 · 原始2K · GL_LINEAR · GL_MAX_TEXTURE_SIZE="
                 + maxTextureSize + (profile.isEmpty() ? "" : " · " + profile);
     }
@@ -180,12 +180,12 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private static final class ModelRequest {
         final File modelFile;
         final List<String> startupExpressions;
-        final SenVtsProfile profile;
+        final SenVtsAppearance appearance;
 
-        ModelRequest(File modelFile, List<String> startupExpressions, SenVtsProfile profile) {
+        ModelRequest(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance) {
             this.modelFile = modelFile;
             this.startupExpressions = new ArrayList<>(startupExpressions);
-            this.profile = profile;
+            this.appearance = appearance;
         }
     }
 }
