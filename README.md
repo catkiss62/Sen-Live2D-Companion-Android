@@ -2,7 +2,7 @@
 
 Sen 专用的 Android Live2D AI 伴侣实验项目。它与“迷梦”项目完全分离，避免不同模型的参数、外观预设和调试结论互相污染。
 
-## 当前版本：v0.2.0 Android 原生渲染测试
+## 当前版本：v0.2.1 Android 原生贴图修复测试
 
 第一阶段只验证一件事：使用 Live2D 官方 Cubism SDK for Java 5 R5 的 Android 原生 OpenGL 渲染，让 Sen 的静态显示与 VTube Studio 一致。
 
@@ -11,12 +11,12 @@ Sen 专用的 Android Live2D AI 伴侣实验项目。它与“迷梦”项目完
 - 自动读取 `.vtube.json` 的 `SavedActiveExpressions`；当前 Sen 包会恢复 `Watermark` 表情来隐藏提示水印。
 - 可在“VTS 启动状态”和“原始状态”之间重载对照。
 - 下方约 1/3 固定测试面板列出 ZIP 表情，预览区保持在上方约 2/3。
-- 默认使用原始 2K 贴图；贴图逐张解码上传，不生成 mipmap，避免额外约三分之一显存占用。
+- 默认使用原始 2K 贴图；贴图逐张解码上传，不生成 mipmap，并通过主仓库补丁把官方 Framework 的每帧过滤同步改为 `GL_LINEAR`，避免无 mipmap 贴图被采样成纯黑。
 - 关闭官方示例的 MOC consistency 重复检查，避免在创建139 MiB moc3时再次复制整份文件。
 - 不再使用 WebView、JavaScript、WebAssembly 或联网 Core；渲染和 Core 模型创建都在 Android 原生进程完成。
 - 使用 App `largeHeap` 为首次创建超大型模型保留空间，并显示 model3、moc3、表情、物理和每张贴图的原生加载进度。
 
-静态显示通过后，才会继续移植 VTube Studio 九轴/物理、桌宠随机动作、DeepSeek 对话、TTS 口型和摸头反应。
+仓库同时提供电脑端 `Sen VTS Parameter Capture`，通过 VTube Studio 官方 API 采集正常待机、表情、热键和物理参数。静态显示通过后，Android 再导入采集结果并继续移植九轴/物理、桌宠随机动作、DeepSeek 对话、TTS 口型和摸头反应。
 
 ## APK 使用
 
@@ -34,4 +34,6 @@ Sen 专用的 Android Live2D AI 伴侣实验项目。它与“迷梦”项目完
 - 用户购买的 Sen 模型、贴图、表情、动作或 VTube Studio 配置；
 - VTube Studio 本体或其反编译代码。
 
-仓库以 submodule 固定使用 Live2D 官方 `CubismJavaFramework` 5-r.5，并按官方 `RedistributableFiles.txt` 收录 `Live2DCubismCore.aar`。相关条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 `Core/LICENSE.md`。开发交接与实机确认记录见 [docs/SEN_HANDOFF.md](docs/SEN_HANDOFF.md)。
+仓库以 submodule 固定使用 Live2D 官方 `CubismJavaFramework` 5-r.5，并按官方 `RedistributableFiles.txt` 收录 `Live2DCubismCore.aar`。相关条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 `Core/LICENSE.md`。
+
+**新对话或新 AI 必须先阅读唯一任务事实源：[docs/SEN_TASK_LEDGER.md](docs/SEN_TASK_LEDGER.md)。** 每轮制作、实机确认、失败结论、踩坑和下一步顺序都维护在其中。

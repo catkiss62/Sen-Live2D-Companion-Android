@@ -1,0 +1,19 @@
+Sen VTube Studio Parameter Capture - Third-party notices
+
+This tool communicates with VTube Studio only through the documented VTube
+Studio Public API. VTube Studio is not included, modified, decompiled, or
+redistributed with this tool.
+
+websocket-client 1.8.0
+Copyright (C) 2010 Hiroki Ohtani, 2011-2020 liris
+Licensed under the Apache License, Version 2.0.
+Source and license: https://github.com/websocket-client/websocket-client
+
+PyInstaller 6.16.0 is used only to create the Windows executable.
+Its bootloader exception permits distribution of the resulting bundle.
+Source and license: https://github.com/pyinstaller/pyinstaller
+
+Python is licensed under the Python Software Foundation License.
+Source and license: https://www.python.org/psf/license/
+
+The full corresponding license texts are available at the source links above.

@@ -145,7 +145,7 @@ final class SenLive2DModel extends CubismUserModel {
             String relative = setting.getTextureFileName(i);
             if (relative == null || relative.isEmpty()) continue;
             listener.onStatus("原生渲染：正在逐张上传 2K 贴图 " + (i + 1) + "/" + count
-                    + "…\n未生成 mipmap，降低约三分之一显存占用");
+                    + "…\nGL_LINEAR 单级贴图，未生成 mipmap");
             NativeTextureManager.TextureInfo texture = textures.loadPng(child(relative));
             CubismRendererAndroid renderer = getRenderer();
             renderer.bindTexture(i, texture.id);

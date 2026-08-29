@@ -109,7 +109,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.2 · 原生 Cubism 等待模型");
+        statusText.setText("v0.2.1 · 原生 Cubism 等待模型");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -173,7 +173,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(controls);
 
         TextView memoryNote = new TextView(this);
-        memoryNote.setText("原始2K · 原生 OpenGL · 已关闭 moc3 重复检查与贴图 mipmap");
+        memoryNote.setText("原始2K · 原生 OpenGL · 贴图 GL_LINEAR（无 mipmap）");
         memoryNote.setTextColor(Color.rgb(186, 164, 204));
         memoryNote.setTextSize(10);
         memoryNote.setPadding(dp(3), dp(3), 0, dp(3));

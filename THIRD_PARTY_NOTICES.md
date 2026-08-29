@@ -8,3 +8,5 @@ The native Android renderer uses the official Live2D Cubism SDK for Java 5 R5:
 The Framework remains governed by the Live2D Open Software License referenced in its source headers. Cubism Core remains governed by the Live2D Proprietary Software License; the official `Core/RedistributableFiles.txt` expressly lists `android/Live2DCubismCore.aar` as redistributable under those terms. See `Core/LICENSE.md` and `Core/RedistributableFiles.txt`.
 
 No purchased Live2D model, textures, motions, expressions, VTube Studio configuration, or other Sen model assets are included in this repository or APK.
+
+The optional Windows parameter capture tool uses `websocket-client` 1.8.0 under the Apache License 2.0 and is packaged with PyInstaller 6.16.0 under its bootloader exception. Its downloadable package includes a dedicated `THIRD_PARTY_NOTICES.txt`. It communicates only with the documented VTube Studio Public API and does not include or modify VTube Studio.

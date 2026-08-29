@@ -164,7 +164,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     private String readyDetail() {
-        return "原生 Cubism 5 已就绪 · 原始2K · GL_MAX_TEXTURE_SIZE=" + maxTextureSize;
+        return "原生 Cubism 5 已就绪 · 原始2K · GL_LINEAR · GL_MAX_TEXTURE_SIZE="
+                + maxTextureSize;
     }
 
     private void releaseCurrentModel() {
