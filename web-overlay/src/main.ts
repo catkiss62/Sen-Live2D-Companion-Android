@@ -48,4 +48,12 @@ if (document.readyState === 'complete') {
   window.addEventListener('load', startStage, { passive: true, once: true });
 }
 
-window.addEventListener('beforeunload', (): void => LAppDelegate.releaseInstance(), { passive: true });
+window.addEventListener('beforeunload', (): void => {
+  try {
+    LAppDelegate.releaseInstance();
+  } catch (error) {
+    // The WebView is already discarding this page. A partial sample resource
+    // must not overwrite the next page's real loading status.
+    console.warn('Ignoring teardown error during navigation', error);
+  }
+}, { passive: true });

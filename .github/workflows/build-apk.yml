@@ -102,7 +102,7 @@ jobs:
         run: |
           gh issue create \
             --title "Sen APK build success · run ${{ github.run_id }}" \
-            --body "v0.1.0 renderer test built successfully from commit $(git rev-parse HEAD). Artifact: Sen-Live2D-Renderer-Test-APK"
+            --body "Sen renderer test built successfully from commit $(git rev-parse HEAD). Artifact: Sen-Live2D-Renderer-Test-APK"
 
       - name: Mark failed build
         if: steps.android_build.outcome == 'failure'

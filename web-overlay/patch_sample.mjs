@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 const target = process.argv[2];
 if (!target) throw new Error('Usage: node patch_sample.mjs <lappmodel.ts>');
@@ -54,3 +55,33 @@ const sequentialMethod = `  private setupTextures(): void {\n    const usePremul
 
 source = source.slice(0, methodStart) + sequentialMethod + source.slice(methodEnd);
 fs.writeFileSync(target, source);
+
+function patchFile(fileName, before, after, label) {
+  const file = path.join(path.dirname(target), fileName);
+  const text = fs.readFileSync(file, 'utf8');
+  if (!text.includes(before)) {
+    throw new Error(`Pinned sample changed; patch not found: ${label}`);
+  }
+  fs.writeFileSync(file, text.replace(before, after));
+}
+
+patchFile(
+  'lappview.ts',
+  `  public release(): void {\n    this._viewMatrix = null;\n    this._touchManager = null;\n    this._deviceToScreen = null;\n\n    this._gear.release();\n    this._gear = null;\n\n    this._back.release();\n    this._back = null;\n\n    this._subdelegate.getGlManager().getGl().deleteProgram(this._programId);\n    this._programId = null;\n  }`,
+  `  public release(): void {\n    this._viewMatrix = null;\n    this._touchManager = null;\n    this._deviceToScreen = null;\n\n    if (this._gear) {\n      this._gear.release();\n      this._gear = null;\n    }\n    if (this._back) {\n      this._back.release();\n      this._back = null;\n    }\n    if (this._subdelegate && this._programId) {\n      this._subdelegate.getGlManager().getGl().deleteProgram(this._programId);\n      this._programId = null;\n    }\n  }`,
+  'null-safe LAppView.release'
+);
+
+patchFile(
+  'lappsubdelegate.ts',
+  `  public release(): void {\n    this._resizeObserver.unobserve(this._canvas);\n    this._resizeObserver.disconnect();\n    this._resizeObserver = null;\n\n    this._live2dManager.release();\n    this._live2dManager = null;\n\n    this._view.release();\n    this._view = null;\n\n    this._textureManager.release();\n    this._textureManager = null;\n\n    this._glManager.release();\n    this._glManager = null;\n  }`,
+  `  public release(): void {\n    if (this._resizeObserver) {\n      if (this._canvas) this._resizeObserver.unobserve(this._canvas);\n      this._resizeObserver.disconnect();\n      this._resizeObserver = null;\n    }\n    if (this._live2dManager) {\n      this._live2dManager.release();\n      this._live2dManager = null;\n    }\n    if (this._view) {\n      this._view.release();\n      this._view = null;\n    }\n    if (this._textureManager) {\n      this._textureManager.release();\n      this._textureManager = null;\n    }\n    if (this._glManager) {\n      this._glManager.release();\n      this._glManager = null;\n    }\n  }`,
+  'idempotent LAppSubdelegate.release'
+);
+
+patchFile(
+  'lappdelegate.ts',
+  `  private releaseSubdelegates(): void {\n    for (let i = 0; i < this._subdelegates.length; i++) {\n      this._subdelegates[i].release();\n    }\n\n    this._subdelegates.length = 0;\n    this._subdelegates = null;\n  }`,
+  `  private releaseSubdelegates(): void {\n    if (!this._subdelegates) return;\n    for (let i = 0; i < this._subdelegates.length; i++) {\n      this._subdelegates[i]?.release();\n    }\n    this._subdelegates.length = 0;\n    this._subdelegates = null;\n  }`,
+  'idempotent LAppDelegate.releaseSubdelegates'
+);

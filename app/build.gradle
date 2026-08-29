@@ -18,8 +18,8 @@ android {
         applicationId 'com.catkiss.senlive2dcompanion'
         minSdk 26
         targetSdk 34
-        versionCode 2
-        versionName '0.1.1-renderer-diagnostics'
+        versionCode 3
+        versionName '0.1.2-safe-reload'
     }
 
     buildTypes {

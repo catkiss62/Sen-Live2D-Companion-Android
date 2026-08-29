@@ -6,6 +6,8 @@ type AndroidBridge = {
 const bridge = (): AndroidBridge | undefined =>
   (globalThis as unknown as { AndroidStage?: AndroidBridge }).AndroidStage;
 
+let pageIsUnloading = false;
+
 function status(message: string): void {
   const label = document.getElementById('boot-status');
   if (label) label.textContent = message;
@@ -13,6 +15,7 @@ function status(message: string): void {
 }
 
 function fail(error: unknown): void {
+  if (pageIsUnloading) return;
   const message = error instanceof Error ? error.message : String(error);
   status(`启动失败：${message}`);
   bridge()?.onStageError?.(message);
@@ -52,5 +55,8 @@ async function boot(): Promise<void> {
 
 window.addEventListener('error', event => fail(event.error ?? event.message));
 window.addEventListener('unhandledrejection', event => fail(event.reason));
+window.addEventListener('beforeunload', () => { pageIsUnloading = true; }, {
+  capture: true,
+  once: true
+});
 void boot().catch(fail);
-
