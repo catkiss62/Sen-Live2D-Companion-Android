@@ -1,0 +1,35 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.catkiss.senlive2dcompanion'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.catkiss.senlive2dcompanion'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0-renderer-test'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity:1.9.3'
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
