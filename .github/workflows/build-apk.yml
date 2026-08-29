@@ -30,6 +30,7 @@ jobs:
           cp web-overlay/copy_resources.js "$DEMO/copy_resources.js"
           cp web-overlay/vite.config.mts "$DEMO/vite.config.mts"
           cp web-overlay/src/*.ts "$DEMO/src/"
+          node web-overlay/patch_sample.mjs "$DEMO/src/lappmodel.ts"
 
       - uses: actions/setup-node@v4
         with:
@@ -106,4 +107,3 @@ jobs:
       - name: Mark failed build
         if: steps.android_build.outcome == 'failure'
         run: exit 1
-
