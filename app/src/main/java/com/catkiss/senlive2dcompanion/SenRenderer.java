@@ -67,13 +67,30 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         if (model != null) model.setExpression(name);
     }
 
+    void selectEmotion(String name) {
+        if (model != null) model.selectEmotion(name);
+    }
+
+    void playAction(String name) {
+        if (model != null) model.playAction(name);
+    }
+
+    void triggerEarTwitch() {
+        if (model != null) model.triggerEarTwitch();
+    }
+
+    void setAutoIdle(boolean enabled) {
+        if (model != null) model.setAutoIdle(enabled);
+    }
+
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
-                          float ahogeScalePercent, float ahogeRotationDegrees,
+                          float ahogeScalePercent, float ahogeWidthPercent,
+                          float ahogeRotationDegrees,
                           float ahogeOffsetX, float ahogeOffsetY,
                           boolean tailMirrored) {
         if (model != null) {
             model.setCustomization(earEnabled, earAngleDegrees, earVerticalOffset,
-                    ahogeScalePercent, ahogeRotationDegrees,
+                    ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                     ahogeOffsetX, ahogeOffsetY, tailMirrored);
         }
     }

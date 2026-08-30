@@ -25,28 +25,20 @@ import java.util.Map;
 import java.util.Set;
 
 final class SenLive2DModel extends CubismUserModel {
-    private static final String[] EAR_ANGLE_PARAMETER_IDS = {
-            "ParamL_angle", "ParamR_angle", "ParamR_angle2"
-    };
     private static final String[] AHOGE_PART_IDS = {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
-    private static final float EAR_DETECTION_LOW = -20.0f;
-    private static final float EAR_DETECTION_HIGH = 20.0f;
-    private static final float VERTEX_CHANGE_EPSILON = 0.00001f;
-
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
-    private final Map<String, Float> originalEarAngles = new HashMap<>();
-    private final Set<Integer> earAffectedDrawables = new LinkedHashSet<>();
+    private final SenPerformanceEngine performance = new SenPerformanceEngine();
     private ICubismModelSetting setting;
     private File homeDirectory;
     private String appearanceDetail = "";
-    private boolean frozenSnapshot;
+    private boolean hasVtsBaseProfile;
     private boolean geometryDiagnosticsAdded;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
-            100.0f, 0.0f, 0.0f, 0.0f, false);
+            100.0f, 100.0f, 0.0f, 0.0f, 0.0f, false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -74,45 +66,34 @@ final class SenLive2DModel extends CubismUserModel {
         // Reclaim it before decoding 26 textures one by one.
         System.gc();
 
-        frozenSnapshot = frozenProfile != null;
+        hasVtsBaseProfile = frozenProfile != null;
         renderOptions = requestedOptions == null ? renderOptions : requestedOptions;
-        if (!frozenSnapshot) {
-            loadExpressions(listener);
-            loadPhysicsAndPose(listener);
-        }
+        performance.setAutoIdle(renderOptions.autoIdleEnabled);
+        // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
+        // native physics are loaded in both modes so body motion, ears and tail can stay alive.
+        loadExpressions(listener);
+        loadPhysicsAndPose(listener);
 
         Map<String, Float> layout = new HashMap<>();
         if (setting.getLayoutMap(layout)) modelMatrix.setupFromLayout(layout);
         appearanceDetail = "";
         geometryDiagnosticsAdded = false;
-        earAffectedDrawables.clear();
-        if (frozenSnapshot) {
+        if (hasVtsBaseProfile) {
             applyFrozenProfile(frozenProfile, listener);
-        } else {
-            model.saveParameters();
         }
-        captureOriginalEarAngles();
+        model.saveParameters();
         applyVtsArtMeshColors(appearance, listener);
-        if (frozenSnapshot) {
-            listener.onStatus("正在自动识别耳鳍参数实际影响的网格…");
-            detectEarAffectedDrawables();
-            // Calculate all Drawable vertices once from the captured VTS values. No scheduler is
-            // allowed to overwrite them afterwards; this build is a strict renderer parity test.
-            applyEarAngleOverride();
-            model.update();
-            applyRuntimeGeometry();
-        } else {
-            updateScheduler.sortUpdatableList();
-        }
+        updateScheduler.sortUpdatableList();
+        model.update();
+        applyRuntimeGeometry();
+        appendAppearanceDetail("动态底座：VTS→情绪/动作→原生物理→运行时几何");
 
         listener.onStatus("原生渲染：正在创建 OpenGL 渲染器…\n蒙版模式："
                 + renderOptions.maskMode.displayName());
         setupNativeRenderer(width, height);
         setupTextures(textures, listener);
 
-        if (!frozenSnapshot) {
-            for (String expression : startupExpressions) setExpression(expression);
-        }
+        for (String expression : startupExpressions) setExpression(expression);
     }
 
     void reloadRenderer(int width, int height, NativeTextureManager textures,
@@ -124,25 +105,31 @@ final class SenLive2DModel extends CubismUserModel {
 
     void update(float deltaSeconds) {
         if (model == null) return;
-        if (frozenSnapshot) return;
+        // Always restore the captured appearance base. Dynamic features must never accumulate
+        // into part-selection, opacity or colour parameters from a previous frame.
         model.loadParameters();
-        model.saveParameters();
+        performance.update(deltaSeconds, new SenPerformanceEngine.ParameterWriter() {
+            @Override public void add(String id, float value) { addParameter(id, value); }
+            @Override public void set(String id, float value) { setParameter(id, value); }
+        });
+        setParameter("ParamBreath", performance.getBreathValue()
+                + performance.getEarPhysicsImpulse() * 0.90f);
         updateScheduler.onLateUpdate(model, deltaSeconds);
-        applyEarAngleOverride();
         model.update();
         applyRuntimeGeometry();
     }
 
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
-                          float ahogeScalePercent, float ahogeRotationDegrees,
+                          float ahogeScalePercent, float ahogeWidthPercent,
+                          float ahogeRotationDegrees,
                           float ahogeOffsetX, float ahogeOffsetY,
                           boolean tailMirrored) {
         renderOptions = renderOptions.withCustomization(
-                earEnabled, earAngleDegrees, earVerticalOffset,
-                ahogeScalePercent, ahogeRotationDegrees,
+                false, 0.0f, 0.0f,
+                ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY, tailMirrored);
-        if (model == null || !frozenSnapshot) return;
-        applyEarAngleOverride();
+        if (model == null) return;
+        model.loadParameters();
         model.update();
         applyRuntimeGeometry();
     }
@@ -156,9 +143,31 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void setExpression(String name) {
-        if (frozenSnapshot) return;
         ACubismMotion motion = expressions.get(name);
         if (motion != null) expressionManager.startMotionPriority(motion, 3);
+    }
+
+    void selectEmotion(String name) {
+        // Semantic emotion buttons are a complete facial state. Clear a previously pressed ZIP
+        // effect first; ZIP buttons can still be pressed afterwards to deliberately stack/test it.
+        expressionManager.stopAllMotions();
+        performance.selectEmotion(name);
+    }
+
+    void playAction(String name) {
+        performance.playAction(name);
+    }
+
+    void triggerEarTwitch() {
+        performance.triggerEarTwitch();
+    }
+
+    void setAutoIdle(boolean enabled) {
+        performance.setAutoIdle(enabled);
+    }
+
+    boolean isAutoIdle() {
+        return performance.isAutoIdle();
     }
 
     float getCanvasWidth() {
@@ -242,8 +251,8 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     private void applyFrozenProfile(SenVtsProfile profile, SenRenderer.Listener listener) {
-        listener.onStatus("正在写入VTS完整冻结状态…\n"
-                + "关闭表情、物理、呼吸与每帧参数更新");
+        listener.onStatus("正在写入VTS动态外观底座…\n"
+                + "保留部件与颜色，并在每帧叠加情绪、动作和物理");
 
         int modelCount = model.getParameterCount();
         Map<String, Integer> actual = new HashMap<>();
@@ -271,35 +280,9 @@ final class SenLive2DModel extends CubismUserModel {
             model.getModel().getParameterViews()[index].setValue(value);
             applied++;
         }
-        appendAppearanceDetail("VTS冻结参数 " + applied + "项"
+        appendAppearanceDetail("VTS底座参数 " + applied + "项"
                 + " · 越界直写 " + outsideDeclaredRange + "项"
                 + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
-    }
-
-    private void captureOriginalEarAngles() {
-        originalEarAngles.clear();
-        for (String id : EAR_ANGLE_PARAMETER_IDS) {
-            int index = findParameterIndex(id);
-            if (index >= 0) {
-                originalEarAngles.put(id,
-                        model.getModel().getParameterViews()[index].getValue());
-            }
-        }
-        appendAppearanceDetail("耳鳍角度参数 " + originalEarAngles.size() + "/3"
-                + " · 几何对象改用参数影响检测");
-    }
-
-    private void applyEarAngleOverride() {
-        for (String id : EAR_ANGLE_PARAMETER_IDS) {
-            int index = findParameterIndex(id);
-            if (index < 0) continue;
-            if (renderOptions.earAngleOverrideEnabled) {
-                model.getModel().getParameterViews()[index].setValue(renderOptions.earAngleDegrees);
-            } else if (frozenSnapshot) {
-                Float original = originalEarAngles.get(id);
-                if (original != null) model.getModel().getParameterViews()[index].setValue(original);
-            }
-        }
     }
 
     private int findParameterIndex(String id) {
@@ -313,32 +296,20 @@ final class SenLive2DModel extends CubismUserModel {
         Set<Integer> ahogeDrawables = collectChildDrawables(AHOGE_PART_IDS);
         Set<Integer> tailDrawables = collectChildDrawables(TAIL_PART_IDS);
         if (!geometryDiagnosticsAdded) {
-            appendAppearanceDetail("耳鳍自动网格 " + earAffectedDrawables.size()
-                    + "/可见 " + countVisible(earAffectedDrawables)
+            appendAppearanceDetail("耳鳍人工网格 0（已撤销）"
                     + " · 呆毛子网格 " + ahogeDrawables.size()
                     + "/可见 " + countVisible(ahogeDrawables)
                     + " · 尾巴子网格 " + tailDrawables.size()
                     + "/可见 " + countVisible(tailDrawables));
             geometryDiagnosticsAdded = true;
         }
-        applyEarVerticalTransform(earAffectedDrawables);
         applyAhogeTransform(ahogeDrawables);
         applyTailMirror(tailDrawables);
     }
 
-    private void applyEarVerticalTransform(Set<Integer> indices) {
-        if (Math.abs(renderOptions.earVerticalOffset) < 0.001f) return;
-        // UI units are tenths of a percent of the Cubism canvas. Negative means down.
-        float deltaY = getCanvasHeight() * renderOptions.earVerticalOffset / 1000.0f;
-        for (int index : indices) {
-            if (!isDrawableVisible(index)) continue;
-            float[] vertices = model.getDrawableVertices(index);
-            for (int i = 1; i < vertices.length; i += 2) vertices[i] += deltaY;
-        }
-    }
-
     private void applyAhogeTransform(Set<Integer> candidates) {
         boolean unchanged = Math.abs(renderOptions.ahogeScalePercent - 100.0f) < 0.001f
+                && Math.abs(renderOptions.ahogeWidthPercent - 100.0f) < 0.001f
                 && Math.abs(renderOptions.ahogeRotationDegrees) < 0.001f
                 && Math.abs(renderOptions.ahogeOffsetX) < 0.001f
                 && Math.abs(renderOptions.ahogeOffsetY) < 0.001f;
@@ -363,6 +334,7 @@ final class SenLive2DModel extends CubismUserModel {
 
         float anchorX = (minX + maxX) * 0.5f;
         float scale = renderOptions.ahogeScalePercent / 100.0f;
+        float widthScale = renderOptions.ahogeWidthPercent / 100.0f;
         double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
         float cos = (float) Math.cos(radians);
         float sin = (float) Math.sin(radians);
@@ -371,7 +343,7 @@ final class SenLive2DModel extends CubismUserModel {
         for (int n = 0; n < count; n++) {
             float[] vertices = model.getDrawableVertices(indices[n]);
             for (int i = 0; i + 1 < vertices.length; i += 2) {
-                float dx = (vertices[i] - anchorX) * scale;
+                float dx = (vertices[i] - anchorX) * scale * widthScale;
                 float dy = (vertices[i + 1] - minY) * scale;
                 vertices[i] = anchorX + dx * cos - dy * sin + translateX;
                 vertices[i + 1] = minY + dx * sin + dy * cos + translateY;
@@ -388,45 +360,22 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
-    private void detectEarAffectedDrawables() {
-        earAffectedDrawables.clear();
-        if (originalEarAngles.isEmpty()) return;
 
-        writeAllEarAngles(EAR_DETECTION_LOW);
-        model.update();
-        int drawableCount = model.getDrawableCount();
-        float[][] lowVertices = new float[drawableCount][];
-        boolean[] lowVisible = new boolean[drawableCount];
-        for (int i = 0; i < drawableCount; i++) {
-            lowVertices[i] = model.getDrawableVertices(i).clone();
-            lowVisible[i] = isDrawableVisible(i);
-        }
-
-        writeAllEarAngles(EAR_DETECTION_HIGH);
-        model.update();
-        for (int i = 0; i < drawableCount; i++) {
-            if (!lowVisible[i] && !isDrawableVisible(i)) continue;
-            float[] low = lowVertices[i];
-            float[] high = model.getDrawableVertices(i);
-            int length = Math.min(low.length, high.length);
-            for (int vertex = 0; vertex < length; vertex++) {
-                if (Math.abs(low[vertex] - high[vertex]) > VERTEX_CHANGE_EPSILON) {
-                    earAffectedDrawables.add(i);
-                    break;
-                }
-            }
-        }
-
-        applyEarAngleOverride();
-        model.update();
-        appendAppearanceDetail("耳鳍参数影响网格 " + earAffectedDrawables.size());
+    private void addParameter(String id, float delta) {
+        int index = findParameterIndex(id);
+        if (index < 0 || Math.abs(delta) < 0.00001f) return;
+        float value = model.getModel().getParameterViews()[index].getValue() + delta;
+        float min = model.getParameterMinimumValue(index);
+        float max = model.getParameterMaximumValue(index);
+        model.getModel().getParameterViews()[index].setValue(Math.max(min, Math.min(max, value)));
     }
 
-    private void writeAllEarAngles(float value) {
-        for (String id : EAR_ANGLE_PARAMETER_IDS) {
-            int index = findParameterIndex(id);
-            if (index >= 0) model.getModel().getParameterViews()[index].setValue(value);
-        }
+    private void setParameter(String id, float value) {
+        int index = findParameterIndex(id);
+        if (index < 0) return;
+        float min = model.getParameterMinimumValue(index);
+        float max = model.getParameterMaximumValue(index);
+        model.getModel().getParameterViews()[index].setValue(Math.max(min, Math.min(max, value)));
     }
 
     private Set<Integer> collectChildDrawables(String[] partIds) {
