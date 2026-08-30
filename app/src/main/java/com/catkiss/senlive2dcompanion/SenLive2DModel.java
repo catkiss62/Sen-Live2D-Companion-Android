@@ -12,8 +12,8 @@ import com.live2d.sdk.cubism.framework.motion.ACubismUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismMotionQueueEntry;
-import com.live2d.sdk.cubism.framework.motion.CubismPhysicsUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismPoseUpdater;
+import com.live2d.sdk.cubism.framework.physics.CubismPhysics;
 import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid;
 
 import java.io.File;
@@ -31,6 +31,12 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
+    private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
+            "ParamL_angle", "ParamR_angle", "ParamR_angle2"
+    };
+    private static final float AHOGE_FLEX_GAIN = .60f;
+    private static final float EAR_HIDDEN_EYE_DRIVE = -1.05f;
+    private static final float EAR_HIDDEN_NINE_AXIS_DRIVE = -6.0f;
     private static final String[] ARM_PHYSICS_OUTPUT_IDS = {
             "ParamBodyShoulder", "ParamBodyShoulder2", "ParamBodyShoulder3",
             "ParamBodyShoulder4", "larmrotate", "larmrotate2", "larmrotate3",
@@ -47,6 +53,15 @@ final class SenLive2DModel extends CubismUserModel {
     private boolean geometryDiagnosticsAdded;
     private int[] armPhysicsIndices = new int[0];
     private float[] armPhysicsBaseValues = new float[0];
+    private int[] rabbitEarPhysicsIndices = new int[0];
+    private float[] isolatedEarValues = new float[0];
+    private CubismPhysics isolatedEarPhysics;
+    private float[] prePhysicsValues = new float[0];
+    private float[] normalPhysicsValues = new float[0];
+    private float pendingEarPhysicsDrive;
+    private float pendingEarPhysicsMix;
+    private boolean pendingEarPhysicsActive;
+    private final Map<Integer, float[]> ahogeReferenceVertices = new HashMap<>();
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -97,10 +112,14 @@ final class SenLive2DModel extends CubismUserModel {
             applyOutfitParameters(outfitPreset, listener);
         }
         resolveArmPhysicsParameters();
+        resolveRabbitEarPhysicsParameters();
+        prePhysicsValues = new float[model.getParameterCount()];
+        normalPhysicsValues = new float[model.getParameterCount()];
         model.saveParameters();
         applyVtsArtMeshColors(appearance, listener);
         updateScheduler.sortUpdatableList();
         model.update();
+        captureAhogeReferenceGeometry();
         applyRuntimeGeometry();
         appendAppearanceDetail("动态底座：VTS→情绪/动作→原生物理→运行时几何");
 
@@ -130,8 +149,10 @@ final class SenLive2DModel extends CubismUserModel {
             @Override public void set(String id, float value) { setParameter(id, value); }
         });
         setParameter("ParamBreath", performance.getBreathValue());
+        pendingEarPhysicsDrive = performance.getEarPhysicsDrive();
+        pendingEarPhysicsMix = performance.getEarPhysicsMix();
+        pendingEarPhysicsActive = performance.isEarPhysicsActive();
         updateScheduler.onLateUpdate(model, deltaSeconds);
-        applyEarTwitch(performance.getEarTwitchDrive());
         model.update();
         applyRuntimeGeometry();
     }
@@ -257,14 +278,19 @@ final class SenLive2DModel extends CubismUserModel {
         String physicsName = setting.getPhysicsFileName();
         if (physicsName != null && !physicsName.isEmpty()) {
             listener.onStatus("原生渲染：正在读取物理参数…");
-            loadPhysics(NativeFileLoader.readFile(child(physicsName)));
+            byte[] physicsBytes = NativeFileLoader.readFile(child(physicsName));
+            loadPhysics(physicsBytes);
+            isolatedEarPhysics = CubismPhysics.create(physicsBytes);
             if (physics != null) {
-                updateScheduler.addUpdatableList(new CubismPhysicsUpdater(physics));
-                updateScheduler.addUpdatableList(new ACubismUpdater(650) {
+                // Run the ordinary rig and an independent hidden slow-blink rig from the same
+                // pre-physics parameters. Only the latter's three rabbit-ear outputs are copied
+                // back, so eyes, head angles, hair, body, tail and every other physics output
+                // remain exactly as produced by the ordinary pass.
+                updateScheduler.addUpdatableList(new ACubismUpdater(600) {
                     @Override public void onLateUpdate(
                             com.live2d.sdk.cubism.framework.model.CubismModel ignored,
                             float deltaTimeSeconds) {
-                        dampActionArmPhysics();
+                        evaluateIsolatedEarPhysics(deltaTimeSeconds);
                     }
                 });
             }
@@ -332,13 +358,62 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
-    private void applyEarTwitch(float drive) {
-        if (drive <= .0001f) return;
-        // Keep v0.3.9's compact double pulse, but touch only the three proven rabbit-ear
-        // physics outputs. Eyes, head angles and every other input remain completely untouched.
-        addParameter("ParamL_angle", 18.0f * drive);
-        addParameter("ParamR_angle", 18.0f * drive);
-        addParameter("ParamR_angle2", 13.0f * drive);
+    private void resolveRabbitEarPhysicsParameters() {
+        int count = 0;
+        int[] candidates = new int[RABBIT_EAR_PHYSICS_OUTPUT_IDS.length];
+        for (String id : RABBIT_EAR_PHYSICS_OUTPUT_IDS) {
+            int index = findParameterIndex(id);
+            if (index >= 0) candidates[count++] = index;
+        }
+        rabbitEarPhysicsIndices = Arrays.copyOf(candidates, count);
+        isolatedEarValues = new float[count];
+        appendAppearanceDetail("九轴兔耳隔离输出 " + count + "/3");
+    }
+
+    private void evaluateIsolatedEarPhysics(float deltaTimeSeconds) {
+        if (physics == null) return;
+        captureParameterValues(prePhysicsValues);
+        physics.evaluate(model, deltaTimeSeconds);
+        captureParameterValues(normalPhysicsValues);
+
+        if (isolatedEarPhysics != null) {
+            restoreParameterValues(prePhysicsValues);
+            if (pendingEarPhysicsActive) {
+                addParameter("ParamEyeLOpen", EAR_HIDDEN_EYE_DRIVE * pendingEarPhysicsDrive);
+                addParameter("ParamEyeROpen", EAR_HIDDEN_EYE_DRIVE * pendingEarPhysicsDrive);
+                addParameter("ParamAngleY", EAR_HIDDEN_NINE_AXIS_DRIVE
+                        * pendingEarPhysicsDrive);
+            }
+            isolatedEarPhysics.evaluate(model, deltaTimeSeconds);
+            for (int i = 0; i < rabbitEarPhysicsIndices.length; i++) {
+                isolatedEarValues[i] = model.getModel().getParameterViews()[
+                        rabbitEarPhysicsIndices[i]].getValue();
+            }
+            restoreParameterValues(normalPhysicsValues);
+            if (pendingEarPhysicsActive) {
+                for (int i = 0; i < rabbitEarPhysicsIndices.length; i++) {
+                    int index = rabbitEarPhysicsIndices[i];
+                    float normal = normalPhysicsValues[index];
+                    model.getModel().getParameterViews()[index].setValue(
+                            normal + (isolatedEarValues[i] - normal) * pendingEarPhysicsMix);
+                }
+            }
+        }
+        dampActionArmPhysics();
+    }
+
+    private void captureParameterValues(float[] destination) {
+        int count = Math.min(destination.length, model.getParameterCount());
+        for (int i = 0; i < count; i++) {
+            destination[i] = model.getModel().getParameterViews()[i].getValue();
+        }
+    }
+
+    private void restoreParameterValues(float[] source) {
+        int count = Math.min(source.length, model.getParameterCount());
+        for (int i = 0; i < count; i++) {
+            model.getModel().getParameterViews()[i].setValue(source[i]);
+        }
     }
 
     private void resolveArmPhysicsParameters() {
@@ -445,8 +520,11 @@ final class SenLive2DModel extends CubismUserModel {
         if (bestDrawable < 0) return null;
         String drawableId = model.getDrawableId(bestDrawable).getString();
         setAhogeRoot(drawableId, bestVertex);
+        float[] selectedVertices = model.getDrawableVertices(bestDrawable);
+        int selectedOffset = bestVertex * 2;
         return new AhogeRootSelection(drawableId, bestVertex,
-                (float) Math.sqrt(bestDistance));
+                (float) Math.sqrt(bestDistance),
+                selectedVertices[selectedOffset], selectedVertices[selectedOffset + 1]);
     }
 
     private void applyRuntimeGeometry() {
@@ -464,6 +542,79 @@ final class SenLive2DModel extends CubismUserModel {
         applyTailMirror(tailDrawables);
     }
 
+    private void captureAhogeReferenceGeometry() {
+        ahogeReferenceVertices.clear();
+        for (int index : collectChildDrawables(AHOGE_PART_IDS)) {
+            if (isDrawableVisible(index)) {
+                ahogeReferenceVertices.put(index, model.getDrawableVertices(index).clone());
+            }
+        }
+        appendAppearanceDetail("呆毛局部物理摆幅 " + Math.round(AHOGE_FLEX_GAIN * 100.0f)
+                + "%");
+    }
+
+    private void stiffenAhogeGeometry(Set<Integer> candidates) {
+        if (ahogeReferenceVertices.isEmpty()) return;
+        double referenceCenterX = 0.0;
+        double referenceCenterY = 0.0;
+        double currentCenterX = 0.0;
+        double currentCenterY = 0.0;
+        int points = 0;
+        for (int index : candidates) {
+            if (!isDrawableVisible(index)) continue;
+            float[] reference = ahogeReferenceVertices.get(index);
+            float[] current = model.getDrawableVertices(index);
+            if (reference == null || reference.length != current.length) continue;
+            for (int i = 0; i + 1 < current.length; i += 2) {
+                referenceCenterX += reference[i];
+                referenceCenterY += reference[i + 1];
+                currentCenterX += current[i];
+                currentCenterY += current[i + 1];
+                points++;
+            }
+        }
+        if (points < 3) return;
+        referenceCenterX /= points;
+        referenceCenterY /= points;
+        currentCenterX /= points;
+        currentCenterY /= points;
+        double denominator = 0.0;
+        double dot = 0.0;
+        double cross = 0.0;
+        for (int index : candidates) {
+            if (!isDrawableVisible(index)) continue;
+            float[] reference = ahogeReferenceVertices.get(index);
+            float[] current = model.getDrawableVertices(index);
+            if (reference == null || reference.length != current.length) continue;
+            for (int i = 0; i + 1 < current.length; i += 2) {
+                double rx = reference[i] - referenceCenterX;
+                double ry = reference[i + 1] - referenceCenterY;
+                double cx = current[i] - currentCenterX;
+                double cy = current[i + 1] - currentCenterY;
+                denominator += rx * rx + ry * ry;
+                dot += rx * cx + ry * cy;
+                cross += rx * cy - ry * cx;
+            }
+        }
+        if (denominator < 1e-8) return;
+        double a = dot / denominator;
+        double b = cross / denominator;
+        for (int index : candidates) {
+            if (!isDrawableVisible(index)) continue;
+            float[] reference = ahogeReferenceVertices.get(index);
+            float[] current = model.getDrawableVertices(index);
+            if (reference == null || reference.length != current.length) continue;
+            for (int i = 0; i + 1 < current.length; i += 2) {
+                double rx = reference[i] - referenceCenterX;
+                double ry = reference[i + 1] - referenceCenterY;
+                float rigidX = (float) (currentCenterX + a * rx - b * ry);
+                float rigidY = (float) (currentCenterY + b * rx + a * ry);
+                current[i] = rigidX + (current[i] - rigidX) * AHOGE_FLEX_GAIN;
+                current[i + 1] = rigidY + (current[i + 1] - rigidY) * AHOGE_FLEX_GAIN;
+            }
+        }
+    }
+
     private void applyAhogeTransform(Set<Integer> candidates) {
         boolean unchanged = Math.abs(renderOptions.ahogeScalePercent - 100.0f) < 0.001f
                 && Math.abs(renderOptions.ahogeWidthPercent - 100.0f) < 0.001f
@@ -472,6 +623,8 @@ final class SenLive2DModel extends CubismUserModel {
                 && Math.abs(renderOptions.ahogeOffsetY) < 0.001f
                 && renderOptions.ahogeRootDrawableId.isEmpty();
         if (unchanged) return;
+
+        stiffenAhogeGeometry(candidates);
 
         int[] indices = new int[candidates.size()];
         int count = 0;
@@ -664,11 +817,16 @@ final class SenLive2DModel extends CubismUserModel {
         final String drawableId;
         final int vertexIndex;
         final float distance;
+        final float modelX;
+        final float modelY;
 
-        AhogeRootSelection(String drawableId, int vertexIndex, float distance) {
+        AhogeRootSelection(String drawableId, int vertexIndex, float distance,
+                           float modelX, float modelY) {
             this.drawableId = drawableId;
             this.vertexIndex = vertexIndex;
             this.distance = distance;
+            this.modelX = modelX;
+            this.modelY = modelY;
         }
     }
 

@@ -48,7 +48,7 @@ import java.util.zip.ZipInputStream;
 
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
-    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 1;
+    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 2;
     private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
     private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
     private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
@@ -88,6 +88,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float ahogeOffsetY;
     private String ahogeRootDrawableId = "";
     private int ahogeRootVertexIndex = -1;
+    private float ahogeRootModelX = Float.NaN;
+    private float ahogeRootModelY = Float.NaN;
+    private float ahogeRootDistance = Float.NaN;
     private boolean ahogeRootTapPending;
     private boolean tailMirrored;
     private boolean adjustmentEnabled;
@@ -112,6 +115,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SeekBar ahogeXSeekBar;
     private TextView ahogeYStatus;
     private SeekBar ahogeYSeekBar;
+    private TextView ahogeRootStatus;
     private Button tailMirrorButton;
     private Button autoIdleButton;
     private Button touchFollowButton;
@@ -156,6 +160,11 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     .putFloat("ahoge_rotation_degrees", CONFIRMED_AHOGE_ROTATION)
                     .putFloat("ahoge_offset_x", CONFIRMED_AHOGE_X)
                     .putFloat("ahoge_offset_y", CONFIRMED_AHOGE_Y)
+                    .remove("ahoge_root_drawable_id")
+                    .remove("ahoge_root_vertex_index")
+                    .remove("ahoge_root_model_x")
+                    .remove("ahoge_root_model_y")
+                    .remove("ahoge_root_distance")
                     .apply();
         }
         ahogeScalePercent = Math.max(40.0f, Math.min(160.0f,
@@ -174,6 +183,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                         : (prefs.getBoolean("ahoge_raised", false) ? 25.0f : 0.0f)));
         ahogeRootDrawableId = prefs.getString("ahoge_root_drawable_id", "");
         ahogeRootVertexIndex = prefs.getInt("ahoge_root_vertex_index", -1);
+        ahogeRootModelX = prefs.getFloat("ahoge_root_model_x", Float.NaN);
+        ahogeRootModelY = prefs.getFloat("ahoge_root_model_y", Float.NaN);
+        ahogeRootDistance = prefs.getFloat("ahoge_root_distance", Float.NaN);
         tailMirrored = prefs.getBoolean("tail_mirrored", false);
         autoIdleEnabled = prefs.getBoolean("auto_idle_enabled", false);
         touchFollowEnabled = prefs.getBoolean("touch_follow_enabled", true);
@@ -224,7 +236,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.0 · 独立兔耳、触屏跟随与平滑回正测试");
+        statusText.setText("v0.4.1 · 九轴兔耳、连续动作与待机眨眼测试");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -380,13 +392,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(adjustmentControls);
 
         TextView earNotice = new TextView(this);
-        earNotice.setText("兔耳双脉冲：只动 ParamL_angle / ParamR_angle / ParamR_angle2；眼睛、头部九轴和其他参数不参与。本版先放大幅度。");
+        earNotice.setText("兔耳双脉冲：复用慢眨眼的九轴→原生物理路线；隐藏驱动不会画到眼睛或头部，只取 ParamL_angle / ParamR_angle / ParamR_angle2 三项兔耳输出。脉冲已加宽并放大。");
         earNotice.setTextColor(Color.rgb(220, 198, 238));
         earNotice.setTextSize(10);
         earNotice.setPadding(dp(3), dp(5), 0, dp(2));
         panel.addView(earNotice);
 
-        Button earTwitchButton = panelButton("兔耳：放大幅度快速摆动两次");
+        Button earTwitchButton = panelButton("兔耳：九轴柔性大幅摆动两次");
         earTwitchButton.setOnClickListener(v -> glSurfaceView.queueEvent(
                 () -> renderer.triggerEarTwitch()));
         panel.addView(earTwitchButton);
@@ -516,6 +528,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         ahogeResetRow.addView(ahogeAutoRootButton, weightedButtonParams());
         panel.addView(ahogeResetRow);
 
+        ahogeRootStatus = adjustmentStatusText();
+        panel.addView(ahogeRootStatus);
+
         TextView tailHeading = new TextView(this);
         tailHeading.setText("尾巴左右位置（以模型中心线镜像，身体中心不变）");
         tailHeading.setTextColor(Color.rgb(238, 207, 255));
@@ -538,7 +553,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         interactionHeading.setPadding(0, dp(7), 0, dp(3));
         panel.addView(interactionHeading);
 
-        touchFollowButton = panelButton("");
+        touchFollowButton = panelButton(touchFollowEnabled
+                ? "极限触屏跟随：开启" : "极限触屏跟随：关闭");
         touchFollowButton.setOnClickListener(v -> {
             touchFollowEnabled = !touchFollowEnabled;
             prefs.edit().putBoolean("touch_follow_enabled", touchFollowEnabled).apply();
@@ -560,13 +576,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(headPatTestRow);
 
         TextView dynamicHeading = new TextView(this);
-        dynamicHeading.setText("动态基础（原生物理常开；随机待机默认关闭）");
+        dynamicHeading.setText("动态基础（原生物理常开；自主待机含自然眨眼，默认关闭）");
         dynamicHeading.setTextColor(Color.rgb(238, 207, 255));
         dynamicHeading.setTextSize(12);
         dynamicHeading.setPadding(0, dp(7), 0, dp(3));
         panel.addView(dynamicHeading);
 
-        autoIdleButton = panelButton("");
+        autoIdleButton = panelButton(autoIdleEnabled
+                ? "自主待机：开启（含自然眨眼）" : "自主待机：关闭（只手动测试）");
         autoIdleButton.setOnClickListener(v -> {
             autoIdleEnabled = !autoIdleEnabled;
             prefs.edit().putBoolean("auto_idle_enabled", autoIdleEnabled).apply();
@@ -624,6 +641,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         root.addView(loadingOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        updateCustomizationControls();
         updateSummary();
     }
 
@@ -841,18 +859,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     }
 
     private void resetAhogeTransform() {
-        ahogeScalePercent = 100.0f;
-        ahogeWidthPercent = 100.0f;
-        ahogeRotationDegrees = 0.0f;
-        ahogeOffsetX = 0.0f;
-        ahogeOffsetY = 0.0f;
+        ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
+        ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
+        ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
+        ahogeOffsetX = CONFIRMED_AHOGE_X;
+        ahogeOffsetY = CONFIRMED_AHOGE_Y;
         ahogeRootDrawableId = "";
         ahogeRootVertexIndex = -1;
+        ahogeRootModelX = Float.NaN;
+        ahogeRootModelY = Float.NaN;
+        ahogeRootDistance = Float.NaN;
         syncAhogeSeekBars();
         persistAndApplyCustomization();
         if (glSurfaceView != null) glSurfaceView.queueEvent(
                 () -> renderer.setAhogeRoot("", -1));
-        toastLong("呆毛已恢复原始大小、宽度、角度、位置与自动发根");
+        toastLong("呆毛已恢复确认预设 56/83/-49/-16/+70 与自动发根");
     }
 
     private void beginAhogeRootCalibration() {
@@ -868,9 +889,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         ahogeRootTapPending = false;
         ahogeRootDrawableId = "";
         ahogeRootVertexIndex = -1;
+        ahogeRootModelX = Float.NaN;
+        ahogeRootModelY = Float.NaN;
+        ahogeRootDistance = Float.NaN;
         prefs.edit().remove("ahoge_root_drawable_id")
-                .remove("ahoge_root_vertex_index").apply();
+                .remove("ahoge_root_vertex_index")
+                .remove("ahoge_root_model_x")
+                .remove("ahoge_root_model_y")
+                .remove("ahoge_root_distance").apply();
         glSurfaceView.queueEvent(() -> renderer.setAhogeRoot("", -1));
+        updateCustomizationControls();
         updateSummary();
         toastLong("呆毛发根已恢复为自动计算位置");
     }
@@ -905,6 +933,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 .putFloat("ahoge_offset_y", ahogeOffsetY)
                 .putString("ahoge_root_drawable_id", ahogeRootDrawableId)
                 .putInt("ahoge_root_vertex_index", ahogeRootVertexIndex)
+                .putFloat("ahoge_root_model_x", ahogeRootModelX)
+                .putFloat("ahoge_root_model_y", ahogeRootModelY)
+                .putFloat("ahoge_root_distance", ahogeRootDistance)
                 .putBoolean("tail_mirrored", tailMirrored)
                 .apply();
         updateCustomizationControls();
@@ -948,13 +979,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             ahogeYStatus.setText(String.format(java.util.Locale.ROOT,
                     "呆毛上下：%+.0f（正数向上，负数向下）", ahogeOffsetY));
         }
+        if (ahogeRootStatus != null) {
+            ahogeRootStatus.setText(ahogeRootDrawableId.isEmpty()
+                    ? "呆毛发根：自动（点选后会显示可回填预设的网格、顶点与模型坐标）"
+                    : String.format(java.util.Locale.ROOT,
+                    "呆毛发根：%s / 顶点%d / 模型X%+.5f / Y%+.5f / 点击误差%.5f",
+                    ahogeRootDrawableId, ahogeRootVertexIndex,
+                    ahogeRootModelX, ahogeRootModelY, ahogeRootDistance));
+        }
         if (tailMirrorButton != null) {
             tailMirrorButton.setText(tailMirrored
                     ? "尾巴：右侧（中心线镜像）" : "尾巴：左侧（模型原始）");
         }
         if (autoIdleButton != null) {
             autoIdleButton.setText(autoIdleEnabled
-                    ? "自主待机：开启（低频随机）" : "自主待机：关闭（只手动测试）");
+                    ? "自主待机：开启（含自然眨眼）" : "自主待机：关闭（只手动测试）");
         }
         if (touchFollowButton != null) {
             touchFollowButton.setText(touchFollowEnabled
@@ -1348,13 +1387,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 + "\n当前蒙版：" + maskMode.displayName()
                 + (maskMode == SenMaskMode.HIGH_PRECISION
                 ? " · " + highPrecisionMaskSize + "px" : "")
-                + " · 兔耳：独立双脉冲/放大"
+                + " · 兔耳：隔离九轴双脉冲/加宽放大"
                 + " · 服装：" + selectedOutfit.displayName
                 + String.format(java.util.Locale.ROOT,
                 " · 呆毛：高%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY)
-                + " · 发根：" + (ahogeRootDrawableId.isEmpty() ? "自动" : "实机点选")
+                + " · 发根：" + (ahogeRootDrawableId.isEmpty() ? "自动"
+                : ahogeRootDrawableId + "#" + ahogeRootVertexIndex)
                 + " · 尾巴：" + (tailMirrored ? "右侧镜像" : "左侧原始")
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")
@@ -1388,18 +1428,22 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     }
 
     @Override
-    public void onAhogeRootCalibrated(String drawableId, int vertexIndex) {
+    public void onAhogeRootCalibrated(String drawableId, int vertexIndex,
+                                      float modelX, float modelY, float distance) {
         runOnUiThread(() -> {
             ahogeRootDrawableId = drawableId == null ? "" : drawableId;
             ahogeRootVertexIndex = vertexIndex;
-            // The tap is the new absolute root. Clear the legacy placement offsets so the
-            // selected vertex, rather than the old visual correction, owns the attachment.
-            ahogeOffsetX = 0.0f;
-            ahogeOffsetY = 0.0f;
+            ahogeRootModelX = modelX;
+            ahogeRootModelY = modelY;
+            ahogeRootDistance = distance;
+            // Root calibration only changes the dynamic anchor. Keep the five confirmed visual
+            // values intact so selecting a root cannot flip/reposition the approved preset.
             syncAhogeSeekBars();
             persistAndApplyCustomization();
-            toastLong("呆毛发根已绑定头部网格：" + ahogeRootDrawableId
-                    + " / 顶点 " + ahogeRootVertexIndex);
+            toastLong(String.format(java.util.Locale.ROOT,
+                    "呆毛发根参数：%s / 顶点%d / X%+.5f / Y%+.5f",
+                    ahogeRootDrawableId, ahogeRootVertexIndex,
+                    ahogeRootModelX, ahogeRootModelY));
         });
     }
 

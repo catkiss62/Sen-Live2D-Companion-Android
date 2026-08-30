@@ -19,9 +19,14 @@ final class SenPerformanceEngine {
     private static final float HEAD_GAIN = 1.35f;
     private static final float BODY_GAIN = 1.20f;
     private static final float EMOTION_TRANSITION_SECONDS = .42f;
+    private static final float ACTION_CROSSFADE_SECONDS = .24f;
     private static final float ACTION_PHYSICS_RELEASE_SECONDS = .55f;
-    private static final Map<String, Motion> MOTIONS = createMotions();
-
+    private static final float NATURAL_BLINK_SECONDS = .22f;
+    private static final float EAR_PULSE_SECONDS = .34f;
+    private static final float EAR_PULSE_GAP_SECONDS = .10f;
+    private static final float EAR_INPUT_SECONDS = EAR_PULSE_SECONDS * 2.0f
+            + EAR_PULSE_GAP_SECONDS;
+    private static final float EAR_SETTLE_SECONDS = .82f;
     interface ParameterWriter {
         void add(String id, float value);
         void set(String id, float value);
@@ -41,6 +46,12 @@ final class SenPerformanceEngine {
             "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
             "head_pat", "head_pat_confused"));
 
+    private static final Map<String, Motion> MOTIONS = createMotions();
+
+    static {
+        validateMotionLibrary();
+    }
+
     private static final List<String> IDLE_ACTIONS = Arrays.asList(
             "small_nod", "head_tilt_idle", "side_look", "weight_shift",
             "gentle_lean", "slow_blink", "look_around", "soft_sway", "wind_sway_soft");
@@ -52,8 +63,13 @@ final class SenPerformanceEngine {
     private float actionTime;
     private float elapsed;
     private float nextIdleAt = 8.0f;
+    private float nextBlinkAt = 2.2f;
+    private float blinkTime = -1.0f;
     private float earTwitchTime = -1.0f;
     private boolean autoIdle;
+    private Map<String, Float> lastActionValues = new HashMap<>();
+    private Map<String, Float> actionTransitionFromValues = new HashMap<>();
+    private float actionTransitionTime = ACTION_CROSSFADE_SECONDS;
     private Map<String, Float> emotionFromValues = new HashMap<>();
     private Map<String, Float> emotionCurrentValues = new HashMap<>();
     private Map<String, Float> emotionTargetValues = new HashMap<>();
@@ -85,6 +101,9 @@ final class SenPerformanceEngine {
 
     void playAction(String name) {
         if (!ACTIONS.contains(name)) return;
+        actionTransitionFromValues = new HashMap<>(lastActionValues);
+        actionTransitionTime = actionTransitionFromValues.isEmpty()
+                ? ACTION_CROSSFADE_SECONDS : 0.0f;
         action = name;
         actionTime = 0.0f;
     }
@@ -111,6 +130,8 @@ final class SenPerformanceEngine {
     void setAutoIdle(boolean enabled) {
         autoIdle = enabled;
         nextIdleAt = elapsed + 4.0f + random.nextFloat() * 5.0f;
+        nextBlinkAt = elapsed + 1.2f + random.nextFloat() * 2.0f;
+        if (!enabled) blinkTime = -1.0f;
     }
 
     boolean isAutoIdle() {
@@ -150,28 +171,38 @@ final class SenPerformanceEngine {
             nextIdleAt = elapsed + 7.0f + random.nextFloat() * 8.0f;
         }
 
-        if (action != null) {
-            actionTime += dt;
-            float duration = duration(action);
-            if (actionTime <= duration) applyAction(action, actionTime, writer);
-            if (actionTime >= duration + ACTION_PHYSICS_RELEASE_SECONDS) action = null;
-        }
+        updateAction(dt, writer);
+        updateNaturalBlink(dt, writer);
 
-        if (earTwitchTime >= 0.0f) earTwitchTime += dt;
+        if (earTwitchTime >= 0.0f) {
+            earTwitchTime += dt;
+            if (earTwitchTime >= EAR_INPUT_SECONDS + EAR_SETTLE_SECONDS) {
+                earTwitchTime = -1.0f;
+            }
+        }
     }
 
-    /** v0.3.9's two compact pulse envelopes; only dedicated ear outputs consume this value. */
-    float getEarTwitchDrive() {
+    /** Two broader copies of the slow-blink driver, evaluated only by the isolated ear rig. */
+    float getEarPhysicsDrive() {
         if (earTwitchTime < 0.0f) return 0.0f;
-        if (earTwitchTime >= 0.58f) {
-            earTwitchTime = -1.0f;
-            return 0.0f;
-        }
-        float phase = earTwitchTime < 0.23f
-                ? earTwitchTime / 0.23f
-                : (earTwitchTime - 0.31f) / 0.23f;
+        if (earTwitchTime >= EAR_INPUT_SECONDS) return 0.0f;
+        float secondStart = EAR_PULSE_SECONDS + EAR_PULSE_GAP_SECONDS;
+        float phase = earTwitchTime < EAR_PULSE_SECONDS
+                ? earTwitchTime / EAR_PULSE_SECONDS
+                : (earTwitchTime - secondStart) / EAR_PULSE_SECONDS;
         if (phase < 0.0f || phase > 1.0f) return 0.0f;
-        return (float) Math.pow(Math.sin(Math.PI * phase), 2.0);
+        return (float) Math.pow(Math.sin(Math.PI * phase), 1.25);
+    }
+
+    boolean isEarPhysicsActive() {
+        return earTwitchTime >= 0.0f;
+    }
+
+    float getEarPhysicsMix() {
+        if (earTwitchTime < 0.0f) return 0.0f;
+        if (earTwitchTime <= EAR_INPUT_SECONDS) return 1.0f;
+        float release = (earTwitchTime - EAR_INPUT_SECONDS) / EAR_SETTLE_SECONDS;
+        return 1.0f - smoothStep(release);
     }
 
     float getBreathValue() {
@@ -243,6 +274,65 @@ final class SenPerformanceEngine {
         writer.add("ParamBodyAngleX", touchBodyX * 8.0f * bodyWeight);
         writer.add("ParamBodyAngleY", touchBodyY * .70f * bodyWeight);
         writer.add("ParamBodyAngleZ", touchBodyZ * 7.0f * bodyWeight);
+    }
+
+    private void updateAction(float dt, ParameterWriter writer) {
+        if (action == null) {
+            lastActionValues.clear();
+            return;
+        }
+        actionTime += dt;
+        float actionDuration = duration(action);
+        Map<String, Float> target = collectActionValues(
+                action, Math.min(actionTime, actionDuration));
+        Map<String, Float> current = target;
+        if (actionTransitionTime < ACTION_CROSSFADE_SECONDS) {
+            actionTransitionTime = Math.min(ACTION_CROSSFADE_SECONDS,
+                    actionTransitionTime + dt);
+            float progress = smoothStep(actionTransitionTime / ACTION_CROSSFADE_SECONDS);
+            current = blendValues(actionTransitionFromValues, target, progress);
+        }
+        writeValues(current, writer);
+        lastActionValues = current;
+        if (actionTime >= actionDuration + ACTION_PHYSICS_RELEASE_SECONDS) {
+            action = null;
+            lastActionValues = new HashMap<>();
+            actionTransitionFromValues = new HashMap<>();
+            actionTransitionTime = ACTION_CROSSFADE_SECONDS;
+        }
+    }
+
+    private void updateNaturalBlink(float dt, ParameterWriter writer) {
+        if (!autoIdle) return;
+        if (blinkTime < 0.0f && elapsed >= nextBlinkAt) {
+            if (actionTouchesEyeOpen(action)) {
+                nextBlinkAt = elapsed + .55f;
+                return;
+            }
+            blinkTime = 0.0f;
+        }
+        if (blinkTime < 0.0f) return;
+        blinkTime += dt;
+        float progress = clamp(blinkTime / NATURAL_BLINK_SECONDS, 0.0f, 1.0f);
+        float triangle = 1.0f - Math.abs(progress * 2.0f - 1.0f);
+        float close = smoothStep(triangle);
+        // Applied after the active action, matching Mimeng's final min-to-closed blink layer.
+        writer.add("ParamEyeLOpen", -1.50f * close);
+        writer.add("ParamEyeROpen", -1.50f * close);
+        if (blinkTime >= NATURAL_BLINK_SECONDS) {
+            blinkTime = -1.0f;
+            nextBlinkAt = elapsed + 2.2f + random.nextFloat() * 3.2f;
+        }
+    }
+
+    private static boolean actionTouchesEyeOpen(String name) {
+        Motion motion = MOTIONS.get(name);
+        if (motion == null) return false;
+        for (Track track : motion.tracks) {
+            if ("ParamEyeLOpen".equals(track.parameterId)
+                    || "ParamEyeROpen".equals(track.parameterId)) return true;
+        }
+        return false;
     }
 
     private static float exponentialBlend(float dt, float timeConstant) {
@@ -332,6 +422,40 @@ final class SenPerformanceEngine {
         }
     }
 
+    private static Map<String, Float> collectActionValues(String name, float time) {
+        Map<String, Float> values = new LinkedHashMap<>();
+        applyAction(name, time, new ParameterWriter() {
+            @Override public void add(String id, float value) {
+                values.merge(id, value, Float::sum);
+            }
+
+            @Override public void set(String id, float value) {
+                values.put(id, value);
+            }
+        });
+        return values;
+    }
+
+    private static Map<String, Float> blendValues(Map<String, Float> from,
+                                                   Map<String, Float> to,
+                                                   float progress) {
+        Map<String, Float> values = new LinkedHashMap<>();
+        LinkedHashSet<String> keys = new LinkedHashSet<>(from.keySet());
+        keys.addAll(to.keySet());
+        for (String key : keys) {
+            float value = from.getOrDefault(key, 0.0f)
+                    + (to.getOrDefault(key, 0.0f) - from.getOrDefault(key, 0.0f)) * progress;
+            if (Math.abs(value) > .00001f) values.put(key, value);
+        }
+        return values;
+    }
+
+    private static void writeValues(Map<String, Float> values, ParameterWriter writer) {
+        for (Map.Entry<String, Float> entry : values.entrySet()) {
+            writer.add(entry.getKey(), entry.getValue());
+        }
+    }
+
     private static float duration(String name) {
         Motion motion = MOTIONS.get(name);
         return motion == null ? 2.2f : motion.duration;
@@ -390,11 +514,11 @@ final class SenPerformanceEngine {
         result.put("excited_bounce", motion(2.00f,
                 head("ParamAngleY", 0,0, .30f,5, .80f,-2, 1,3, 1.5f,-1, 2,0),
                 body("ParamBodyAngleY", 0,0, .30f,3, .80f,-5, 1,2, 1.5f,1, 2,0),
-                face("ParamEyeLSmile", 0,.18f, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
-                face("ParamEyeRSmile", 0,.18f, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
-                face("ParamMouthForm", 0,.18f, .30f,.42f, .80f,.72f, 1,.56f, 1.5f,.36f, 2,0),
-                face("ParamMouthOpenY", 0,.04f, .30f,.14f, .80f,.28f, 1,.18f, 1.5f,.1f, 2,0),
-                face("Param13", 0,.12f, .30f,.28f, .80f,.48f, 1,.36f, 1.5f,.2f, 2,0)));
+                face("ParamEyeLSmile", 0,0, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
+                face("ParamEyeRSmile", 0,0, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
+                face("ParamMouthForm", 0,0, .30f,.42f, .80f,.72f, 1,.56f, 1.5f,.36f, 2,0),
+                face("ParamMouthOpenY", 0,0, .30f,.14f, .80f,.28f, 1,.18f, 1.5f,.1f, 2,0),
+                face("Param13", 0,0, .30f,.28f, .80f,.48f, 1,.36f, 1.5f,.2f, 2,0)));
         result.put("listening", motion(2.20f,
                 head("ParamAngleZ", 0,0, .40f,6, 1.55f,6, 2.20f,0),
                 head("ParamAngleY", 0,0, .40f,2, 1.55f,2, 2.20f,0)));
@@ -525,6 +649,38 @@ final class SenPerformanceEngine {
         return new Motion(duration, tracks);
     }
 
+    private static void validateMotionLibrary() {
+        if (!MOTIONS.keySet().equals(new LinkedHashSet<>(ACTIONS))) {
+            throw new IllegalStateException("Program action list and motion library differ");
+        }
+        for (Map.Entry<String, Motion> entry : MOTIONS.entrySet()) {
+            Motion motion = entry.getValue();
+            for (Track track : motion.tracks) {
+                if (track.sampler != null) continue;
+                float[] frames = track.frames;
+                if (frames == null || frames.length < 4 || (frames.length & 1) != 0) {
+                    throw new IllegalStateException("Invalid keyframes: " + entry.getKey()
+                            + "/" + track.parameterId);
+                }
+                float previousTime = -Float.MAX_VALUE;
+                for (int i = 0; i < frames.length; i += 2) {
+                    if (frames[i] <= previousTime) {
+                        throw new IllegalStateException("Non-increasing keyframes: "
+                                + entry.getKey() + "/" + track.parameterId);
+                    }
+                    previousTime = frames[i];
+                }
+                if (Math.abs(frames[0]) > .0001f
+                        || Math.abs(frames[1]) > .0001f
+                        || Math.abs(frames[frames.length - 2] - motion.duration) > .0001f
+                        || Math.abs(frames[frames.length - 1]) > .0001f) {
+                    throw new IllegalStateException("Motion must enter/return through zero: "
+                            + entry.getKey() + "/" + track.parameterId);
+                }
+            }
+        }
+    }
+
     private static Track head(String id, float... frames) {
         return new Track(id, HEAD_GAIN, frames, null);
     }
@@ -574,17 +730,39 @@ final class SenPerformanceEngine {
             if (time <= frames[0]) return frames[1];
             for (int i = 2; i + 1 < frames.length; i += 2) {
                 if (time <= frames[i]) {
+                    int point = i / 2;
                     float t0 = frames[i - 2];
                     float v0 = frames[i - 1];
                     float t1 = frames[i];
                     float v1 = frames[i + 1];
                     float span = Math.max(.0001f, t1 - t0);
                     float p = Math.max(0.0f, Math.min(1.0f, (time - t0) / span));
-                    p = smoothStep(p);
-                    return v0 + (v1 - v0) * p;
+                    float m0 = tangent(point - 1);
+                    float m1 = tangent(point);
+                    float p2 = p * p;
+                    float p3 = p2 * p;
+                    float value = (2 * p3 - 3 * p2 + 1) * v0
+                            + (p3 - 2 * p2 + p) * span * m0
+                            + (-2 * p3 + 3 * p2) * v1
+                            + (p3 - p2) * span * m1;
+                    // Cardinal interpolation keeps velocity through internal guide points. A
+                    // small overshoot is useful for organic movement, but bound malformed data.
+                    float localMin = Math.min(v0, v1);
+                    float localMax = Math.max(v0, v1);
+                    float allowance = Math.max(.02f, (localMax - localMin) * .12f);
+                    return clamp(value, localMin - allowance, localMax + allowance);
                 }
             }
             return frames[frames.length - 1];
+        }
+
+        private float tangent(int point) {
+            int count = frames.length / 2;
+            if (point <= 0 || point >= count - 1) return 0.0f;
+            int previous = (point - 1) * 2;
+            int next = (point + 1) * 2;
+            float span = Math.max(.0001f, frames[next] - frames[previous]);
+            return .65f * (frames[next + 1] - frames[previous + 1]) / span;
         }
     }
 

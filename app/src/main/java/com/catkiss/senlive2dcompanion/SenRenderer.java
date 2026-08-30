@@ -21,7 +21,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     interface Listener {
         void onStatus(String status);
         void onReady(String detail);
-        void onAhogeRootCalibrated(String drawableId, int vertexIndex);
+        void onAhogeRootCalibrated(String drawableId, int vertexIndex,
+                                   float modelX, float modelY, float distance);
         void onError(Throwable error);
     }
 
@@ -203,7 +204,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
                         ahogeCalibrationX, ahogeCalibrationY, projection);
                 if (selection != null) {
                     listener.onAhogeRootCalibrated(
-                            selection.drawableId, selection.vertexIndex);
+                            selection.drawableId, selection.vertexIndex,
+                            selection.modelX, selection.modelY, selection.distance);
                 }
             }
             model.draw(projection);
