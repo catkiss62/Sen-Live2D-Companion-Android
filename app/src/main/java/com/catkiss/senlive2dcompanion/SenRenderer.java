@@ -49,14 +49,18 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
-                      SenVtsProfile frozenProfile) {
-        pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance, frozenProfile);
+                      SenVtsProfile frozenProfile, SenMaskMode maskMode) {
+        pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance, frozenProfile,
+                maskMode);
     }
 
     void setStageTransform(float scale, float translateX, float translateY) {
         stageScale = Math.max(0.35f, Math.min(6.0f, scale));
-        stageTranslateX = Math.max(-4.0f, Math.min(4.0f, translateX));
-        stageTranslateY = Math.max(-4.0f, Math.min(4.0f, translateY));
+        // Keep at least part of the model inside the viewport at every zoom level. The previous
+        // fixed +/-4 range allowed a small model to be moved completely outside the clip volume.
+        float translationLimit = 0.9f + 0.5f * stageScale;
+        stageTranslateX = Math.max(-translationLimit, Math.min(translationLimit, translateX));
+        stageTranslateY = Math.max(-translationLimit, Math.min(translationLimit, translateY));
     }
 
     void applyExpression(String name) {
@@ -168,7 +172,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             model = next;
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
                     listener, request.startupExpressions, request.appearance,
-                    request.frozenProfile);
+                    request.frozenProfile, request.maskMode);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();
@@ -195,13 +199,15 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         final List<String> startupExpressions;
         final SenVtsAppearance appearance;
         final SenVtsProfile frozenProfile;
+        final SenMaskMode maskMode;
 
         ModelRequest(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
-                     SenVtsProfile frozenProfile) {
+                     SenVtsProfile frozenProfile, SenMaskMode maskMode) {
             this.modelFile = modelFile;
             this.startupExpressions = new ArrayList<>(startupExpressions);
             this.appearance = appearance;
             this.frozenProfile = frozenProfile;
+            this.maskMode = maskMode;
         }
     }
 }

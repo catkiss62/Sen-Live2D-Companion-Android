@@ -15,9 +15,12 @@ import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 final class SenLive2DModel extends CubismUserModel {
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
@@ -25,10 +28,12 @@ final class SenLive2DModel extends CubismUserModel {
     private File homeDirectory;
     private String appearanceDetail = "";
     private boolean frozenSnapshot;
+    private SenMaskMode maskMode = SenMaskMode.DYNAMIC_MULTI;
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
-              SenVtsAppearance appearance, SenVtsProfile frozenProfile) throws IOException {
+              SenVtsAppearance appearance, SenVtsProfile frozenProfile,
+              SenMaskMode requestedMaskMode) throws IOException {
         homeDirectory = modelFile.getParentFile();
         if (homeDirectory == null) throw new IOException("model3 所在目录无效");
 
@@ -74,8 +79,11 @@ final class SenLive2DModel extends CubismUserModel {
             updateScheduler.sortUpdatableList();
         }
 
-        listener.onStatus("原生渲染：正在创建 OpenGL 渲染器…");
-        setupRenderer(CubismRendererAndroid.create(width, height));
+        maskMode = requestedMaskMode == null
+                ? SenMaskMode.DYNAMIC_MULTI : requestedMaskMode;
+        listener.onStatus("原生渲染：正在创建 OpenGL 渲染器…\n蒙版模式："
+                + maskMode.displayName());
+        setupNativeRenderer(width, height);
         setupTextures(textures, listener);
 
         if (!frozenSnapshot) {
@@ -86,7 +94,7 @@ final class SenLive2DModel extends CubismUserModel {
     void reloadRenderer(int width, int height, NativeTextureManager textures,
                         SenRenderer.Listener listener) throws IOException {
         deleteRenderer();
-        setupRenderer(CubismRendererAndroid.create(width, height));
+        setupNativeRenderer(width, height);
         setupTextures(textures, listener);
     }
 
@@ -231,6 +239,80 @@ final class SenLive2DModel extends CubismUserModel {
     private void appendAppearanceDetail(String detail) {
         if (detail == null || detail.isEmpty()) return;
         appearanceDetail = appearanceDetail.isEmpty() ? detail : appearanceDetail + " · " + detail;
+    }
+
+    private void setupNativeRenderer(int width, int height) {
+        MaskStats stats = inspectMasks();
+        int requestedBuffers = maskMode == SenMaskMode.DEFAULT_SINGLE
+                ? 1 : calculateDynamicBufferCount(stats);
+
+        CubismRendererAndroid nativeRenderer = CubismRendererAndroid.create(width, height);
+        setupRenderer(nativeRenderer, requestedBuffers);
+        if (maskMode == SenMaskMode.HIGH_PRECISION) {
+            nativeRenderer.isUsingHighPrecisionMask(true);
+        }
+
+        int drawableBuffers = stats.drawableGroups == 0
+                ? 0 : nativeRenderer.getDrawableRenderTextureCount();
+        int offscreenBuffers = stats.offscreenGroups == 0
+                ? 0 : nativeRenderer.getOffscreenRenderTextureCount();
+        appendAppearanceDetail("蒙版" + maskMode.code
+                + " · Drawable组 " + stats.drawableGroups
+                + "/对象 " + stats.maskedDrawables
+                + " · Offscreen组 " + stats.offscreenGroups
+                + "/对象 " + stats.maskedOffscreens
+                + " · 缓冲 D" + drawableBuffers + "/O" + offscreenBuffers
+                + " · 高精度 " + (nativeRenderer.isUsingHighPrecisionMask() ? "开" : "关")
+                + " · Blend " + (model.isBlendModeEnabled() ? "有" : "无")
+                + " · Offscreen总数 " + model.getOffscreenCount());
+    }
+
+    private MaskStats inspectMasks() {
+        MaskStats drawable = countUniqueMaskGroups(
+                model.getDrawableMasks(), model.getDrawableMaskCounts(), model.getDrawableCount());
+        MaskStats offscreen = countUniqueMaskGroups(
+                model.getOffscreenMasks(), model.getOffscreenMaskCounts(), model.getOffscreenCount());
+        return new MaskStats(drawable.drawableGroups, drawable.maskedDrawables,
+                offscreen.drawableGroups, offscreen.maskedDrawables);
+    }
+
+    private static MaskStats countUniqueMaskGroups(int[][] masks, int[] counts, int objectCount) {
+        Set<String> unique = new HashSet<>();
+        int maskedObjects = 0;
+        int safeCount = Math.min(objectCount,
+                Math.min(masks == null ? 0 : masks.length, counts == null ? 0 : counts.length));
+        for (int i = 0; i < safeCount; i++) {
+            int count = Math.min(Math.max(0, counts[i]), masks[i] == null ? 0 : masks[i].length);
+            if (count == 0) continue;
+            maskedObjects++;
+            int[] canonical = Arrays.copyOf(masks[i], count);
+            Arrays.sort(canonical);
+            unique.add(Arrays.toString(canonical));
+        }
+        return new MaskStats(unique.size(), maskedObjects, 0, 0);
+    }
+
+    private static int calculateDynamicBufferCount(MaskStats stats) {
+        int groups = Math.max(stats.drawableGroups, stats.offscreenGroups);
+        if (groups <= 36) return 1;
+        // With two or more render textures the official Framework lays out up to 32 contexts
+        // per texture. 64 is a safety ceiling for malformed or hostile imported models.
+        return Math.min(64, Math.max(2, (groups + 31) / 32));
+    }
+
+    private static final class MaskStats {
+        final int drawableGroups;
+        final int maskedDrawables;
+        final int offscreenGroups;
+        final int maskedOffscreens;
+
+        MaskStats(int drawableGroups, int maskedDrawables,
+                  int offscreenGroups, int maskedOffscreens) {
+            this.drawableGroups = drawableGroups;
+            this.maskedDrawables = maskedDrawables;
+            this.offscreenGroups = offscreenGroups;
+            this.maskedOffscreens = maskedOffscreens;
+        }
     }
 
     private void setupTextures(NativeTextureManager textures,

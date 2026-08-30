@@ -69,6 +69,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private TextView loadingText;
     private boolean applyVtsPreset = true;
     private boolean freezeVtsSnapshot = true;
+    private SenMaskMode maskMode = SenMaskMode.DYNAMIC_MULTI;
     private boolean adjustmentEnabled;
     private float stageScale = 1.0f;
     private float stageTranslateX;
@@ -78,6 +79,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private ScaleGestureDetector scaleGestureDetector;
     private Button adjustmentButton;
     private long nativeLoadStartedAt;
+    private String rendererDetail = "";
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(), this::onModelZipPicked);
@@ -89,6 +91,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        maskMode = SenMaskMode.fromPreference(prefs.getString("mask_mode", null));
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
         appearanceExpressionFile = new File(getFilesDir(), "xiaojingyu.exp3.json");
@@ -134,7 +137,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.3.2 · VTS静态冻结对照");
+        statusText.setText("v0.3.3 · Cubism蒙版A/B/C诊断");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -219,6 +222,22 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         memoryNote.setPadding(dp(3), dp(3), 0, dp(3));
         panel.addView(memoryNote);
 
+        TextView maskHeading = new TextView(this);
+        maskHeading.setText("底层蒙版模式（只改变渲染策略；每次会重载大模型）");
+        maskHeading.setTextColor(Color.rgb(238, 207, 255));
+        maskHeading.setTextSize(11);
+        maskHeading.setPadding(dp(3), dp(4), 0, 0);
+        panel.addView(maskHeading);
+
+        LinearLayout maskControls = new LinearLayout(this);
+        maskControls.setOrientation(LinearLayout.HORIZONTAL);
+        for (SenMaskMode option : SenMaskMode.values()) {
+            Button button = panelButton(option.displayName());
+            button.setOnClickListener(v -> selectMaskMode(option));
+            maskControls.addView(button, weightedButtonParams());
+        }
+        panel.addView(maskControls);
+
         LinearLayout adjustmentControls = new LinearLayout(this);
         adjustmentControls.setOrientation(LinearLayout.HORIZONTAL);
         adjustmentButton = panelButton("调整模型：关闭");
@@ -261,8 +280,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     @Override
                     public boolean onScale(ScaleGestureDetector detector) {
                         if (!adjustmentEnabled) return false;
-                        stageScale = Math.max(0.35f,
-                                Math.min(6.0f, stageScale * detector.getScaleFactor()));
+                        float oldScale = stageScale;
+                        float newScale = Math.max(0.35f,
+                                Math.min(6.0f, oldScale * detector.getScaleFactor()));
+                        if (Math.abs(newScale - oldScale) < 0.0001f) return true;
+
+                        int width = Math.max(1, glSurfaceView.getWidth());
+                        int height = Math.max(1, glSurfaceView.getHeight());
+                        float focusX = detector.getFocusX() * 2.0f / width - 1.0f;
+                        float focusY = 1.0f - detector.getFocusY() * 2.0f / height;
+                        float ratio = newScale / oldScale;
+                        stageTranslateX = focusX - (focusX - stageTranslateX) * ratio;
+                        stageTranslateY = focusY - (focusY - stageTranslateY) * ratio;
+                        stageScale = newScale;
+                        clampStageTranslation();
                         applyStageTransform();
                         return true;
                     }
@@ -272,9 +303,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             scaleGestureDetector.onTouchEvent(event);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                case MotionEvent.ACTION_POINTER_UP:
                     lastTouchX = event.getX();
                     lastTouchY = event.getY();
+                    break;
+                case MotionEvent.ACTION_POINTER_UP:
+                    int lifted = event.getActionIndex();
+                    int remaining = lifted == 0 ? 1 : 0;
+                    if (remaining < event.getPointerCount()) {
+                        lastTouchX = event.getX(remaining);
+                        lastTouchY = event.getY(remaining);
+                    }
                     break;
                 case MotionEvent.ACTION_MOVE:
                     if (event.getPointerCount() == 1 && !scaleGestureDetector.isInProgress()) {
@@ -284,6 +322,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                         int height = Math.max(1, view.getHeight());
                         stageTranslateX += dx * 2.0f / width;
                         stageTranslateY -= dy * 2.0f / height;
+                        clampStageTranslation();
                         lastTouchX = event.getX();
                         lastTouchY = event.getY();
                         applyStageTransform();
@@ -300,6 +339,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (renderer != null) {
             renderer.setStageTransform(stageScale, stageTranslateX, stageTranslateY);
         }
+    }
+
+    private void clampStageTranslation() {
+        float limit = 0.9f + 0.5f * stageScale;
+        stageTranslateX = Math.max(-limit, Math.min(limit, stageTranslateX));
+        stageTranslateY = Math.max(-limit, Math.min(limit, stageTranslateY));
+    }
+
+    private void selectMaskMode(SenMaskMode selected) {
+        if (selected == null) return;
+        maskMode = selected;
+        prefs.edit().putString("mask_mode", selected.name()).apply();
+        updateSummary();
+        toastLong("切换到 " + selected.displayName() + "，正在重载同一模型");
+        loadNativeModel();
     }
 
     private void resetStageTransform() {
@@ -512,8 +566,11 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         SenVtsAppearance selectedAppearance = appearance;
         SenVtsProfile selectedFrozenProfile = frozenProfile;
+        SenMaskMode selectedMaskMode = maskMode;
+        rendererDetail = "";
+        updateSummary();
         glSurfaceView.queueEvent(() -> renderer.requestModel(
-                modelFile, startup, selectedAppearance, selectedFrozenProfile));
+                modelFile, startup, selectedAppearance, selectedFrozenProfile, selectedMaskMode));
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -677,6 +734,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "尚未导入 Sen.vts-profile.json、xiaojingyu.exp3.json 与当前 .vtube.json");
         summaryText.setText(diagnostics
                 + "\n" + appearance
+                + "\n当前蒙版：" + maskMode.displayName()
+                + (rendererDetail.isEmpty() ? "" : "\n渲染实测：" + rendererDetail)
                 + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
     }
 
@@ -695,10 +754,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         runOnUiThread(() -> {
             hideLoading();
             long elapsed = Math.max(0L, SystemClock.elapsedRealtime() - nativeLoadStartedAt);
+            rendererDetail = detail == null ? "" : detail;
+            updateSummary();
             setStatus(detail + " · "
                     + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
             toastLong(freezeVtsSnapshot
-                    ? "VTS冻结状态已加载：请检查白块、刘海、嘴、手指和丝袜"
+                    ? maskMode.displayName() + " 已加载：请检查白块、刘海、嘴、手指、丝袜和耳朵"
                     : "Sen 已加载，请检查颜色、头发、眼睛和部件状态");
         });
     }
