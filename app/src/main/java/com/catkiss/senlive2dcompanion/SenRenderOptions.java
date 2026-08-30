@@ -11,6 +11,9 @@ final class SenRenderOptions {
     final float ahogeRotationDegrees;
     final float ahogeOffsetX;
     final float ahogeOffsetY;
+    final float ahogeRootFollowPercent;
+    final float ahogeRootRotationPercent;
+    final float ahogeLocalMotionPercent;
     final boolean tailMirrored;
     final boolean autoIdleEnabled;
 
@@ -20,6 +23,8 @@ final class SenRenderOptions {
                      float ahogeScalePercent, float ahogeWidthPercent,
                      float ahogeRotationDegrees,
                      float ahogeOffsetX, float ahogeOffsetY,
+                     float ahogeRootFollowPercent, float ahogeRootRotationPercent,
+                     float ahogeLocalMotionPercent,
                      boolean tailMirrored, boolean autoIdleEnabled) {
         this.maskMode = maskMode == null ? SenMaskMode.HIGH_PRECISION : maskMode;
         this.highPrecisionMaskSize = normalizeMaskSize(highPrecisionMaskSize);
@@ -34,6 +39,9 @@ final class SenRenderOptions {
         this.ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f, ahogeRotationDegrees));
         this.ahogeOffsetX = Math.max(-100.0f, Math.min(100.0f, ahogeOffsetX));
         this.ahogeOffsetY = Math.max(-100.0f, Math.min(100.0f, ahogeOffsetY));
+        this.ahogeRootFollowPercent = clampPercent(ahogeRootFollowPercent);
+        this.ahogeRootRotationPercent = clampPercent(ahogeRootRotationPercent);
+        this.ahogeLocalMotionPercent = clampPercent(ahogeLocalMotionPercent);
         this.tailMirrored = tailMirrored;
         this.autoIdleEnabled = autoIdleEnabled;
     }
@@ -47,7 +55,24 @@ final class SenRenderOptions {
         return new SenRenderOptions(maskMode, highPrecisionMaskSize,
                 earEnabled, earDegrees, earOffset,
                 ahogeScale, ahogeWidth, ahogeRotation, ahogeX, ahogeY,
+                ahogeRootFollowPercent, ahogeRootRotationPercent,
+                ahogeLocalMotionPercent,
                 mirrorTail, autoIdleEnabled);
+    }
+
+    SenRenderOptions withAhogeMotion(float rootFollowPercent,
+                                     float rootRotationPercent,
+                                     float localMotionPercent) {
+        return new SenRenderOptions(maskMode, highPrecisionMaskSize,
+                earAngleOverrideEnabled, earAngleDegrees, earVerticalOffset,
+                ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
+                ahogeOffsetX, ahogeOffsetY,
+                rootFollowPercent, rootRotationPercent, localMotionPercent,
+                tailMirrored, autoIdleEnabled);
+    }
+
+    private static float clampPercent(float value) {
+        return Math.max(0.0f, Math.min(100.0f, value));
     }
 
     private static int normalizeMaskSize(int size) {

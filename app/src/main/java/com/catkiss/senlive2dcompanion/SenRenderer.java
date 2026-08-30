@@ -142,6 +142,14 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         }
     }
 
+    void setAhogeMotionTuning(float rootFollowPercent, float rootRotationPercent,
+                              float localMotionPercent) {
+        if (model != null) {
+            model.setAhogeMotionTuning(
+                    rootFollowPercent, rootRotationPercent, localMotionPercent);
+        }
+    }
+
     @Override
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
         try {

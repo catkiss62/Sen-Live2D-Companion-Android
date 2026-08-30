@@ -49,19 +49,23 @@ import java.util.zip.ZipInputStream;
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int AHOGE_CONFIRMED_PRESET_VERSION = 3;
+    private static final int AHOGE_MOTION_PRESET_VERSION = 1;
     private static final int EAR_CONFIRMED_PRESET_VERSION = 1;
-    private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 2;
+    private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
     private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
     private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
     private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
     private static final float CONFIRMED_AHOGE_X = -16.0f;
     private static final float CONFIRMED_AHOGE_Y = 70.0f;
+    private static final float DEFAULT_AHOGE_ROOT_FOLLOW = 50.0f;
+    private static final float DEFAULT_AHOGE_ROOT_ROTATION = 50.0f;
+    private static final float DEFAULT_AHOGE_LOCAL_MOTION = 50.0f;
     private static final float DEFAULT_EAR_SPEED_PERCENT = 135.0f;
     private static final float DEFAULT_EAR_AMPLITUDE_PERCENT = 100.0f;
-    private static final float DEFAULT_HEAD_ZONE_LEFT = .3875f;
-    private static final float DEFAULT_HEAD_ZONE_TOP = .2813f;
-    private static final float DEFAULT_HEAD_ZONE_RIGHT = .6234f;
-    private static final float DEFAULT_HEAD_ZONE_BOTTOM = .3778f;
+    private static final float DEFAULT_HEAD_ZONE_LEFT = .4927f;
+    private static final float DEFAULT_HEAD_ZONE_TOP = .0482f;
+    private static final float DEFAULT_HEAD_ZONE_RIGHT = .7095f;
+    private static final float DEFAULT_HEAD_ZONE_BOTTOM = .1088f;
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
 
@@ -93,6 +97,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float ahogeRotationDegrees;
     private float ahogeOffsetX;
     private float ahogeOffsetY;
+    private float ahogeRootFollowPercent;
+    private float ahogeRootRotationPercent;
+    private float ahogeLocalMotionPercent;
     private boolean tailMirrored;
     private boolean adjustmentEnabled;
     private float stageScale = 1.0f;
@@ -106,6 +113,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SeekBar earSpeedSeekBar;
     private TextView earAmplitudeStatus;
     private SeekBar earAmplitudeSeekBar;
+    private TextView ahogeRootFollowStatus;
+    private SeekBar ahogeRootFollowSeekBar;
+    private TextView ahogeRootRotationStatus;
+    private SeekBar ahogeRootRotationSeekBar;
+    private TextView ahogeLocalMotionStatus;
+    private SeekBar ahogeLocalMotionSeekBar;
     private Button autoIdleButton;
     private Button touchFollowButton;
     private boolean autoIdleEnabled;
@@ -180,6 +193,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
         ahogeOffsetX = CONFIRMED_AHOGE_X;
         ahogeOffsetY = CONFIRMED_AHOGE_Y;
+        if (prefs.getInt("ahoge_motion_preset_version", 0)
+                < AHOGE_MOTION_PRESET_VERSION) {
+            prefs.edit()
+                    .putInt("ahoge_motion_preset_version", AHOGE_MOTION_PRESET_VERSION)
+                    .putFloat("ahoge_root_follow_percent", DEFAULT_AHOGE_ROOT_FOLLOW)
+                    .putFloat("ahoge_root_rotation_percent", DEFAULT_AHOGE_ROOT_ROTATION)
+                    .putFloat("ahoge_local_motion_percent", DEFAULT_AHOGE_LOCAL_MOTION)
+                    .apply();
+        }
+        ahogeRootFollowPercent = clampPercent(prefs.getFloat(
+                "ahoge_root_follow_percent", DEFAULT_AHOGE_ROOT_FOLLOW));
+        ahogeRootRotationPercent = clampPercent(prefs.getFloat(
+                "ahoge_root_rotation_percent", DEFAULT_AHOGE_ROOT_ROTATION));
+        ahogeLocalMotionPercent = clampPercent(prefs.getFloat(
+                "ahoge_local_motion_percent", DEFAULT_AHOGE_LOCAL_MOTION));
         tailMirrored = true;
         prefs.edit().putBoolean("tail_mirrored", true)
                 .remove("ahoge_root_drawable_id").remove("ahoge_root_vertex_index")
@@ -252,7 +280,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.5 · 模型局部摸头与原生呆毛变形修正版");
+        statusText.setText("v0.4.6 · 呆毛三项运动幅度与模型局部摸头确认版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -470,8 +498,75 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(ahogeHeading);
 
         TextView ahogeNote = adjustmentStatusText();
-        ahogeNote.setText("位置、大小和角度固定；保留模型原生头发物理，只在原生更新后围绕呆毛自身固定发根施加外观变换，不再绑定任何外部头发、兔耳或尾巴网格。");
+        ahogeNote.setText("位置、大小和角度固定。下面三项只缩放呆毛原生运动贡献，不寻找或绑定外部头发、兔耳、尾巴网格；全部0%可测试完全固定，全部100%等价于v0.4.5。");
         panel.addView(ahogeNote);
+
+        ahogeRootFollowStatus = adjustmentStatusText();
+        panel.addView(ahogeRootFollowStatus);
+        ahogeRootFollowSeekBar = new SeekBar(this);
+        ahogeRootFollowSeekBar.setMax(100);
+        ahogeRootFollowSeekBar.setProgress(Math.round(ahogeRootFollowPercent));
+        ahogeRootFollowSeekBar.setOnSeekBarChangeListener(
+                new SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(
+                            SeekBar seekBar, int progress, boolean fromUser) {
+                        if (!fromUser) return;
+                        ahogeRootFollowPercent = progress;
+                        applyAhogeMotionTuning(false);
+                    }
+                    @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+                    @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                        applyAhogeMotionTuning(true);
+                    }
+                });
+        panel.addView(ahogeRootFollowSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        ahogeRootRotationStatus = adjustmentStatusText();
+        panel.addView(ahogeRootRotationStatus);
+        ahogeRootRotationSeekBar = new SeekBar(this);
+        ahogeRootRotationSeekBar.setMax(100);
+        ahogeRootRotationSeekBar.setProgress(Math.round(ahogeRootRotationPercent));
+        ahogeRootRotationSeekBar.setOnSeekBarChangeListener(
+                new SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(
+                            SeekBar seekBar, int progress, boolean fromUser) {
+                        if (!fromUser) return;
+                        ahogeRootRotationPercent = progress;
+                        applyAhogeMotionTuning(false);
+                    }
+                    @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+                    @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                        applyAhogeMotionTuning(true);
+                    }
+                });
+        panel.addView(ahogeRootRotationSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        ahogeLocalMotionStatus = adjustmentStatusText();
+        panel.addView(ahogeLocalMotionStatus);
+        ahogeLocalMotionSeekBar = new SeekBar(this);
+        ahogeLocalMotionSeekBar.setMax(100);
+        ahogeLocalMotionSeekBar.setProgress(Math.round(ahogeLocalMotionPercent));
+        ahogeLocalMotionSeekBar.setOnSeekBarChangeListener(
+                new SeekBar.OnSeekBarChangeListener() {
+                    @Override public void onProgressChanged(
+                            SeekBar seekBar, int progress, boolean fromUser) {
+                        if (!fromUser) return;
+                        ahogeLocalMotionPercent = progress;
+                        applyAhogeMotionTuning(false);
+                    }
+                    @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+                    @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                        applyAhogeMotionTuning(true);
+                    }
+                });
+        panel.addView(ahogeLocalMotionSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        Button ahogeMotionResetButton = panelButton("还原呆毛运动试调初值 50/50/50");
+        ahogeMotionResetButton.setOnClickListener(v -> resetAhogeMotionTuning());
+        panel.addView(ahogeMotionResetButton);
         Button ahogeResetButton = panelButton("还原确认的呆毛预设");
         ahogeResetButton.setOnClickListener(v -> resetAhogeTransform());
         panel.addView(ahogeResetButton);
@@ -775,7 +870,44 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         ahogeOffsetX = CONFIRMED_AHOGE_X;
         ahogeOffsetY = CONFIRMED_AHOGE_Y;
         persistAndApplyCustomization();
-        toastLong("呆毛已恢复固定预设 56/83/-49/-16/+70 与头发整体九轴支撑");
+        toastLong("呆毛外观已恢复固定预设 56/83/-49/-16/+70；三项运动幅度保持不变");
+    }
+
+    private void resetAhogeMotionTuning() {
+        ahogeRootFollowPercent = DEFAULT_AHOGE_ROOT_FOLLOW;
+        ahogeRootRotationPercent = DEFAULT_AHOGE_ROOT_ROTATION;
+        ahogeLocalMotionPercent = DEFAULT_AHOGE_LOCAL_MOTION;
+        if (ahogeRootFollowSeekBar != null) {
+            ahogeRootFollowSeekBar.setProgress(Math.round(ahogeRootFollowPercent));
+        }
+        if (ahogeRootRotationSeekBar != null) {
+            ahogeRootRotationSeekBar.setProgress(Math.round(ahogeRootRotationPercent));
+        }
+        if (ahogeLocalMotionSeekBar != null) {
+            ahogeLocalMotionSeekBar.setProgress(Math.round(ahogeLocalMotionPercent));
+        }
+        applyAhogeMotionTuning(true);
+        toastLong("呆毛运动已恢复试调初值：位移50% / 旋转50% / 柔性50%");
+    }
+
+    private void applyAhogeMotionTuning(boolean persist) {
+        ahogeRootFollowPercent = clampPercent(ahogeRootFollowPercent);
+        ahogeRootRotationPercent = clampPercent(ahogeRootRotationPercent);
+        ahogeLocalMotionPercent = clampPercent(ahogeLocalMotionPercent);
+        if (persist) {
+            prefs.edit()
+                    .putFloat("ahoge_root_follow_percent", ahogeRootFollowPercent)
+                    .putFloat("ahoge_root_rotation_percent", ahogeRootRotationPercent)
+                    .putFloat("ahoge_local_motion_percent", ahogeLocalMotionPercent)
+                    .apply();
+        }
+        updateCustomizationControls();
+        if (glSurfaceView != null && renderer != null) {
+            glSurfaceView.queueEvent(() -> renderer.setAhogeMotionTuning(
+                    ahogeRootFollowPercent, ahogeRootRotationPercent,
+                    ahogeLocalMotionPercent));
+        }
+        updateSummary();
     }
 
     private void persistAndApplyCustomization() {
@@ -816,6 +948,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (earAmplitudeStatus != null) {
             earAmplitudeStatus.setText(String.format(java.util.Locale.ROOT,
                     "兔耳幅度：%.0f%%（50%%～250%%）", earAmplitudePercent));
+        }
+        if (ahogeRootFollowStatus != null) {
+            ahogeRootFollowStatus.setText(String.format(java.util.Locale.ROOT,
+                    "呆毛根部位移跟随：%.0f%%（0%%=不跟头部位移，100%%=v0.4.5）",
+                    ahogeRootFollowPercent));
+        }
+        if (ahogeRootRotationStatus != null) {
+            ahogeRootRotationStatus.setText(String.format(java.util.Locale.ROOT,
+                    "呆毛根部旋转跟随：%.0f%%（0%%=不随头部旋转，100%%=v0.4.5）",
+                    ahogeRootRotationPercent));
+        }
+        if (ahogeLocalMotionStatus != null) {
+            ahogeLocalMotionStatus.setText(String.format(java.util.Locale.ROOT,
+                    "呆毛局部柔性/抖动：%.0f%%（0%%=刚性形状，100%%=原生幅度）",
+                    ahogeLocalMotionPercent));
         }
         if (autoIdleButton != null) {
             autoIdleButton.setText(autoIdleEnabled
@@ -896,7 +1043,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         resetHeadZoneValues();
         persistHeadZone();
         updateHeadZoneStatus();
-        toastLong("摸头范围已恢复确认值 0.3875/0.2813/0.6234/0.3778");
+        toastLong("摸头范围已恢复模型局部确认值 0.4927/0.0482/0.7095/0.1088");
     }
 
     private void resetHeadZoneValues() {
@@ -938,6 +1085,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
     private static float clamp01(float value) {
         return Math.max(0.0f, Math.min(1.0f, value));
+    }
+
+    private static float clampPercent(float value) {
+        return Math.max(0.0f, Math.min(100.0f, value));
     }
 
     private void resetStageTransform() {
@@ -1157,6 +1308,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 false, 0.0f, 0.0f,
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY,
+                ahogeRootFollowPercent, ahogeRootRotationPercent,
+                ahogeLocalMotionPercent,
                 true, autoIdleEnabled);
         rendererDetail = "";
         updateSummary();
@@ -1333,7 +1486,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 " · 呆毛：高%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY)
-                + " · 呆毛：原生物理后按自身发根变换"
+                + String.format(java.util.Locale.ROOT,
+                " · 呆毛运动：位移%.0f%%/旋转%.0f%%/柔性%.0f%%",
+                ahogeRootFollowPercent, ahogeRootRotationPercent,
+                ahogeLocalMotionPercent)
                 + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")

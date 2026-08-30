@@ -73,7 +73,8 @@ final class SenLive2DModel extends CubismUserModel {
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
-            100.0f, 100.0f, 0.0f, 0.0f, 0.0f, false, false);
+            100.0f, 100.0f, 0.0f, 0.0f, 0.0f,
+            50.0f, 50.0f, 50.0f, false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -175,6 +176,16 @@ final class SenLive2DModel extends CubismUserModel {
                 false, 0.0f, 0.0f,
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY, tailMirrored);
+        if (model == null) return;
+        model.loadParameters();
+        model.update();
+        applyRuntimeGeometry();
+    }
+
+    void setAhogeMotionTuning(float rootFollowPercent, float rootRotationPercent,
+                              float localMotionPercent) {
+        renderOptions = renderOptions.withAhogeMotion(
+                rootFollowPercent, rootRotationPercent, localMotionPercent);
         if (model == null) return;
         model.loadParameters();
         model.update();
@@ -620,8 +631,25 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     private void applyAhogeHairRig(Set<Integer> candidates) {
-        SimilarityTransform rootTransform = estimateAhogeRootTransform();
-        if (rootTransform == null) return;
+        SimilarityTransform rawRootTransform = estimateAhogeRootTransform();
+        if (rawRootTransform == null) return;
+
+        float rootFollow = renderOptions.ahogeRootFollowPercent / 100.0f;
+        float rootRotation = renderOptions.ahogeRootRotationPercent / 100.0f;
+        float localMotion = renderOptions.ahogeLocalMotionPercent / 100.0f;
+        float rawRootAngle = (float) Math.atan2(rawRootTransform.b, rawRootTransform.a);
+        float adjustedRootAngle = rawRootAngle * rootRotation;
+        float adjustedRootCos = (float) Math.cos(adjustedRootAngle);
+        float adjustedRootSin = (float) Math.sin(adjustedRootAngle);
+        SimilarityTransform adjustedRootTransform = new SimilarityTransform(
+                rawRootTransform.referenceCenterX, rawRootTransform.referenceCenterY,
+                rawRootTransform.referenceCenterX
+                        + (rawRootTransform.currentCenterX
+                        - rawRootTransform.referenceCenterX) * rootFollow,
+                rawRootTransform.referenceCenterY
+                        + (rawRootTransform.currentCenterY
+                        - rawRootTransform.referenceCenterY) * rootFollow,
+                adjustedRootCos, adjustedRootSin);
 
         float scale = renderOptions.ahogeScalePercent / 100.0f;
         float widthScale = renderOptions.ahogeWidthPercent / 100.0f;
@@ -630,16 +658,34 @@ final class SenLive2DModel extends CubismUserModel {
         float sin = (float) Math.sin(radians);
         float offsetX = getCanvasWidth() * renderOptions.ahogeOffsetX / 1000.0f;
         float offsetY = getCanvasHeight() * renderOptions.ahogeOffsetY / 1000.0f;
-        float currentAnchorX = rootTransform.mapX(
+        float currentAnchorX = adjustedRootTransform.mapX(
                 ahogeReferenceAnchorX, ahogeReferenceAnchorY);
-        float currentAnchorY = rootTransform.mapY(
+        float currentAnchorY = adjustedRootTransform.mapY(
                 ahogeReferenceAnchorX, ahogeReferenceAnchorY);
         for (int index : candidates) {
             if (!isDrawableVisible(index)) continue;
             float[] current = model.getDrawableVertices(index);
+            float[] reference = ahogeReferenceVertices.get(index);
+            if (reference == null || reference.length != current.length) continue;
             for (int i = 0; i + 1 < current.length; i += 2) {
-                float dx = (current[i] - currentAnchorX) * scale * widthScale;
-                float dy = (current[i + 1] - currentAnchorY) * scale;
+                // Separate the native result into three independently testable pieces:
+                // root translation, root rotation and residual/local flex.  Inverting the raw
+                // root transform before blending local flex prevents a reduced root setting
+                // from leaking back in through the current vertex coordinates.
+                float rawDx = current[i] - rawRootTransform.currentCenterX;
+                float rawDy = current[i + 1] - rawRootTransform.currentCenterY;
+                float nativeLocalX = rawRootTransform.referenceCenterX
+                        + rawRootTransform.a * rawDx + rawRootTransform.b * rawDy;
+                float nativeLocalY = rawRootTransform.referenceCenterY
+                        - rawRootTransform.b * rawDx + rawRootTransform.a * rawDy;
+                float blendedLocalX = reference[i]
+                        + (nativeLocalX - reference[i]) * localMotion;
+                float blendedLocalY = reference[i + 1]
+                        + (nativeLocalY - reference[i + 1]) * localMotion;
+                float tunedX = adjustedRootTransform.mapX(blendedLocalX, blendedLocalY);
+                float tunedY = adjustedRootTransform.mapY(blendedLocalX, blendedLocalY);
+                float dx = (tunedX - currentAnchorX) * scale * widthScale;
+                float dy = (tunedY - currentAnchorY) * scale;
                 current[i] = currentAnchorX + dx * cos - dy * sin + offsetX;
                 current[i + 1] = currentAnchorY + dx * sin + dy * cos + offsetY;
             }
