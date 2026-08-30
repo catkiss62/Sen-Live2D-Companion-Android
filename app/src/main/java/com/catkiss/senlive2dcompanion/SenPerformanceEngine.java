@@ -2,8 +2,10 @@ package com.catkiss.senlive2dcompanion;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -12,6 +14,10 @@ import java.util.Random;
  * VTS base, then this class adds only face/body performance offsets before native physics.
  */
 final class SenPerformanceEngine {
+    private static final float HEAD_GAIN = 1.35f;
+    private static final float BODY_GAIN = 1.20f;
+    private static final Map<String, Motion> MOTIONS = createMotions();
+
     interface ParameterWriter {
         void add(String id, float value);
         void set(String id, float value);
@@ -75,6 +81,10 @@ final class SenPerformanceEngine {
         return action == null ? "none" : action;
     }
 
+    boolean isActionActive() {
+        return action != null;
+    }
+
     void update(float deltaSeconds, ParameterWriter writer) {
         float dt = Math.max(0.0f, Math.min(0.05f, deltaSeconds));
         elapsed += dt;
@@ -99,18 +109,18 @@ final class SenPerformanceEngine {
         if (earTwitchTime >= 0.0f) earTwitchTime += dt;
     }
 
-    /** A two-pulse signal sampled by native ear physics and then removed before final drawing. */
-    float getEarPhysicsImpulse() {
+    /** Two short copies of the slow-blink physics input, sampled before native physics. */
+    float getEarPhysicsDrive() {
         if (earTwitchTime < 0.0f) return 0.0f;
-        if (earTwitchTime >= 0.72f) {
+        if (earTwitchTime >= 0.58f) {
             earTwitchTime = -1.0f;
             return 0.0f;
         }
-        float phase = earTwitchTime < 0.30f
-                ? earTwitchTime / 0.30f
-                : (earTwitchTime - 0.38f) / 0.30f;
+        float phase = earTwitchTime < 0.23f
+                ? earTwitchTime / 0.23f
+                : (earTwitchTime - 0.31f) / 0.23f;
         if (phase < 0.0f || phase > 1.0f) return 0.0f;
-        return (float) Math.sin(Math.PI * phase);
+        return (float) Math.pow(Math.sin(Math.PI * phase), 2.0);
     }
 
     float getBreathValue() {
@@ -186,78 +196,241 @@ final class SenPerformanceEngine {
     }
 
     private static void applyAction(String name, float t, ParameterWriter writer) {
-        float d = duration(name);
-        float p = Math.min(1.0f, t / d);
-        float envelope = (float) Math.sin(Math.PI * p);
-        float wave1 = (float) Math.sin(Math.PI * 2.0f * p);
-        float wave2 = (float) Math.sin(Math.PI * 4.0f * p);
-        switch (name) {
-            case "nod": writer.add("ParamAngleY", -16.0f * envelope * envelope); break;
-            case "small_nod": writer.add("ParamAngleY", -8.0f * envelope * envelope); break;
-            case "shake_head": writer.add("ParamAngleX", 16.0f * wave2 * envelope); break;
-            case "tilt_head": writer.add("ParamAngleZ", 13.0f * envelope); break;
-            case "head_tilt_idle": writer.add("ParamAngleZ", -9.0f * envelope); break;
-            case "lean_forward": writer.add("ParamAngleY", -10.0f * envelope);
-                writer.add("ParamBodyAngleY", -6.0f * envelope); break;
-            case "lean_back": writer.add("ParamAngleY", 11.0f * envelope);
-                writer.add("ParamBodyAngleY", 7.0f * envelope); break;
-            case "blink_surprised": blink(writer, p, 0.20f); writer.add("ParamAngleY", 8.0f * envelope); break;
-            case "sigh": writer.add("ParamAngleY", -7.0f * envelope);
-                writer.add("ParamMouthOpenY", 0.22f * envelope); break;
-            case "pout": writer.add("ParamMouthForm", -0.70f * envelope);
-                writer.add("ParamMouthFunnel", 0.45f * envelope); break;
-            case "excited_bounce": writer.add("ParamBodyAngleY", 10.0f * wave2 * envelope);
-                writer.add("ParamAngleY", -9.0f * wave2 * envelope); break;
-            case "listening": writer.add("ParamAngleZ", 8.0f * envelope);
-                writer.add("ParamAngleY", -5.0f * envelope); break;
-            case "look_around": writer.add("ParamAngleX", 18.0f * wave1);
-                writer.add("ParamEyeBallX", 0.65f * wave1); break;
-            case "soft_sway": writer.add("ParamAngleZ", 7.0f * wave1);
-                writer.add("ParamBodyAngleX", 8.0f * wave1); break;
-            case "look_down_up": writer.add("ParamAngleY", -14.0f * wave1);
-                writer.add("ParamEyeBallY", -0.48f * wave1); break;
-            case "side_look": writer.add("ParamAngleX", 13.0f * envelope);
-                writer.add("ParamEyeBallX", 0.55f * envelope); break;
-            case "weight_shift": writer.add("ParamBodyAngleX", 12.0f * wave1);
-                writer.add("ParamAngleZ", -5.0f * wave1); break;
-            case "gentle_lean": writer.add("ParamBodyAngleX", 8.0f * envelope);
-                writer.add("ParamAngleZ", 6.0f * envelope); break;
-            case "sigh_sink": writer.add("ParamAngleY", -12.0f * envelope);
-                writer.add("ParamBodyAngleY", -8.0f * envelope); break;
-            case "slow_blink": blink(writer, p, 0.72f); break;
-            case "wind_sway_soft": sway(writer, p, 8.0f, 10.0f); break;
-            case "wind_sway_medium": sway(writer, p, 13.0f, 17.0f); break;
-            case "wind_sway_showcase": sway(writer, p, 18.0f, 24.0f); break;
-            case "showcase_orbit": writer.add("ParamAngleX", 19.0f * wave1);
-                writer.add("ParamAngleY", 12.0f * (float) Math.cos(Math.PI * 2.0f * p));
-                writer.add("ParamAngleZ", 7.0f * wave1);
-                writer.add("ParamBodyAngleX", 20.0f * wave1); break;
-            default: break;
+        Motion motion = MOTIONS.get(name);
+        if (motion == null) return;
+        boolean yawLimited = name.startsWith("wind_sway_") || "showcase_orbit".equals(name);
+        for (Track track : motion.tracks) {
+            float value = track.sample(t) * track.gain;
+            if (yawLimited && "ParamAngleX".equals(track.parameterId)) {
+                value = Math.max(-24.0f, Math.min(24.0f, value));
+            }
+            writer.add(track.parameterId, value);
         }
     }
 
-    private static void blink(ParameterWriter writer, float p, float strength) {
-        float close = (float) Math.pow(Math.sin(Math.PI * p), 4.0);
-        writer.add("ParamEyeLOpen", -strength * close);
-        writer.add("ParamEyeROpen", -strength * close);
-    }
-
-    private static void sway(ParameterWriter writer, float p, float head, float body) {
-        float wave = (float) Math.sin(Math.PI * 4.0f * p);
-        float envelope = (float) Math.sin(Math.PI * p);
-        writer.add("ParamAngleZ", head * wave * envelope);
-        writer.add("ParamAngleX", head * 0.42f * wave * envelope);
-        writer.add("ParamBodyAngleX", body * wave * envelope);
-    }
-
     private static float duration(String name) {
-        switch (name) {
-            case "look_around": case "look_down_up": return 3.8f;
-            case "soft_sway": case "wind_sway_soft": return 4.8f;
-            case "wind_sway_medium": return 5.2f;
-            case "wind_sway_showcase": case "showcase_orbit": return 6.0f;
-            case "slow_blink": return 2.4f;
-            default: return 2.2f;
+        Motion motion = MOTIONS.get(name);
+        return motion == null ? 2.2f : motion.duration;
+    }
+
+    /**
+     * The keyframes below are the already device-approved Mimeng routes. Sen uses the standard
+     * Angle/BodyAngle parameters, so only a small model-specific pose gain is added here. Arm
+     * physics is deliberately not reduced in this table; it is damped after native physics so
+     * head, hair, ears and tail retain the full motion.
+     */
+    private static Map<String, Motion> createMotions() {
+        Map<String, Motion> result = new LinkedHashMap<>();
+        result.put("nod", motion(1.35f,
+                head("ParamAngleY", 0,0, .14f,4, .40f,-20, .68f,8.5f, .96f,-8.5f, 1.16f,1.8f, 1.35f,0),
+                body("ParamBodyAngleY", 0,0, .14f,1.4f, .40f,-3.8f, .68f,4.8f, .96f,-1.4f, 1.16f,.7f, 1.35f,0),
+                head("ParamAngleZ", 0,0, .14f,1.5f, .40f,-2.5f, .68f,2, .96f,-.9f, 1.16f,.35f, 1.35f,0),
+                body("ParamBodyAngleX", 0,0, .14f,.6f, .40f,-.9f, .68f,.7f, .96f,-.3f, 1.16f,.12f, 1.35f,0)));
+        result.put("shake_head", motion(1.20f,
+                head("ParamAngleX", 0,0, .12f,3, .34f,-14, .58f,13, .82f,-9, 1.02f,4, 1.20f,0),
+                body("ParamBodyAngleX", 0,0, .12f,.6f, .34f,-2, .58f,1.8f, .82f,-1, 1.02f,.4f, 1.20f,0),
+                head("ParamAngleZ", 0,0, .12f,1, .34f,-3, .58f,2.5f, .82f,-1.5f, 1.02f,.8f, 1.20f,0)));
+        result.put("tilt_head", motion(1.50f,
+                head("ParamAngleZ", 0,0, .70f,16, 1.20f,5, 1.50f,0),
+                body("ParamBodyAngleX", 0,0, .70f,1.2f, 1.20f,.5f, 1.50f,0),
+                body("ParamBodyAngleY", 0,0, .70f,.8f, 1.20f,.2f, 1.50f,0)));
+        result.put("lean_forward", motion(2.00f,
+                body("ParamBodyAngleY", 0,0, .20f,-1.5f, .78f,2.4f, 1.18f,2.8f, 1.52f,1.8f, 1.78f,.7f, 2,0),
+                head("ParamAngleY", 0,0, .20f,1, .78f,-4, 1.18f,-5.5f, 1.52f,-2, 1.78f,-.6f, 2,0),
+                head("ParamAngleZ", 0,0, .20f,-1, .78f,2, 1.18f,2.5f, 1.52f,1, 1.78f,.2f, 2,0)));
+        result.put("lean_back", motion(1.25f,
+                body("ParamBodyAngleY", 0,0, .14f,1, .48f,-2, .78f,-2.7f, 1,-1.4f, 1.25f,0),
+                head("ParamAngleY", 0,0, .14f,-.8f, .48f,3.5f, .78f,4.6f, 1,1.8f, 1.25f,0),
+                head("ParamAngleZ", 0,0, .14f,.6f, .48f,-1.6f, .78f,-2, 1,-.7f, 1.25f,0)));
+        result.put("blink_surprised", motion(.88f,
+                head("ParamAngleY", 0,0, .16f,2.5f, .36f,-5.5f, .58f,1.8f, .88f,0),
+                body("ParamBodyAngleY", 0,0, .16f,2, .36f,-2.5f, .58f,1.4f, .88f,0),
+                face("ParamEyeLOpen", 0,0, .16f,.08f, .36f,.42f, .58f,.2f, .88f,0),
+                face("ParamEyeROpen", 0,0, .16f,.08f, .36f,.42f, .58f,.2f, .88f,0),
+                face("ParamBrowLY", 0,0, .16f,.12f, .36f,.82f, .58f,.38f, .88f,0),
+                face("ParamBrowRY", 0,0, .16f,.12f, .36f,.82f, .58f,.38f, .88f,0),
+                face("ParamMouthOpenY", 0,0, .16f,.02f, .36f,.22f, .58f,.08f, .88f,0)));
+        result.put("sigh", motion(2.00f,
+                head("ParamAngleY", 0,0, .30f,-4, 1,-6, 1.5f,-4, 2,0),
+                head("ParamAngleX", 0,0, .30f,5, 1,-5, 1.5f,5, 2,0),
+                face("ParamEyeLOpen", 0,0, .30f,-.2f, 1,-.3f, 1.5f,-.15f, 2,0),
+                face("ParamEyeROpen", 0,0, .30f,-.2f, 1,-.3f, 1.5f,-.15f, 2,0),
+                face("ParamMouthOpenY", 0,0, .30f,.25f, 1,.5f, 1.5f,.1f, 2,0),
+                body("ParamBodyAngleY", 0,0, .30f,-1, 1,-2.2f, 1.5f,-.9f, 2,0)));
+        result.put("pout", motion(1.70f,
+                face("ParamMouthFunnel", 0,0, .30f,.45f, .78f,1.38f, 1.16f,1.18f, 1.42f,.55f, 1.70f,0),
+                face("ParamMouthForm", 0,0, .30f,-.24f, .78f,-.7f, 1.16f,-.62f, 1.42f,-.26f, 1.70f,0),
+                face("Param13", 0,0, .30f,.22f, .78f,1.18f, 1.16f,1, 1.42f,.32f, 1.70f,0),
+                head("ParamAngleZ", 0,0, .30f,-2.2f, .78f,-8.5f, 1.16f,-5, 1.42f,-2, 1.70f,0),
+                body("ParamBodyAngleX", 0,0, .30f,-.25f, .78f,-.9f, 1.16f,-.45f, 1.42f,-.12f, 1.70f,0)));
+        result.put("excited_bounce", motion(2.00f,
+                head("ParamAngleY", 0,0, .30f,5, .80f,-2, 1,3, 1.5f,-1, 2,0),
+                body("ParamBodyAngleY", 0,0, .30f,3, .80f,-5, 1,2, 1.5f,1, 2,0),
+                face("ParamEyeLSmile", 0,.18f, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
+                face("ParamEyeRSmile", 0,.18f, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
+                face("ParamMouthForm", 0,.18f, .30f,.42f, .80f,.72f, 1,.56f, 1.5f,.36f, 2,0),
+                face("ParamMouthOpenY", 0,.04f, .30f,.14f, .80f,.28f, 1,.18f, 1.5f,.1f, 2,0),
+                face("Param13", 0,.12f, .30f,.28f, .80f,.48f, 1,.36f, 1.5f,.2f, 2,0)));
+        result.put("listening", motion(2.20f,
+                head("ParamAngleZ", 0,0, .40f,6, 1.55f,6, 2.20f,0),
+                head("ParamAngleY", 0,0, .40f,2, 1.55f,2, 2.20f,0)));
+        result.put("look_around", motion(3.20f,
+                head("ParamAngleX", 0,0, .70f,-8, 1.70f,9, 2.50f,3, 3.20f,0),
+                face("ParamEyeBallX", 0,0, .70f,-.55f, 1.70f,.65f, 2.50f,.25f, 3.20f,0),
+                body("ParamBodyAngleX", 0,0, .70f,-.8f, 1.70f,.9f, 2.50f,.25f, 3.20f,0)));
+        result.put("soft_sway", motion(2.80f,
+                head("ParamAngleZ", 0,0, .80f,-4, 1.70f,4.5f, 2.80f,0),
+                body("ParamBodyAngleX", 0,0, .80f,-2.6f, 1.70f,2.8f, 2.80f,0),
+                body("ParamBodyAngleZ", 0,0, .80f,-.8f, 1.70f,.9f, 2.80f,0)));
+        result.put("look_down_up", motion(2.50f,
+                head("ParamAngleY", 0,0, .80f,-7, 1.55f,5, 2.50f,0),
+                face("ParamEyeBallY", 0,0, .80f,-.35f, 1.55f,.22f, 2.50f,0),
+                body("ParamBodyAngleY", 0,0, .80f,-1.5f, 1.55f,1, 2.50f,0)));
+        result.put("small_nod", motion(1.05f,
+                head("ParamAngleY", 0,0, .28f,-7, .53f,2.5f, .78f,-1.2f, 1.05f,0),
+                body("ParamBodyAngleY", 0,0, .28f,-.7f, .53f,.25f, .78f,-.1f, 1.05f,0)));
+        result.put("head_tilt_idle", motion(1.90f,
+                head("ParamAngleZ", 0,0, .55f,-8, 1.35f,-6, 1.90f,0),
+                head("ParamAngleX", 0,0, .55f,-1.5f, 1.35f,-1, 1.90f,0),
+                face("ParamEyeBallX", 0,0, .55f,.2f, 1.35f,.12f, 1.90f,0)));
+        result.put("side_look", motion(2.15f,
+                face("ParamEyeBallX", 0,0, .35f,.65f, 1.35f,.56f, 1.75f,.12f, 2.15f,0),
+                face("ParamEyeBallY", 0,0, .35f,.06f, 1.35f,.04f, 1.75f,0, 2.15f,0),
+                head("ParamAngleX", 0,0, .35f,3, 1.35f,4.8f, 1.75f,3, 2.15f,0),
+                head("ParamAngleZ", 0,0, .35f,-1.5f, 1.35f,-2.2f, 1.75f,-1.2f, 2.15f,0)));
+        result.put("weight_shift", motion(2.35f,
+                body("ParamBodyAngleX", 0,0, .70f,-3.8f, 1.60f,-3.1f, 2.35f,0),
+                body("ParamBodyAngleZ", 0,0, .70f,-1.8f, 1.60f,-1.4f, 2.35f,0),
+                head("ParamAngleZ", 0,0, .70f,3.5f, 1.60f,2.7f, 2.35f,0)));
+        result.put("gentle_lean", motion(1.80f,
+                body("ParamBodyAngleY", 0,0, .55f,1.7f, 1.25f,1.35f, 1.80f,0),
+                head("ParamAngleY", 0,0, .55f,-3.5f, 1.25f,-2.7f, 1.80f,0),
+                face("ParamEyeBallY", 0,0, .55f,.16f, 1.25f,.12f, 1.80f,0)));
+        result.put("sigh_sink", motion(2.30f,
+                head("ParamAngleY", 0,0, .75f,-6, 1.65f,-4.5f, 2.30f,0),
+                body("ParamBodyAngleY", 0,0, .75f,-1.7f, 1.65f,-1.2f, 2.30f,0),
+                face("ParamEyeBallY", 0,0, .75f,-.3f, 1.65f,-.2f, 2.30f,0)));
+        result.put("slow_blink", motion(.95f,
+                face("ParamEyeLOpen", 0,0, .38f,-1, .58f,-1, .95f,0),
+                face("ParamEyeROpen", 0,0, .38f,-1, .58f,-1, .95f,0),
+                head("ParamAngleY", 0,0, .38f,-1, .58f,-1, .95f,0)));
+        result.put("wind_sway_soft", windMotion(6.20f, .68f));
+        result.put("wind_sway_medium", windMotion(6.60f, 1.00f));
+        result.put("wind_sway_showcase", windMotion(7.20f, 1.34f));
+        result.put("showcase_orbit", motion(5.20f,
+                head("ParamAngleX", 0,0, .52f,-12, 1.08f,-22, 1.72f,-8, 2.38f,16, 3.02f,23, 3.68f,7, 4.28f,-9, 4.78f,3, 5.20f,0),
+                head("ParamAngleY", 0,0, .52f,9, 1.08f,1, 1.72f,-12, 2.38f,-9, 3.02f,5, 3.68f,13, 4.28f,5, 4.78f,-2, 5.20f,0),
+                head("ParamAngleZ", 0,0, .52f,-9, 1.08f,-15, 1.72f,-5, 2.38f,12, 3.02f,16, 3.68f,5, 4.28f,-7, 4.78f,2, 5.20f,0),
+                body("ParamBodyAngleX", 0,0, .52f,-2.4f, 1.08f,-6.6f, 1.72f,-5.2f, 2.38f,2.8f, 3.02f,6.8f, 3.68f,5.1f, 4.28f,-.8f, 4.78f,.8f, 5.20f,0),
+                body("ParamBodyAngleY", 0,0, .52f,.2f, 1.08f,.55f, 1.72f,-.4f, 2.38f,-.52f, 3.02f,.25f, 3.68f,.58f, 4.28f,.15f, 4.78f,-.08f, 5.20f,0),
+                body("ParamBodyAngleZ", 0,0, .52f,-1.8f, 1.08f,-5.5f, 1.72f,-4.2f, 2.38f,2.4f, 3.02f,5.8f, 3.68f,4.1f, 4.28f,-.7f, 4.78f,.65f, 5.20f,0),
+                face("ParamEyeBallX", 0,0, .52f,-.38f, 1.08f,-.7f, 1.72f,-.24f, 2.38f,.5f, 3.02f,.72f, 3.68f,.2f, 4.28f,-.28f, 4.78f,.08f, 5.20f,0),
+                face("ParamEyeBallY", 0,0, .52f,.28f, 1.08f,.04f, 1.72f,-.38f, 2.38f,-.3f, 3.02f,.16f, 3.68f,.42f, 4.28f,.15f, 4.78f,-.05f, 5.20f,0)));
+        return Collections.unmodifiableMap(result);
+    }
+
+    private static Motion windMotion(final float duration, final float windGain) {
+        return motion(duration,
+                sampled("ParamAngleX", HEAD_GAIN, time -> wind(time, duration, windGain, 0)),
+                sampled("ParamAngleY", HEAD_GAIN, time -> wind(time, duration, windGain, 1)),
+                sampled("ParamAngleZ", HEAD_GAIN, time -> wind(time, duration, windGain, 2)),
+                sampled("ParamBodyAngleX", BODY_GAIN, time -> wind(time, duration, windGain, 3)),
+                sampled("ParamBodyAngleY", BODY_GAIN, time -> wind(time, duration, windGain, 4)),
+                sampled("ParamBodyAngleZ", BODY_GAIN, time -> wind(time, duration, windGain, 5)),
+                sampled("ParamEyeBallX", 1.0f, time -> wind(time, duration, windGain, 6)),
+                sampled("ParamEyeBallY", 1.0f, time -> wind(time, duration, windGain, 7)));
+    }
+
+    private static float wind(float time, float duration, float gain, int channel) {
+        float progress = Math.max(0.0f, Math.min(1.0f, time / duration));
+        float envelope = (float) Math.pow(Math.max(0.0, Math.sin(Math.PI * progress)), .68);
+        float omega = (float) (Math.PI * 2.0 * .235);
+        float headWave = (float) (Math.sin(omega * time)
+                + Math.sin(omega * .46 * time + .8) * .22);
+        float bodyWave = (float) (Math.sin(omega * time - .58)
+                + Math.sin(omega * .43 * time + .25) * .18);
+        switch (channel) {
+            case 0: return (float) ((Math.sin(omega * .72 * time + 1.08) * 10
+                    + Math.sin(omega * .31 * time - .4) * 1.8) * gain * envelope);
+            case 1: return (float) ((Math.sin(omega * .53 * time - .38) * 5.8
+                    + Math.sin(omega * 1.08 * time + .6) * 1.2) * gain * envelope);
+            case 2: return headWave * 11.5f * gain * envelope;
+            case 3: return (float) ((Math.sin(omega * .72 * time + .52) * 4.7
+                    + Math.sin(omega * .29 * time) * .6) * gain * envelope);
+            case 4: return (float) (Math.sin(omega * .55 * time - .42) * .52
+                    * gain * envelope);
+            case 5: return bodyWave * 5.2f * gain * envelope;
+            case 6: return (float) (Math.sin(omega * .72 * time + 1.18) * .18
+                    * gain * envelope);
+            case 7: return (float) (Math.sin(omega * .53 * time - .28) * .1
+                    * gain * envelope);
+            default: return 0.0f;
+        }
+    }
+
+    private static Motion motion(float duration, Track... tracks) {
+        return new Motion(duration, tracks);
+    }
+
+    private static Track head(String id, float... frames) {
+        return new Track(id, HEAD_GAIN, frames, null);
+    }
+
+    private static Track body(String id, float... frames) {
+        return new Track(id, BODY_GAIN, frames, null);
+    }
+
+    private static Track face(String id, float... frames) {
+        return new Track(id, 1.0f, frames, null);
+    }
+
+    private static Track sampled(String id, float gain, Sampler sampler) {
+        return new Track(id, gain, null, sampler);
+    }
+
+    private interface Sampler {
+        float sample(float time);
+    }
+
+    private static final class Motion {
+        final float duration;
+        final Track[] tracks;
+
+        Motion(float duration, Track[] tracks) {
+            this.duration = duration;
+            this.tracks = tracks;
+        }
+    }
+
+    private static final class Track {
+        final String parameterId;
+        final float gain;
+        final float[] frames;
+        final Sampler sampler;
+
+        Track(String parameterId, float gain, float[] frames, Sampler sampler) {
+            this.parameterId = parameterId;
+            this.gain = gain;
+            this.frames = frames;
+            this.sampler = sampler;
+        }
+
+        float sample(float time) {
+            if (sampler != null) return sampler.sample(time);
+            if (frames == null || frames.length < 2) return 0.0f;
+            if (time <= frames[0]) return frames[1];
+            for (int i = 2; i + 1 < frames.length; i += 2) {
+                if (time <= frames[i]) {
+                    float t0 = frames[i - 2];
+                    float v0 = frames[i - 1];
+                    float t1 = frames[i];
+                    float v1 = frames[i + 1];
+                    float span = Math.max(.0001f, t1 - t0);
+                    float p = Math.max(0.0f, Math.min(1.0f, (time - t0) / span));
+                    return v0 + (v1 - v0) * p;
+                }
+            }
+            return frames[frames.length - 1];
         }
     }
 

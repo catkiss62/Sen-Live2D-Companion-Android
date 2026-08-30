@@ -8,6 +8,7 @@ import com.live2d.sdk.cubism.framework.model.CubismModelMultiplyAndScreenColor;
 import com.live2d.sdk.cubism.framework.model.CubismModelPartInfo;
 import com.live2d.sdk.cubism.framework.model.CubismUserModel;
 import com.live2d.sdk.cubism.framework.motion.ACubismMotion;
+import com.live2d.sdk.cubism.framework.motion.ACubismUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismPhysicsUpdater;
@@ -29,6 +30,14 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
+    private static final String[] ARM_PHYSICS_OUTPUT_IDS = {
+            "ParamBodyShoulder", "ParamBodyShoulder2", "ParamBodyShoulder3",
+            "ParamBodyShoulder4", "larmrotate", "larmrotate2", "larmrotate3",
+            "larmrotate4", "larmrotate5", "larmrotate7", "larmrotate8",
+            "rarmrotate", "rarmrotate2", "rarmrotate3", "rarmrotate4",
+            "rarmrotate5", "larmrotate17", "larmrotate18"
+    };
+    private static final float ACTION_ARM_PHYSICS_GAIN = .35f;
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
     private final SenPerformanceEngine performance = new SenPerformanceEngine();
     private ICubismModelSetting setting;
@@ -36,6 +45,10 @@ final class SenLive2DModel extends CubismUserModel {
     private String appearanceDetail = "";
     private boolean hasVtsBaseProfile;
     private boolean geometryDiagnosticsAdded;
+    private int[] armPhysicsIndices = new int[0];
+    private float[] armPhysicsBaseValues = new float[0];
+    private float pendingEarPhysicsDrive;
+    private EarInputSnapshot earInputSnapshot;
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -85,6 +98,7 @@ final class SenLive2DModel extends CubismUserModel {
             applyFrozenProfile(frozenProfile, listener);
             applyOutfitParameters(outfitPreset, listener);
         }
+        resolveArmPhysicsParameters();
         model.saveParameters();
         applyVtsArtMeshColors(appearance, listener);
         updateScheduler.sortUpdatableList();
@@ -112,13 +126,14 @@ final class SenLive2DModel extends CubismUserModel {
         // Always restore the captured appearance base. Dynamic features must never accumulate
         // into part-selection, opacity or colour parameters from a previous frame.
         model.loadParameters();
+        captureArmPhysicsBase();
         performance.update(deltaSeconds, new SenPerformanceEngine.ParameterWriter() {
             @Override public void add(String id, float value) { addParameter(id, value); }
             @Override public void set(String id, float value) { setParameter(id, value); }
         });
         setParameter("ParamBreath", performance.getBreathValue());
+        pendingEarPhysicsDrive = performance.getEarPhysicsDrive();
         updateScheduler.onLateUpdate(model, deltaSeconds);
-        applyEarTwitch(performance.getEarPhysicsImpulse());
         model.update();
         applyRuntimeGeometry();
     }
@@ -228,7 +243,28 @@ final class SenLive2DModel extends CubismUserModel {
         if (physicsName != null && !physicsName.isEmpty()) {
             listener.onStatus("原生渲染：正在读取物理参数…");
             loadPhysics(NativeFileLoader.readFile(child(physicsName)));
-            if (physics != null) updateScheduler.addUpdatableList(new CubismPhysicsUpdater(physics));
+            if (physics != null) {
+                // Expression order is 300 and native physics is 600. Insert the hidden ear
+                // driver after expressions have updated the eyes, then restore the visible
+                // inputs and damp only Sen's arm outputs immediately after physics.
+                updateScheduler.addUpdatableList(new ACubismUpdater(550) {
+                    @Override public void onLateUpdate(
+                            com.live2d.sdk.cubism.framework.model.CubismModel ignored,
+                            float deltaTimeSeconds) {
+                        earInputSnapshot = applyEarPhysicsDrive(pendingEarPhysicsDrive);
+                    }
+                });
+                updateScheduler.addUpdatableList(new CubismPhysicsUpdater(physics));
+                updateScheduler.addUpdatableList(new ACubismUpdater(650) {
+                    @Override public void onLateUpdate(
+                            com.live2d.sdk.cubism.framework.model.CubismModel ignored,
+                            float deltaTimeSeconds) {
+                        restoreEarPhysicsInputs(earInputSnapshot);
+                        earInputSnapshot = null;
+                        dampActionArmPhysics();
+                    }
+                });
+            }
         }
         String poseName = setting.getPoseFileName();
         if (poseName != null && !poseName.isEmpty()) {
@@ -293,15 +329,70 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
-    private void applyEarTwitch(float impulse) {
-        if (impulse <= 0.0001f) return;
-        // RabbitEarrs is the outfit selector (0/1), not an animation axis. VTS/model physics
-        // moves that selected ear through these dedicated output angles. Apply the two short
-        // pulses after native physics so the twitch affects the ear only instead of abusing
-        // ParamBreath and shaking hair, chest, tail and every other breathing consumer.
-        addParameter("ParamL_angle", 11.0f * impulse);
-        addParameter("ParamR_angle", 11.0f * impulse);
-        addParameter("ParamR_angle2", 8.0f * impulse);
+    private EarInputSnapshot applyEarPhysicsDrive(float drive) {
+        if (drive <= 0.0001f) return null;
+        // Slow blink already proves that Sen's own physics naturally moves Rabbit Earrs from
+        // EyeOpen + AngleY. Feed the same inputs twice at higher speed, let native physics
+        // calculate every ear layer, then restore the visible face/head inputs before drawing.
+        // This keeps the ear motion physically coherent without exposing a forced double blink.
+        EarInputSnapshot snapshot = new EarInputSnapshot(
+                snapshotParameter("ParamEyeLOpen"),
+                snapshotParameter("ParamEyeROpen"),
+                snapshotParameter("ParamAngleY"));
+        addParameter("ParamEyeLOpen", -.96f * drive);
+        addParameter("ParamEyeROpen", -.96f * drive);
+        addParameter("ParamAngleY", -1.35f * drive);
+        return snapshot;
+    }
+
+    private void restoreEarPhysicsInputs(EarInputSnapshot snapshot) {
+        if (snapshot == null) return;
+        restoreParameter(snapshot.leftEye);
+        restoreParameter(snapshot.rightEye);
+        restoreParameter(snapshot.angleY);
+    }
+
+    private ParameterSnapshot snapshotParameter(String id) {
+        int index = findParameterIndex(id);
+        if (index < 0) return new ParameterSnapshot(-1, 0.0f);
+        return new ParameterSnapshot(index,
+                model.getModel().getParameterViews()[index].getValue());
+    }
+
+    private void restoreParameter(ParameterSnapshot snapshot) {
+        if (snapshot.index < 0) return;
+        model.getModel().getParameterViews()[snapshot.index].setValue(snapshot.value);
+    }
+
+    private void resolveArmPhysicsParameters() {
+        int count = 0;
+        int[] candidates = new int[ARM_PHYSICS_OUTPUT_IDS.length];
+        for (String id : ARM_PHYSICS_OUTPUT_IDS) {
+            int index = findParameterIndex(id);
+            if (index >= 0) candidates[count++] = index;
+        }
+        armPhysicsIndices = Arrays.copyOf(candidates, count);
+        armPhysicsBaseValues = new float[count];
+        appendAppearanceDetail("动作手臂物理 " + count + "项×"
+                + Math.round(ACTION_ARM_PHYSICS_GAIN * 100.0f) + "%");
+    }
+
+    private void captureArmPhysicsBase() {
+        for (int i = 0; i < armPhysicsIndices.length; i++) {
+            armPhysicsBaseValues[i] = model.getModel().getParameterViews()[
+                    armPhysicsIndices[i]].getValue();
+        }
+    }
+
+    private void dampActionArmPhysics() {
+        if (!performance.isActionActive()) return;
+        for (int i = 0; i < armPhysicsIndices.length; i++) {
+            int index = armPhysicsIndices[i];
+            float current = model.getModel().getParameterViews()[index].getValue();
+            float base = armPhysicsBaseValues[i];
+            model.getModel().getParameterViews()[index].setValue(
+                    base + (current - base) * ACTION_ARM_PHYSICS_GAIN);
+        }
     }
 
     private void applyFrozenProfile(SenVtsProfile profile, SenRenderer.Listener listener) {
@@ -532,6 +623,29 @@ final class SenLive2DModel extends CubismUserModel {
         // With two or more render textures the official Framework lays out up to 32 contexts
         // per texture. 64 is a safety ceiling for malformed or hostile imported models.
         return Math.min(64, Math.max(2, (groups + 31) / 32));
+    }
+
+    private static final class ParameterSnapshot {
+        final int index;
+        final float value;
+
+        ParameterSnapshot(int index, float value) {
+            this.index = index;
+            this.value = value;
+        }
+    }
+
+    private static final class EarInputSnapshot {
+        final ParameterSnapshot leftEye;
+        final ParameterSnapshot rightEye;
+        final ParameterSnapshot angleY;
+
+        EarInputSnapshot(ParameterSnapshot leftEye, ParameterSnapshot rightEye,
+                         ParameterSnapshot angleY) {
+            this.leftEye = leftEye;
+            this.rightEye = rightEye;
+            this.angleY = angleY;
+        }
     }
 
     private static final class MaskStats {

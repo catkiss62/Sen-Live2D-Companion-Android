@@ -48,6 +48,12 @@ import java.util.zip.ZipInputStream;
 
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
+    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 1;
+    private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
+    private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
+    private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
+    private static final float CONFIRMED_AHOGE_X = -16.0f;
+    private static final float CONFIRMED_AHOGE_Y = 70.0f;
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
 
@@ -129,6 +135,17 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         earVerticalOffset = 0.0f;
         prefs.edit().remove("ear_angle_enabled").remove("ear_angle_degrees")
                 .remove("ear_vertical_offset").apply();
+        if (prefs.getInt("ahoge_confirmed_preset_version", 0)
+                < AHOGE_CONFIRMED_PRESET_VERSION) {
+            prefs.edit()
+                    .putInt("ahoge_confirmed_preset_version", AHOGE_CONFIRMED_PRESET_VERSION)
+                    .putFloat("ahoge_scale_percent", CONFIRMED_AHOGE_HEIGHT)
+                    .putFloat("ahoge_width_percent", CONFIRMED_AHOGE_WIDTH)
+                    .putFloat("ahoge_rotation_degrees", CONFIRMED_AHOGE_ROTATION)
+                    .putFloat("ahoge_offset_x", CONFIRMED_AHOGE_X)
+                    .putFloat("ahoge_offset_y", CONFIRMED_AHOGE_Y)
+                    .apply();
+        }
         ahogeScalePercent = Math.max(40.0f, Math.min(160.0f,
                 prefs.contains("ahoge_scale_percent")
                         ? prefs.getFloat("ahoge_scale_percent", 100.0f)
@@ -192,7 +209,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.3.8 · 三套服装预设测试");
+        statusText.setText("v0.3.9 · 迷梦动作路线与局部物理测试");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -359,7 +376,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(earTwitchButton);
 
         TextView ahogeHeading = new TextView(this);
-        ahogeHeading.setText("长呆毛精细调整（以发根为缩放与旋转中心）");
+        ahogeHeading.setText("长呆毛（已确认默认56/83/-49/-16/+70；发根固定）");
         ahogeHeading.setTextColor(Color.rgb(238, 207, 255));
         ahogeHeading.setTextSize(11);
         ahogeHeading.setPadding(dp(3), dp(5), 0, 0);

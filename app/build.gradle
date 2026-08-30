@@ -18,8 +18,8 @@ android {
         applicationId 'com.catkiss.senlive2dcompanion'
         minSdk 26
         targetSdk 34
-        versionCode 16
-        versionName '0.3.8-outfit-presets-test'
+        versionCode 17
+        versionName '0.3.9-motion-parity-test'
     }
 
     signingConfigs {
