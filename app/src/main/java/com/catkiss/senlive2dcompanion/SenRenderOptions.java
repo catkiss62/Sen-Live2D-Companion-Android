@@ -11,6 +11,8 @@ final class SenRenderOptions {
     final float ahogeRotationDegrees;
     final float ahogeOffsetX;
     final float ahogeOffsetY;
+    final String ahogeRootDrawableId;
+    final int ahogeRootVertexIndex;
     final boolean tailMirrored;
     final boolean autoIdleEnabled;
 
@@ -20,6 +22,7 @@ final class SenRenderOptions {
                      float ahogeScalePercent, float ahogeWidthPercent,
                      float ahogeRotationDegrees,
                      float ahogeOffsetX, float ahogeOffsetY,
+                     String ahogeRootDrawableId, int ahogeRootVertexIndex,
                      boolean tailMirrored, boolean autoIdleEnabled) {
         this.maskMode = maskMode == null ? SenMaskMode.HIGH_PRECISION : maskMode;
         this.highPrecisionMaskSize = normalizeMaskSize(highPrecisionMaskSize);
@@ -34,6 +37,9 @@ final class SenRenderOptions {
         this.ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f, ahogeRotationDegrees));
         this.ahogeOffsetX = Math.max(-100.0f, Math.min(100.0f, ahogeOffsetX));
         this.ahogeOffsetY = Math.max(-100.0f, Math.min(100.0f, ahogeOffsetY));
+        this.ahogeRootDrawableId = ahogeRootDrawableId == null
+                ? "" : ahogeRootDrawableId;
+        this.ahogeRootVertexIndex = Math.max(-1, ahogeRootVertexIndex);
         this.tailMirrored = tailMirrored;
         this.autoIdleEnabled = autoIdleEnabled;
     }
@@ -47,7 +53,16 @@ final class SenRenderOptions {
         return new SenRenderOptions(maskMode, highPrecisionMaskSize,
                 earEnabled, earDegrees, earOffset,
                 ahogeScale, ahogeWidth, ahogeRotation, ahogeX, ahogeY,
+                ahogeRootDrawableId, ahogeRootVertexIndex,
                 mirrorTail, autoIdleEnabled);
+    }
+
+    SenRenderOptions withAhogeRoot(String drawableId, int vertexIndex) {
+        return new SenRenderOptions(maskMode, highPrecisionMaskSize,
+                earAngleOverrideEnabled, earAngleDegrees, earVerticalOffset,
+                ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
+                ahogeOffsetX, ahogeOffsetY, drawableId, vertexIndex,
+                tailMirrored, autoIdleEnabled);
     }
 
     private static int normalizeMaskSize(int size) {

@@ -19,8 +19,8 @@ import java.util.Map;
  * <p>Private files used for offline comparison (never commit the originals):
  * Sen.vts-profile.json + Sen Customizable Model_2K.vtube.json (maid), 白衬衫.json + the same
  * colour table (white shirt), and 兔女郎.json + Sen Customizable Model_2K.vtube兔女郎.json
- * (bunny). Owner-confirmed corrections: ArtMesh210/276 use #444573 in every outfit; the white
- * shirt forces Hair_behindEar10 (CDI: Maid Headband) off.</p>
+ * (bunny). Owner-confirmed corrections: ArtMesh210/276/1324/1689 use #444573 in every outfit;
+ * the white shirt forces Hair_behindEar10 (CDI: Maid Headband) off.</p>
  */
 final class SenOutfitPresets {
     static final class Preset {
@@ -42,6 +42,7 @@ final class SenOutfitPresets {
             {"ArtMesh1077", "383763FF|000000FF"},
             {"ArtMesh1209", "4CAFDCFF|000000FF"},
             {"ArtMesh1211", "4CAFDCFF|000000FF"},
+            {"ArtMesh1324", "444573FF|000000FF"},
             {"ArtMesh1333", "3500C7FF|000000FF"},
             {"ArtMesh1341", "5162A7FF|000000FF"},
             {"ArtMesh1344", "5162A7FF|000000FF"},
@@ -85,6 +86,7 @@ final class SenOutfitPresets {
             {"ArtMesh1589", "5162A7FF|000000FF"},
             {"ArtMesh1590", "5162A7FF|000000FF"},
             {"ArtMesh160", "5162A7FF|000000FF"},
+            {"ArtMesh1689", "444573FF|000000FF"},
             {"ArtMesh1739", "5162A7FF|000000FF"},
             {"ArtMesh1741", "3500C7FF|000000FF"},
             {"ArtMesh189", "5162A7FF|000000FF"},

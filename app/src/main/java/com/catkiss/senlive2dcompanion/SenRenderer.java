@@ -21,6 +21,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     interface Listener {
         void onStatus(String status);
         void onReady(String detail);
+        void onAhogeRootCalibrated(String drawableId, int vertexIndex);
         void onError(Throwable error);
     }
 
@@ -42,6 +43,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private volatile float stageScale = 1.0f;
     private volatile float stageTranslateX;
     private volatile float stageTranslateY;
+    private volatile boolean touchFollowEnabled = true;
+    private boolean ahogeCalibrationPending;
+    private float ahogeCalibrationX;
+    private float ahogeCalibrationY;
 
     SenRenderer(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -78,6 +83,29 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void triggerEarTwitch() {
         if (model != null) model.triggerEarTwitch();
+    }
+
+    void setTouchFollowEnabled(boolean enabled) {
+        touchFollowEnabled = enabled;
+        if (model != null) model.setTouchFollowEnabled(enabled);
+    }
+
+    void setTouchTarget(boolean active, float normalizedX, float normalizedY) {
+        if (model != null) model.setTouchTarget(active, normalizedX, normalizedY);
+    }
+
+    void triggerHeadPat(boolean confused) {
+        if (model != null) model.triggerHeadPat(confused);
+    }
+
+    void setAhogeRoot(String drawableId, int vertexIndex) {
+        if (model != null) model.setAhogeRoot(drawableId, vertexIndex);
+    }
+
+    void requestAhogeRootCalibration(float clipX, float clipY) {
+        ahogeCalibrationX = clipX;
+        ahogeCalibrationY = clipY;
+        ahogeCalibrationPending = true;
     }
 
     void setAutoIdle(boolean enabled) {
@@ -169,6 +197,15 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             }
             projection.scaleRelative(stageScale, stageScale);
             projection.translateRelative(stageTranslateX, stageTranslateY);
+            if (ahogeCalibrationPending) {
+                ahogeCalibrationPending = false;
+                SenLive2DModel.AhogeRootSelection selection = model.calibrateAhogeRoot(
+                        ahogeCalibrationX, ahogeCalibrationY, projection);
+                if (selection != null) {
+                    listener.onAhogeRootCalibrated(
+                            selection.drawableId, selection.vertexIndex);
+                }
+            }
             model.draw(projection);
         } catch (Throwable error) {
             listener.onError(error);
@@ -206,6 +243,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
                     listener, request.startupExpressions, request.appearance,
                     request.frozenProfile, request.options, request.outfitPreset);
+            next.setTouchFollowEnabled(touchFollowEnabled);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();

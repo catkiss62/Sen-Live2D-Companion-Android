@@ -2,7 +2,9 @@ package com.catkiss.senlive2dcompanion;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -16,6 +18,8 @@ import java.util.Random;
 final class SenPerformanceEngine {
     private static final float HEAD_GAIN = 1.35f;
     private static final float BODY_GAIN = 1.20f;
+    private static final float EMOTION_TRANSITION_SECONDS = .42f;
+    private static final float ACTION_PHYSICS_RELEASE_SECONDS = .55f;
     private static final Map<String, Motion> MOTIONS = createMotions();
 
     interface ParameterWriter {
@@ -34,7 +38,8 @@ final class SenPerformanceEngine {
             "blink_surprised", "sigh", "pout", "excited_bounce", "listening",
             "look_around", "soft_sway", "look_down_up", "small_nod", "head_tilt_idle",
             "side_look", "weight_shift", "gentle_lean", "sigh_sink", "slow_blink",
-            "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit"));
+            "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
+            "head_pat", "head_pat_confused"));
 
     private static final List<String> IDLE_ACTIONS = Arrays.asList(
             "small_nod", "head_tilt_idle", "side_look", "weight_shift",
@@ -49,9 +54,29 @@ final class SenPerformanceEngine {
     private float nextIdleAt = 8.0f;
     private float earTwitchTime = -1.0f;
     private boolean autoIdle;
+    private Map<String, Float> emotionFromValues = new HashMap<>();
+    private Map<String, Float> emotionCurrentValues = new HashMap<>();
+    private Map<String, Float> emotionTargetValues = new HashMap<>();
+    private float emotionTransitionTime = EMOTION_TRANSITION_SECONDS;
+    private boolean touchFollowEnabled = true;
+    private boolean touchActive;
+    private float touchTargetX;
+    private float touchTargetY;
+    private float touchEyeX;
+    private float touchEyeY;
+    private float touchHeadX;
+    private float touchHeadY;
+    private float touchHeadZ;
+    private float touchBodyX;
+    private float touchBodyY;
+    private float touchBodyZ;
 
     void selectEmotion(String name) {
-        if (EMOTIONS.contains(name)) emotion = name;
+        if (!EMOTIONS.contains(name) || name.equals(emotion)) return;
+        emotion = name;
+        emotionFromValues = new HashMap<>(emotionCurrentValues);
+        emotionTargetValues = collectEmotion(name);
+        emotionTransitionTime = 0.0f;
     }
 
     String getEmotion() {
@@ -66,6 +91,21 @@ final class SenPerformanceEngine {
 
     void triggerEarTwitch() {
         earTwitchTime = 0.0f;
+    }
+
+    void setTouchFollowEnabled(boolean enabled) {
+        touchFollowEnabled = enabled;
+        if (!enabled) touchActive = false;
+    }
+
+    void setTouchTarget(boolean active, float normalizedX, float normalizedY) {
+        touchActive = active && touchFollowEnabled;
+        touchTargetX = clamp(normalizedX, -1.0f, 1.0f);
+        touchTargetY = clamp(normalizedY, -1.0f, 1.0f);
+    }
+
+    void triggerHeadPat(boolean confused) {
+        playAction(confused ? "head_pat_confused" : "head_pat");
     }
 
     void setAutoIdle(boolean enabled) {
@@ -85,10 +125,20 @@ final class SenPerformanceEngine {
         return action != null;
     }
 
+    float getActionArmPhysicsGain() {
+        if (action == null) return 1.0f;
+        float duration = duration(action);
+        if (actionTime <= duration) return .35f;
+        float progress = clamp((actionTime - duration) / ACTION_PHYSICS_RELEASE_SECONDS,
+                0.0f, 1.0f);
+        return .35f + .65f * smoothStep(progress);
+    }
+
     void update(float deltaSeconds, ParameterWriter writer) {
         float dt = Math.max(0.0f, Math.min(0.05f, deltaSeconds));
         elapsed += dt;
-        applyEmotion(writer);
+        updateEmotion(dt, writer);
+        updateTouchFollow(dt, writer);
 
         if (autoIdle && action == null && elapsed >= nextIdleAt) {
             String next;
@@ -102,15 +152,16 @@ final class SenPerformanceEngine {
 
         if (action != null) {
             actionTime += dt;
-            applyAction(action, actionTime, writer);
-            if (actionTime >= duration(action)) action = null;
+            float duration = duration(action);
+            if (actionTime <= duration) applyAction(action, actionTime, writer);
+            if (actionTime >= duration + ACTION_PHYSICS_RELEASE_SECONDS) action = null;
         }
 
         if (earTwitchTime >= 0.0f) earTwitchTime += dt;
     }
 
-    /** Two short copies of the slow-blink physics input, sampled before native physics. */
-    float getEarPhysicsDrive() {
+    /** v0.3.9's two compact pulse envelopes; only dedicated ear outputs consume this value. */
+    float getEarTwitchDrive() {
         if (earTwitchTime < 0.0f) return 0.0f;
         if (earTwitchTime >= 0.58f) {
             earTwitchTime = -1.0f;
@@ -127,8 +178,79 @@ final class SenPerformanceEngine {
         return 0.50f + 0.42f * (float) Math.sin(elapsed * 1.55f);
     }
 
-    private void applyEmotion(ParameterWriter writer) {
-        switch (emotion) {
+    private void updateEmotion(float dt, ParameterWriter writer) {
+        if (emotionTransitionTime < EMOTION_TRANSITION_SECONDS) {
+            emotionTransitionTime = Math.min(EMOTION_TRANSITION_SECONDS,
+                    emotionTransitionTime + dt);
+            float progress = smoothStep(emotionTransitionTime / EMOTION_TRANSITION_SECONDS);
+            Map<String, Float> blended = new HashMap<>();
+            LinkedHashSet<String> keys = new LinkedHashSet<>(emotionFromValues.keySet());
+            keys.addAll(emotionTargetValues.keySet());
+            for (String key : keys) {
+                float from = emotionFromValues.getOrDefault(key, 0.0f);
+                float to = emotionTargetValues.getOrDefault(key, 0.0f);
+                float value = from + (to - from) * progress;
+                if (Math.abs(value) > .00001f) blended.put(key, value);
+            }
+            emotionCurrentValues = blended;
+        } else if (!emotionCurrentValues.equals(emotionTargetValues)) {
+            emotionCurrentValues = new HashMap<>(emotionTargetValues);
+        }
+        for (Map.Entry<String, Float> entry : emotionCurrentValues.entrySet()) {
+            writer.add(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private Map<String, Float> collectEmotion(String name) {
+        Map<String, Float> values = new LinkedHashMap<>();
+        applyEmotion(name, new ParameterWriter() {
+            @Override public void add(String id, float value) {
+                values.merge(id, value, Float::sum);
+            }
+
+            @Override public void set(String id, float value) {
+                values.put(id, value);
+            }
+        });
+        return values;
+    }
+
+    private void updateTouchFollow(float dt, ParameterWriter writer) {
+        float targetX = touchActive && touchFollowEnabled ? touchTargetX : 0.0f;
+        float targetY = touchActive && touchFollowEnabled ? touchTargetY : 0.0f;
+        float eyeBlend = exponentialBlend(dt, .075f);
+        float headBlend = exponentialBlend(dt, .19f);
+        float rollBlend = exponentialBlend(dt, .25f);
+        float bodyBlend = exponentialBlend(dt, .43f);
+        touchEyeX += (targetX - touchEyeX) * eyeBlend;
+        touchEyeY += (targetY - touchEyeY) * eyeBlend;
+        touchHeadX += (targetX - touchHeadX) * headBlend;
+        touchHeadY += (targetY - touchHeadY) * headBlend;
+        float rollTarget = -targetX * targetY;
+        touchHeadZ += (rollTarget - touchHeadZ) * rollBlend;
+        touchBodyX += (targetX - touchBodyX) * bodyBlend;
+        touchBodyY += (targetY - touchBodyY) * bodyBlend;
+        touchBodyZ += (rollTarget - touchBodyZ) * bodyBlend;
+
+        boolean patActive = "head_pat".equals(action) || "head_pat_confused".equals(action);
+        float headWeight = patActive ? .25f : 1.0f;
+        float bodyWeight = patActive ? .15f : 1.0f;
+        writer.add("ParamEyeBallX", touchEyeX);
+        writer.add("ParamEyeBallY", touchEyeY);
+        writer.add("ParamAngleX", touchHeadX * 30.0f * headWeight);
+        writer.add("ParamAngleY", touchHeadY * 30.0f * headWeight);
+        writer.add("ParamAngleZ", touchHeadZ * 30.0f * headWeight);
+        writer.add("ParamBodyAngleX", touchBodyX * 8.0f * bodyWeight);
+        writer.add("ParamBodyAngleY", touchBodyY * .70f * bodyWeight);
+        writer.add("ParamBodyAngleZ", touchBodyZ * 7.0f * bodyWeight);
+    }
+
+    private static float exponentialBlend(float dt, float timeConstant) {
+        return 1.0f - (float) Math.exp(-dt / Math.max(.001f, timeConstant));
+    }
+
+    private void applyEmotion(String name, ParameterWriter writer) {
+        switch (name) {
             case "happy":
                 smile(writer, 0.55f, 0.14f); break;
             case "excited":
@@ -146,8 +268,10 @@ final class SenPerformanceEngine {
                 writer.add("ParamMouthForm", -0.42f); writer.add("ParamBrowLY", 0.30f);
                 writer.add("ParamBrowRY", 0.30f); break;
             case "confused":
-                writer.add("ParamAngleZ", 8.0f); writer.add("ParamBrowLY", 0.25f);
-                writer.add("ParamBrowRY", -0.08f); break;
+                writer.add("ParamEyeLOpen", -0.25f); writer.add("ParamEyeROpen", 0.05f);
+                writer.add("ParamEyeBallX", 0.25f); writer.add("ParamBrowLY", -0.25f);
+                writer.add("ParamBrowRY", 0.45f); writer.add("ParamMouthForm", -0.20f);
+                writer.add("ParamAngleZ", -7.0f); break;
             case "helpless":
                 writer.add("ParamAngleZ", -5.0f); writer.add("ParamMouthForm", -0.35f);
                 writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f); break;
@@ -326,6 +450,26 @@ final class SenPerformanceEngine {
                 body("ParamBodyAngleZ", 0,0, .52f,-1.8f, 1.08f,-5.5f, 1.72f,-4.2f, 2.38f,2.4f, 3.02f,5.8f, 3.68f,4.1f, 4.28f,-.7f, 4.78f,.65f, 5.20f,0),
                 face("ParamEyeBallX", 0,0, .52f,-.38f, 1.08f,-.7f, 1.72f,-.24f, 2.38f,.5f, 3.02f,.72f, 3.68f,.2f, 4.28f,-.28f, 4.78f,.08f, 5.20f,0),
                 face("ParamEyeBallY", 0,0, .52f,.28f, 1.08f,.04f, 1.72f,-.38f, 2.38f,-.3f, 3.02f,.16f, 3.68f,.42f, 4.28f,.15f, 4.78f,-.05f, 5.20f,0)));
+        result.put("head_pat", motion(1.75f,
+                head("ParamAngleY", 0,0, .28f,-2.2f, .68f,-4.5f, 1.08f,-3.6f, 1.42f,-1.3f, 1.75f,0),
+                head("ParamAngleZ", 0,0, .28f,-2.5f, .68f,3.8f, 1.08f,-3.1f, 1.42f,1.2f, 1.75f,0),
+                body("ParamBodyAngleX", 0,0, .28f,-.35f, .68f,.55f, 1.08f,-.45f, 1.42f,.16f, 1.75f,0),
+                face("ParamEyeLOpen", 0,0, .28f,-.45f, .68f,-.85f, 1.08f,-.72f, 1.42f,-.30f, 1.75f,0),
+                face("ParamEyeROpen", 0,0, .28f,-.45f, .68f,-.85f, 1.08f,-.72f, 1.42f,-.30f, 1.75f,0),
+                face("ParamEyeLSmile", 0,0, .28f,.45f, .68f,.92f, 1.08f,.80f, 1.42f,.35f, 1.75f,0),
+                face("ParamEyeRSmile", 0,0, .28f,.45f, .68f,.92f, 1.08f,.80f, 1.42f,.35f, 1.75f,0),
+                face("Param13", 0,0, .28f,.20f, .68f,.82f, 1.08f,.68f, 1.42f,.25f, 1.75f,0),
+                face("ParamMouthForm", 0,0, .28f,.20f, .68f,.48f, 1.08f,.40f, 1.42f,.18f, 1.75f,0)));
+        result.put("head_pat_confused", motion(1.80f,
+                head("ParamAngleX", 0,0, .30f,1.5f, .78f,3.2f, 1.28f,2.3f, 1.80f,0),
+                head("ParamAngleY", 0,0, .30f,1.0f, .78f,-1.0f, 1.28f,-.5f, 1.80f,0),
+                head("ParamAngleZ", 0,0, .30f,-2.0f, .78f,-7.0f, 1.28f,-5.2f, 1.80f,0),
+                face("ParamEyeBallX", 0,0, .30f,.12f, .78f,.28f, 1.28f,.20f, 1.80f,0),
+                face("ParamEyeLOpen", 0,0, .30f,-.08f, .78f,-.28f, 1.28f,-.20f, 1.80f,0),
+                face("ParamEyeROpen", 0,0, .30f,.08f, .78f,.15f, 1.28f,.10f, 1.80f,0),
+                face("ParamBrowLY", 0,0, .30f,-.12f, .78f,-.35f, 1.28f,-.24f, 1.80f,0),
+                face("ParamBrowRY", 0,0, .30f,.20f, .78f,.48f, 1.28f,.34f, 1.80f,0),
+                face("ParamMouthForm", 0,0, .30f,-.08f, .78f,-.25f, 1.28f,-.16f, 1.80f,0)));
         return Collections.unmodifiableMap(result);
     }
 
@@ -366,6 +510,15 @@ final class SenPerformanceEngine {
                     * gain * envelope);
             default: return 0.0f;
         }
+    }
+
+    private static float smoothStep(float value) {
+        float p = clamp(value, 0.0f, 1.0f);
+        return p * p * (3.0f - 2.0f * p);
+    }
+
+    private static float clamp(float value, float minimum, float maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     private static Motion motion(float duration, Track... tracks) {
@@ -427,6 +580,7 @@ final class SenPerformanceEngine {
                     float v1 = frames[i + 1];
                     float span = Math.max(.0001f, t1 - t0);
                     float p = Math.max(0.0f, Math.min(1.0f, (time - t0) / span));
+                    p = smoothStep(p);
                     return v0 + (v1 - v0) * p;
                 }
             }
