@@ -49,9 +49,9 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
-                      SenVtsProfile frozenProfile, SenMaskMode maskMode) {
+                      SenVtsProfile frozenProfile, SenRenderOptions options) {
         pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance, frozenProfile,
-                maskMode);
+                options);
     }
 
     void setStageTransform(float scale, float translateX, float translateY) {
@@ -65,6 +65,13 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void applyExpression(String name) {
         if (model != null) model.setExpression(name);
+    }
+
+    void setCustomization(boolean earEnabled, float earAngleDegrees,
+                          boolean ahogeShortened, boolean ahogeRaised) {
+        if (model != null) {
+            model.setCustomization(earEnabled, earAngleDegrees, ahogeShortened, ahogeRaised);
+        }
     }
 
     @Override
@@ -172,7 +179,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             model = next;
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
                     listener, request.startupExpressions, request.appearance,
-                    request.frozenProfile, request.maskMode);
+                    request.frozenProfile, request.options);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();
@@ -199,15 +206,15 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         final List<String> startupExpressions;
         final SenVtsAppearance appearance;
         final SenVtsProfile frozenProfile;
-        final SenMaskMode maskMode;
+        final SenRenderOptions options;
 
         ModelRequest(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
-                     SenVtsProfile frozenProfile, SenMaskMode maskMode) {
+                     SenVtsProfile frozenProfile, SenRenderOptions options) {
             this.modelFile = modelFile;
             this.startupExpressions = new ArrayList<>(startupExpressions);
             this.appearance = appearance;
             this.frozenProfile = frozenProfile;
-            this.maskMode = maskMode;
+            this.options = options;
         }
     }
 }

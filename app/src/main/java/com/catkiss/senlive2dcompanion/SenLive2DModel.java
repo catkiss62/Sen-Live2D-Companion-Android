@@ -23,17 +23,28 @@ import java.util.Map;
 import java.util.Set;
 
 final class SenLive2DModel extends CubismUserModel {
+    private static final String[] EAR_ANGLE_PARAMETER_IDS = {
+            "ParamL_angle", "ParamR_angle", "ParamR_angle2"
+    };
+    private static final String[] AHOGE_DRAWABLE_IDS = {
+            "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
+    };
+    private static final float AHOGE_SHORT_SCALE = 0.78f;
+    private static final float AHOGE_RAISE_CANVAS_RATIO = 0.025f;
+
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
+    private final Map<String, Float> originalEarAngles = new HashMap<>();
     private ICubismModelSetting setting;
     private File homeDirectory;
     private String appearanceDetail = "";
     private boolean frozenSnapshot;
-    private SenMaskMode maskMode = SenMaskMode.DYNAMIC_MULTI;
+    private SenRenderOptions renderOptions = new SenRenderOptions(
+            SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
               SenVtsAppearance appearance, SenVtsProfile frozenProfile,
-              SenMaskMode requestedMaskMode) throws IOException {
+              SenRenderOptions requestedOptions) throws IOException {
         homeDirectory = modelFile.getParentFile();
         if (homeDirectory == null) throw new IOException("model3 所在目录无效");
 
@@ -57,6 +68,7 @@ final class SenLive2DModel extends CubismUserModel {
         System.gc();
 
         frozenSnapshot = frozenProfile != null;
+        renderOptions = requestedOptions == null ? renderOptions : requestedOptions;
         if (!frozenSnapshot) {
             loadExpressions(listener);
             loadPhysicsAndPose(listener);
@@ -70,19 +82,20 @@ final class SenLive2DModel extends CubismUserModel {
         } else {
             model.saveParameters();
         }
+        captureOriginalEarAngles();
         applyVtsArtMeshColors(appearance, listener);
         if (frozenSnapshot) {
             // Calculate all Drawable vertices once from the captured VTS values. No scheduler is
             // allowed to overwrite them afterwards; this build is a strict renderer parity test.
+            applyEarAngleOverride();
             model.update();
+            applyAhogeTransform();
         } else {
             updateScheduler.sortUpdatableList();
         }
 
-        maskMode = requestedMaskMode == null
-                ? SenMaskMode.DYNAMIC_MULTI : requestedMaskMode;
         listener.onStatus("原生渲染：正在创建 OpenGL 渲染器…\n蒙版模式："
-                + maskMode.displayName());
+                + renderOptions.maskMode.displayName());
         setupNativeRenderer(width, height);
         setupTextures(textures, listener);
 
@@ -104,7 +117,19 @@ final class SenLive2DModel extends CubismUserModel {
         model.loadParameters();
         model.saveParameters();
         updateScheduler.onLateUpdate(model, deltaSeconds);
+        applyEarAngleOverride();
         model.update();
+        applyAhogeTransform();
+    }
+
+    void setCustomization(boolean earEnabled, float earAngleDegrees,
+                          boolean ahogeShortened, boolean ahogeRaised) {
+        renderOptions = renderOptions.withCustomization(
+                earEnabled, earAngleDegrees, ahogeShortened, ahogeRaised);
+        if (model == null || !frozenSnapshot) return;
+        applyEarAngleOverride();
+        model.update();
+        applyAhogeTransform();
     }
 
     void draw(CubismMatrix44 matrix) {
@@ -236,6 +261,77 @@ final class SenLive2DModel extends CubismUserModel {
                 + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
     }
 
+    private void captureOriginalEarAngles() {
+        originalEarAngles.clear();
+        for (String id : EAR_ANGLE_PARAMETER_IDS) {
+            int index = findParameterIndex(id);
+            if (index >= 0) {
+                originalEarAngles.put(id,
+                        model.getModel().getParameterViews()[index].getValue());
+            }
+        }
+        int ahogeCount = 0;
+        for (String id : AHOGE_DRAWABLE_IDS) {
+            if (model.getDrawableIndex(CubismFramework.getIdManager().getId(id)) >= 0) ahogeCount++;
+        }
+        appendAppearanceDetail("耳鳍角度参数 " + originalEarAngles.size() + "/3"
+                + " · 呆毛网格 " + ahogeCount + "/2");
+    }
+
+    private void applyEarAngleOverride() {
+        for (String id : EAR_ANGLE_PARAMETER_IDS) {
+            int index = findParameterIndex(id);
+            if (index < 0) continue;
+            if (renderOptions.earAngleOverrideEnabled) {
+                model.getModel().getParameterViews()[index].setValue(renderOptions.earAngleDegrees);
+            } else if (frozenSnapshot) {
+                Float original = originalEarAngles.get(id);
+                if (original != null) model.getModel().getParameterViews()[index].setValue(original);
+            }
+        }
+    }
+
+    private int findParameterIndex(String id) {
+        for (int i = 0; i < model.getParameterCount(); i++) {
+            if (id.equals(model.getParameterId(i).getString())) return i;
+        }
+        return -1;
+    }
+
+    private void applyAhogeTransform() {
+        if (!renderOptions.ahogeShortened && !renderOptions.ahogeRaised) return;
+
+        int[] indices = new int[AHOGE_DRAWABLE_IDS.length];
+        int count = 0;
+        float minX = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        for (String id : AHOGE_DRAWABLE_IDS) {
+            int index = model.getDrawableIndex(CubismFramework.getIdManager().getId(id));
+            if (index < 0) continue;
+            indices[count++] = index;
+            float[] vertices = model.getDrawableVertices(index);
+            for (int i = 0; i + 1 < vertices.length; i += 2) {
+                minX = Math.min(minX, vertices[i]);
+                maxX = Math.max(maxX, vertices[i]);
+                minY = Math.min(minY, vertices[i + 1]);
+            }
+        }
+        if (count == 0 || !Float.isFinite(minX) || !Float.isFinite(minY)) return;
+
+        float anchorX = (minX + maxX) * 0.5f;
+        float raise = renderOptions.ahogeRaised
+                ? Math.max(0.02f, getCanvasHeight() * AHOGE_RAISE_CANVAS_RATIO) : 0.0f;
+        float scale = renderOptions.ahogeShortened ? AHOGE_SHORT_SCALE : 1.0f;
+        for (int n = 0; n < count; n++) {
+            float[] vertices = model.getDrawableVertices(indices[n]);
+            for (int i = 0; i + 1 < vertices.length; i += 2) {
+                vertices[i] = anchorX + (vertices[i] - anchorX) * scale;
+                vertices[i + 1] = minY + (vertices[i + 1] - minY) * scale + raise;
+            }
+        }
+    }
+
     private void appendAppearanceDetail(String detail) {
         if (detail == null || detail.isEmpty()) return;
         appearanceDetail = appearanceDetail.isEmpty() ? detail : appearanceDetail + " · " + detail;
@@ -243,6 +339,7 @@ final class SenLive2DModel extends CubismUserModel {
 
     private void setupNativeRenderer(int width, int height) {
         MaskStats stats = inspectMasks();
+        SenMaskMode maskMode = renderOptions.maskMode;
         int requestedBuffers = maskMode == SenMaskMode.DEFAULT_SINGLE
                 ? 1 : calculateDynamicBufferCount(stats);
 
@@ -250,6 +347,9 @@ final class SenLive2DModel extends CubismUserModel {
                 CubismRendererAndroid.create(width, height);
         setupRenderer(nativeRenderer, requestedBuffers);
         if (maskMode == SenMaskMode.HIGH_PRECISION) {
+            nativeRenderer.setDrawableClippingMaskBufferSize(
+                    renderOptions.highPrecisionMaskSize,
+                    renderOptions.highPrecisionMaskSize);
             nativeRenderer.isUsingHighPrecisionMask(true);
         }
 
@@ -263,6 +363,8 @@ final class SenLive2DModel extends CubismUserModel {
                 + " · Offscreen组 " + stats.offscreenGroups
                 + "/对象 " + stats.maskedOffscreens
                 + " · 缓冲 D" + drawableBuffers + "/O" + offscreenBuffers
+                + " · 尺寸 " + (maskMode == SenMaskMode.HIGH_PRECISION
+                ? renderOptions.highPrecisionMaskSize : 256) + "px"
                 + " · 高精度 " + (nativeRenderer.isUsingHighPrecisionMask() ? "开" : "关")
                 + " · Blend " + (model.isBlendModeEnabled() ? "有" : "无")
                 + " · Offscreen总数 " + model.getOffscreenCount());

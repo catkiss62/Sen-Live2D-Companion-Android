@@ -23,6 +23,6 @@ enum SenMaskMode {
                 if (mode.name().equals(value)) return mode;
             }
         }
-        return DYNAMIC_MULTI;
+        return HIGH_PRECISION;
     }
 }

@@ -16,6 +16,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -69,7 +70,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private TextView loadingText;
     private boolean applyVtsPreset = true;
     private boolean freezeVtsSnapshot = true;
-    private SenMaskMode maskMode = SenMaskMode.DYNAMIC_MULTI;
+    private SenMaskMode maskMode = SenMaskMode.HIGH_PRECISION;
+    private int highPrecisionMaskSize = 1024;
+    private boolean earAngleOverrideEnabled;
+    private float earAngleDegrees;
+    private boolean ahogeShortened;
+    private boolean ahogeRaised;
     private boolean adjustmentEnabled;
     private float stageScale = 1.0f;
     private float stageTranslateX;
@@ -78,6 +84,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float lastTouchY;
     private ScaleGestureDetector scaleGestureDetector;
     private Button adjustmentButton;
+    private TextView earAngleStatus;
+    private SeekBar earAngleSeekBar;
+    private Button ahogeShortButton;
+    private Button ahogeRaiseButton;
     private long nativeLoadStartedAt;
     private String rendererDetail = "";
 
@@ -92,6 +102,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         maskMode = SenMaskMode.fromPreference(prefs.getString("mask_mode", null));
+        highPrecisionMaskSize = normalizeMaskSize(prefs.getInt("mask_size", 1024));
+        earAngleOverrideEnabled = prefs.getBoolean("ear_angle_enabled", false);
+        earAngleDegrees = Math.max(-30.0f,
+                Math.min(30.0f, prefs.getFloat("ear_angle_degrees", 0.0f)));
+        ahogeShortened = prefs.getBoolean("ahoge_shortened", false);
+        ahogeRaised = prefs.getBoolean("ahoge_raised", false);
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
         appearanceExpressionFile = new File(getFilesDir(), "xiaojingyu.exp3.json");
@@ -137,7 +153,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.3.3 · Cubism蒙版A/B/C诊断");
+        statusText.setText("v0.3.4 · C蒙版清晰度与外形试调");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -238,6 +254,22 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         panel.addView(maskControls);
 
+        TextView maskQualityHeading = new TextView(this);
+        maskQualityHeading.setText("C蒙版清晰度（默认1024；切换后会重载模型）");
+        maskQualityHeading.setTextColor(Color.rgb(220, 198, 238));
+        maskQualityHeading.setTextSize(10);
+        maskQualityHeading.setPadding(dp(3), dp(3), 0, 0);
+        panel.addView(maskQualityHeading);
+
+        LinearLayout maskQualityControls = new LinearLayout(this);
+        maskQualityControls.setOrientation(LinearLayout.HORIZONTAL);
+        for (int size : new int[]{256, 512, 1024}) {
+            Button button = panelButton(size + "px");
+            button.setOnClickListener(v -> selectHighPrecisionMaskSize(size));
+            maskQualityControls.addView(button, weightedButtonParams());
+        }
+        panel.addView(maskQualityControls);
+
         LinearLayout adjustmentControls = new LinearLayout(this);
         adjustmentControls.setOrientation(LinearLayout.HORIZONTAL);
         adjustmentButton = panelButton("调整模型：关闭");
@@ -252,8 +284,77 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         adjustmentControls.addView(resetTransformButton, weightedButtonParams());
         panel.addView(adjustmentControls);
 
+        TextView earHeading = new TextView(this);
+        earHeading.setText("耳鳍角度试调（左右联动，不写回模型文件）");
+        earHeading.setTextColor(Color.rgb(238, 207, 255));
+        earHeading.setTextSize(11);
+        earHeading.setPadding(dp(3), dp(5), 0, 0);
+        panel.addView(earHeading);
+
+        earAngleStatus = new TextView(this);
+        earAngleStatus.setTextColor(Color.rgb(205, 190, 220));
+        earAngleStatus.setTextSize(10);
+        earAngleStatus.setPadding(dp(3), dp(2), 0, 0);
+        panel.addView(earAngleStatus);
+
+        earAngleSeekBar = new SeekBar(this);
+        earAngleSeekBar.setMax(60);
+        earAngleSeekBar.setProgress(Math.round(earAngleDegrees) + 30);
+        earAngleSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                earAngleOverrideEnabled = true;
+                earAngleDegrees = progress - 30.0f;
+                updateCustomizationControls();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                persistAndApplyCustomization();
+            }
+        });
+        panel.addView(earAngleSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        LinearLayout earPresets = new LinearLayout(this);
+        earPresets.setOrientation(LinearLayout.HORIZONTAL);
+        Button earOriginal = panelButton("原VTS值");
+        earOriginal.setOnClickListener(v -> restoreEarAngle());
+        earPresets.addView(earOriginal, weightedButtonParams());
+        for (int angle : new int[]{0, 10, 20}) {
+            Button button = panelButton((angle > 0 ? "+" : "") + angle + "°");
+            button.setOnClickListener(v -> setEarAngleOverride(angle));
+            earPresets.addView(button, weightedButtonParams());
+        }
+        panel.addView(earPresets);
+
+        TextView ahogeHeading = new TextView(this);
+        ahogeHeading.setText("长呆毛运行时试调（两个选项可分别开关）");
+        ahogeHeading.setTextColor(Color.rgb(238, 207, 255));
+        ahogeHeading.setTextSize(11);
+        ahogeHeading.setPadding(dp(3), dp(5), 0, 0);
+        panel.addView(ahogeHeading);
+
+        LinearLayout ahogeControls = new LinearLayout(this);
+        ahogeControls.setOrientation(LinearLayout.HORIZONTAL);
+        ahogeShortButton = panelButton("");
+        ahogeShortButton.setOnClickListener(v -> {
+            ahogeShortened = !ahogeShortened;
+            persistAndApplyCustomization();
+        });
+        ahogeControls.addView(ahogeShortButton, weightedButtonParams());
+        ahogeRaiseButton = panelButton("");
+        ahogeRaiseButton.setOnClickListener(v -> {
+            ahogeRaised = !ahogeRaised;
+            persistAndApplyCustomization();
+        });
+        ahogeControls.addView(ahogeRaiseButton, weightedButtonParams());
+        panel.addView(ahogeControls);
+        updateCustomizationControls();
+
         TextView expressionHeading = new TextView(this);
-        expressionHeading.setText("ZIP 表情（冻结模式停用；静态正确之前不作为本轮验收内容）");
+        expressionHeading.setText("ZIP 表情（冻结模式停用；本轮仍不测试表情与动作）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
         expressionHeading.setTextSize(12);
         expressionHeading.setPadding(0, dp(5), 0, dp(3));
@@ -354,6 +455,71 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         updateSummary();
         toastLong("切换到 " + selected.displayName() + "，正在重载同一模型");
         loadNativeModel();
+    }
+
+    private void selectHighPrecisionMaskSize(int size) {
+        highPrecisionMaskSize = normalizeMaskSize(size);
+        maskMode = SenMaskMode.HIGH_PRECISION;
+        prefs.edit()
+                .putInt("mask_size", highPrecisionMaskSize)
+                .putString("mask_mode", maskMode.name())
+                .apply();
+        updateSummary();
+        toastLong("C高精度蒙版切换到 " + highPrecisionMaskSize + "px，正在重载模型");
+        loadNativeModel();
+    }
+
+    private static int normalizeMaskSize(int size) {
+        if (size >= 1024) return 1024;
+        if (size >= 512) return 512;
+        return 256;
+    }
+
+    private void setEarAngleOverride(float angle) {
+        earAngleOverrideEnabled = true;
+        earAngleDegrees = Math.max(-30.0f, Math.min(30.0f, angle));
+        if (earAngleSeekBar != null) {
+            int progress = Math.round(earAngleDegrees) + 30;
+            if (earAngleSeekBar.getProgress() != progress) earAngleSeekBar.setProgress(progress);
+        }
+        persistAndApplyCustomization();
+    }
+
+    private void restoreEarAngle() {
+        earAngleOverrideEnabled = false;
+        persistAndApplyCustomization();
+        toastLong("耳鳍已恢复导入的VTS原值（本次采集约 -8.8°）");
+    }
+
+    private void persistAndApplyCustomization() {
+        prefs.edit()
+                .putBoolean("ear_angle_enabled", earAngleOverrideEnabled)
+                .putFloat("ear_angle_degrees", earAngleDegrees)
+                .putBoolean("ahoge_shortened", ahogeShortened)
+                .putBoolean("ahoge_raised", ahogeRaised)
+                .apply();
+        updateCustomizationControls();
+        if (glSurfaceView != null && renderer != null) {
+            glSurfaceView.queueEvent(() -> renderer.setCustomization(
+                    earAngleOverrideEnabled, earAngleDegrees,
+                    ahogeShortened, ahogeRaised));
+        }
+        updateSummary();
+    }
+
+    private void updateCustomizationControls() {
+        if (earAngleStatus != null) {
+            earAngleStatus.setText(earAngleOverrideEnabled
+                    ? String.format(java.util.Locale.ROOT,
+                    "当前联动角度：%+.0f°（滑杆范围 -30°～+30°）", earAngleDegrees)
+                    : "当前：导入的VTS原值（本次采集约 -8.8°）");
+        }
+        if (ahogeShortButton != null) {
+            ahogeShortButton.setText("缩短：" + (ahogeShortened ? "开" : "关"));
+        }
+        if (ahogeRaiseButton != null) {
+            ahogeRaiseButton.setText("上移：" + (ahogeRaised ? "开" : "关"));
+        }
     }
 
     private void resetStageTransform() {
@@ -566,11 +732,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         SenVtsAppearance selectedAppearance = appearance;
         SenVtsProfile selectedFrozenProfile = frozenProfile;
-        SenMaskMode selectedMaskMode = maskMode;
+        SenRenderOptions selectedOptions = new SenRenderOptions(
+                maskMode, highPrecisionMaskSize,
+                earAngleOverrideEnabled, earAngleDegrees,
+                ahogeShortened, ahogeRaised);
         rendererDetail = "";
         updateSummary();
         glSurfaceView.queueEvent(() -> renderer.requestModel(
-                modelFile, startup, selectedAppearance, selectedFrozenProfile, selectedMaskMode));
+                modelFile, startup, selectedAppearance, selectedFrozenProfile, selectedOptions));
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -735,6 +904,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         summaryText.setText(diagnostics
                 + "\n" + appearance
                 + "\n当前蒙版：" + maskMode.displayName()
+                + (maskMode == SenMaskMode.HIGH_PRECISION
+                ? " · " + highPrecisionMaskSize + "px" : "")
+                + " · 耳鳍：" + (earAngleOverrideEnabled
+                ? String.format(java.util.Locale.ROOT, "%+.0f°", earAngleDegrees) : "VTS原值")
+                + " · 呆毛：" + (ahogeShortened ? "缩短" : "原长")
+                + "/" + (ahogeRaised ? "上移" : "原位")
                 + (rendererDetail.isEmpty() ? "" : "\n渲染实测：" + rendererDetail)
                 + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
     }
@@ -759,7 +934,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             setStatus(detail + " · "
                     + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
             toastLong(freezeVtsSnapshot
-                    ? maskMode.displayName() + " 已加载：请检查白块、刘海、嘴、手指、丝袜和耳朵"
+                    ? maskMode.displayName() + " 已加载：请检查耳鳍白边、角度和呆毛"
                     : "Sen 已加载，请检查颜色、头发、眼睛和部件状态");
         });
     }
