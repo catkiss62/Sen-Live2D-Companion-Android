@@ -49,9 +49,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
-                      SenVtsProfile frozenProfile, SenRenderOptions options) {
+                      SenVtsProfile frozenProfile, SenRenderOptions options,
+                      SenOutfitPresets.Preset outfitPreset) {
         pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance, frozenProfile,
-                options);
+                options, outfitPreset);
     }
 
     void setStageTransform(float scale, float translateX, float translateY) {
@@ -81,6 +82,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void setAutoIdle(boolean enabled) {
         if (model != null) model.setAutoIdle(enabled);
+    }
+
+    void selectOutfit(SenOutfitPresets.Preset preset) {
+        if (model != null) model.selectOutfit(preset);
     }
 
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
@@ -200,7 +205,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             model = next;
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
                     listener, request.startupExpressions, request.appearance,
-                    request.frozenProfile, request.options);
+                    request.frozenProfile, request.options, request.outfitPreset);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();
@@ -228,14 +233,17 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         final SenVtsAppearance appearance;
         final SenVtsProfile frozenProfile;
         final SenRenderOptions options;
+        final SenOutfitPresets.Preset outfitPreset;
 
         ModelRequest(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
-                     SenVtsProfile frozenProfile, SenRenderOptions options) {
+                     SenVtsProfile frozenProfile, SenRenderOptions options,
+                     SenOutfitPresets.Preset outfitPreset) {
             this.modelFile = modelFile;
             this.startupExpressions = new ArrayList<>(startupExpressions);
             this.appearance = appearance;
             this.frozenProfile = frozenProfile;
             this.options = options;
+            this.outfitPreset = outfitPreset;
         }
     }
 }

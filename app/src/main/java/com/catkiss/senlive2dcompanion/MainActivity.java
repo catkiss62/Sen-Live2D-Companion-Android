@@ -106,6 +106,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private Button tailMirrorButton;
     private Button autoIdleButton;
     private boolean autoIdleEnabled;
+    private SenOutfitPresets.Preset selectedOutfit;
     private long nativeLoadStartedAt;
     private String rendererDetail = "";
 
@@ -144,6 +145,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                         : (prefs.getBoolean("ahoge_raised", false) ? 25.0f : 0.0f)));
         tailMirrored = prefs.getBoolean("tail_mirrored", false);
         autoIdleEnabled = prefs.getBoolean("auto_idle_enabled", false);
+        selectedOutfit = SenOutfitPresets.fromId(
+                prefs.getString("outfit_preset", SenOutfitPresets.MAID.id));
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
         appearanceExpressionFile = new File(getFilesDir(), "xiaojingyu.exp3.json");
@@ -189,7 +192,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.3.7 · 动态基础与动作测试");
+        statusText.setText("v0.3.8 · 三套服装预设测试");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -236,8 +239,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         controls.setOrientation(LinearLayout.HORIZONTAL);
         Button vtsButton = panelButton("使用VTS外观底座");
         vtsButton.setOnClickListener(v -> {
-            if (!profileFile.isFile() || !appearanceVtubeFile.isFile()) {
-                toastLong("请点顶部“导入外观”，同时选择 Sen.vts-profile.json 和当前 .vtube.json");
+            if (!profileFile.isFile()) {
+                toastLong("请点顶部“导入外观”，选择一次 Sen.vts-profile.json；服装颜色已经内置");
                 return;
             }
             applyVtsPreset = true;
@@ -273,6 +276,29 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         memoryNote.setTextSize(10);
         memoryNote.setPadding(dp(3), dp(3), 0, dp(3));
         panel.addView(memoryNote);
+
+        TextView outfitHeading = new TextView(this);
+        outfitHeading.setText("内置服装预设（按钮直接切换，不再选择服装JSON）");
+        outfitHeading.setTextColor(Color.rgb(238, 207, 255));
+        outfitHeading.setTextSize(12);
+        outfitHeading.setPadding(0, dp(6), 0, dp(3));
+        panel.addView(outfitHeading);
+
+        LinearLayout outfitRow = new LinearLayout(this);
+        outfitRow.setOrientation(LinearLayout.HORIZONTAL);
+        for (SenOutfitPresets.Preset preset : SenOutfitPresets.ALL) {
+            Button button = panelButton(preset.displayName);
+            button.setOnClickListener(v -> selectOutfitPreset(preset));
+            outfitRow.addView(button, weightedButtonParams());
+        }
+        panel.addView(outfitRow);
+
+        TextView outfitNote = new TextView(this);
+        outfitNote.setText("女仆装/白衬衫共用配色，兔女郎使用独立配色；白衬衫会关闭Maid Headband。服装参数不包含九轴、手臂或物理瞬时值。");
+        outfitNote.setTextColor(Color.rgb(186, 164, 204));
+        outfitNote.setTextSize(10);
+        outfitNote.setPadding(dp(3), dp(2), 0, dp(3));
+        panel.addView(outfitNote);
 
         TextView maskHeading = new TextView(this);
         maskHeading.setText("底层蒙版模式（只改变渲染策略；每次会重载大模型）");
@@ -627,6 +653,25 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         loadNativeModel();
     }
 
+    private void selectOutfitPreset(SenOutfitPresets.Preset preset) {
+        if (preset == null) return;
+        if (!profileFile.isFile()) {
+            toastLong("内置服装只需一份VTS外观底座；请先导入Sen.vts-profile.json");
+            return;
+        }
+        selectedOutfit = preset;
+        prefs.edit().putString("outfit_preset", preset.id).apply();
+        if (applyVtsPreset && freezeVtsSnapshot) {
+            glSurfaceView.queueEvent(() -> renderer.selectOutfit(preset));
+            updateSummary();
+            toastLong("已切换服装：" + preset.displayName);
+        } else {
+            applyVtsPreset = true;
+            freezeVtsSnapshot = true;
+            loadNativeModel();
+        }
+    }
+
     private static int normalizeMaskSize(int size) {
         if (size >= 1024) return 1024;
         return 512;
@@ -723,7 +768,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         if (ahogeScaleStatus != null) {
             ahogeScaleStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛大小：%.0f%%（范围40%%～160%%）", ahogeScalePercent));
+                    "呆毛高度：%.0f%%（发根固定；范围40%%～160%%）", ahogeScalePercent));
         }
         if (ahogeWidthStatus != null) {
             ahogeWidthStatus.setText(String.format(java.util.Locale.ROOT,
@@ -929,7 +974,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             else startup.addAll(savedVtsExpressions);
         }
         SenVtsAppearance appearance = null;
-        if (applyVtsPreset && appearanceVtubeFile.isFile()) {
+        if (applyVtsPreset && freezeVtsSnapshot) {
+            appearance = selectedOutfit.appearance;
+        } else if (applyVtsPreset && appearanceVtubeFile.isFile()) {
             try {
                 appearance = SenVtsAppearance.parse(readUtf8File(appearanceVtubeFile));
             } catch (IOException error) {
@@ -969,7 +1016,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         rendererDetail = "";
         updateSummary();
         glSurfaceView.queueEvent(() -> renderer.requestModel(
-                modelFile, startup, selectedAppearance, selectedFrozenProfile, selectedOptions));
+                modelFile, startup, selectedAppearance, selectedFrozenProfile, selectedOptions,
+                selectedOutfit));
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -1133,8 +1181,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 + (maskMode == SenMaskMode.HIGH_PRECISION
                 ? " · " + highPrecisionMaskSize + "px" : "")
                 + " · 耳鳍：VTS原位/原生物理"
+                + " · 服装：" + selectedOutfit.displayName
                 + String.format(java.util.Locale.ROOT,
-                " · 呆毛：大小%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
+                " · 呆毛：高%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY)
                 + " · 尾巴：" + (tailMirrored ? "右侧镜像" : "左侧原始")

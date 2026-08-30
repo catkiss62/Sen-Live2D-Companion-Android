@@ -27,6 +27,23 @@ final class SenVtsAppearance {
         this.colors = Collections.unmodifiableList(colors);
     }
 
+    /** Builds a minimal in-code preset without bundling the owner's full VTS configuration. */
+    static SenVtsAppearance fromEncoded(List<String[]> entries) {
+        List<ArtMeshColor> colors = new ArrayList<>();
+        try {
+            for (String[] entry : entries) {
+                if (entry == null || entry.length != 2) continue;
+                String[] channels = entry[1].split("\\|", -1);
+                if (entry[0].isEmpty() || channels.length != 2) continue;
+                colors.add(new ArtMeshColor(
+                        entry[0], parseRgba(channels[0]), parseRgba(channels[1])));
+            }
+        } catch (IOException | NumberFormatException error) {
+            throw new IllegalArgumentException("内置服装颜色表无效", error);
+        }
+        return new SenVtsAppearance(colors);
+    }
+
     static SenVtsAppearance parse(String text) throws IOException {
         try {
             JSONObject root = new JSONObject(text);

@@ -36,6 +36,7 @@ final class SenLive2DModel extends CubismUserModel {
     private String appearanceDetail = "";
     private boolean hasVtsBaseProfile;
     private boolean geometryDiagnosticsAdded;
+    private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
             100.0f, 100.0f, 0.0f, 0.0f, 0.0f, false, false);
@@ -43,7 +44,8 @@ final class SenLive2DModel extends CubismUserModel {
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
               SenVtsAppearance appearance, SenVtsProfile frozenProfile,
-              SenRenderOptions requestedOptions) throws IOException {
+              SenRenderOptions requestedOptions,
+              SenOutfitPresets.Preset requestedOutfit) throws IOException {
         homeDirectory = modelFile.getParentFile();
         if (homeDirectory == null) throw new IOException("model3 所在目录无效");
 
@@ -67,6 +69,7 @@ final class SenLive2DModel extends CubismUserModel {
         System.gc();
 
         hasVtsBaseProfile = frozenProfile != null;
+        outfitPreset = requestedOutfit == null ? SenOutfitPresets.MAID : requestedOutfit;
         renderOptions = requestedOptions == null ? renderOptions : requestedOptions;
         performance.setAutoIdle(renderOptions.autoIdleEnabled);
         // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
@@ -80,6 +83,7 @@ final class SenLive2DModel extends CubismUserModel {
         geometryDiagnosticsAdded = false;
         if (hasVtsBaseProfile) {
             applyFrozenProfile(frozenProfile, listener);
+            applyOutfitParameters(outfitPreset, listener);
         }
         model.saveParameters();
         applyVtsArtMeshColors(appearance, listener);
@@ -112,9 +116,9 @@ final class SenLive2DModel extends CubismUserModel {
             @Override public void add(String id, float value) { addParameter(id, value); }
             @Override public void set(String id, float value) { setParameter(id, value); }
         });
-        setParameter("ParamBreath", performance.getBreathValue()
-                + performance.getEarPhysicsImpulse() * 0.90f);
+        setParameter("ParamBreath", performance.getBreathValue());
         updateScheduler.onLateUpdate(model, deltaSeconds);
+        applyEarTwitch(performance.getEarPhysicsImpulse());
         model.update();
         applyRuntimeGeometry();
     }
@@ -164,6 +168,17 @@ final class SenLive2DModel extends CubismUserModel {
 
     void setAutoIdle(boolean enabled) {
         performance.setAutoIdle(enabled);
+    }
+
+    void selectOutfit(SenOutfitPresets.Preset preset) {
+        if (model == null || preset == null || !hasVtsBaseProfile) return;
+        outfitPreset = preset;
+        model.loadParameters();
+        applyOutfitParameters(preset, null);
+        model.saveParameters();
+        applyVtsArtMeshColors(preset.appearance, null);
+        model.update();
+        applyRuntimeGeometry();
     }
 
     boolean isAutoIdle() {
@@ -226,9 +241,15 @@ final class SenLive2DModel extends CubismUserModel {
     private void applyVtsArtMeshColors(SenVtsAppearance appearance,
                                        SenRenderer.Listener listener) {
         if (appearance == null) return;
-        listener.onStatus("正在叠加 VTS 逐部件颜色…");
+        if (listener != null) listener.onStatus("正在叠加 VTS 逐部件颜色…");
 
         CubismModelMultiplyAndScreenColor overrides = model.getOverrideMultiplyAndScreenColor();
+        // A preset is a complete desired colour state. Disable every previous override first so
+        // bunny-only greys cannot leak into maid/white-shirt after an in-place switch.
+        for (int i = 0; i < model.getDrawableCount(); i++) {
+            overrides.setDrawableMultiplyColorEnabled(i, false);
+            overrides.setDrawableScreenColorEnabled(i, false);
+        }
         int applied = 0;
         int missing = 0;
         for (SenVtsAppearance.ArtMeshColor entry : appearance.colors) {
@@ -246,8 +267,41 @@ final class SenLive2DModel extends CubismUserModel {
             overrides.setDrawableScreenColorEnabled(index, true);
             applied++;
         }
-        appendAppearanceDetail("VTS逐部件染色 " + applied + "项"
-                + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
+        if (listener != null) {
+            appendAppearanceDetail("内置服装染色 " + applied + "项"
+                    + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
+        }
+    }
+
+    private void applyOutfitParameters(SenOutfitPresets.Preset preset,
+                                       SenRenderer.Listener listener) {
+        if (preset == null) return;
+        int applied = 0;
+        int missing = 0;
+        for (Map.Entry<String, Float> entry : preset.parameterOverrides.entrySet()) {
+            int index = findParameterIndex(entry.getKey());
+            if (index < 0) {
+                missing++;
+                continue;
+            }
+            model.getModel().getParameterViews()[index].setValue(entry.getValue());
+            applied++;
+        }
+        if (listener != null) {
+            appendAppearanceDetail("服装“" + preset.displayName + "”参数 " + applied + "项"
+                    + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
+        }
+    }
+
+    private void applyEarTwitch(float impulse) {
+        if (impulse <= 0.0001f) return;
+        // RabbitEarrs is the outfit selector (0/1), not an animation axis. VTS/model physics
+        // moves that selected ear through these dedicated output angles. Apply the two short
+        // pulses after native physics so the twitch affects the ear only instead of abusing
+        // ParamBreath and shaking hair, chest, tail and every other breathing consumer.
+        addParameter("ParamL_angle", 11.0f * impulse);
+        addParameter("ParamR_angle", 11.0f * impulse);
+        addParameter("ParamR_angle2", 8.0f * impulse);
     }
 
     private void applyFrozenProfile(SenVtsProfile profile, SenRenderer.Listener listener) {
