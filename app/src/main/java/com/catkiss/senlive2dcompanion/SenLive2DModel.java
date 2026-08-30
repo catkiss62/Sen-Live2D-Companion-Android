@@ -246,7 +246,8 @@ final class SenLive2DModel extends CubismUserModel {
         int requestedBuffers = maskMode == SenMaskMode.DEFAULT_SINGLE
                 ? 1 : calculateDynamicBufferCount(stats);
 
-        CubismRendererAndroid nativeRenderer = CubismRendererAndroid.create(width, height);
+        CubismRendererAndroid nativeRenderer = (CubismRendererAndroid)
+                CubismRendererAndroid.create(width, height);
         setupRenderer(nativeRenderer, requestedBuffers);
         if (maskMode == SenMaskMode.HIGH_PRECISION) {
             nativeRenderer.isUsingHighPrecisionMask(true);
