@@ -74,6 +74,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private int highPrecisionMaskSize = 1024;
     private boolean earAngleOverrideEnabled;
     private float earAngleDegrees;
+    private float earVerticalOffset;
     private boolean ahogeShortened;
     private boolean ahogeRaised;
     private boolean adjustmentEnabled;
@@ -86,6 +87,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private Button adjustmentButton;
     private TextView earAngleStatus;
     private SeekBar earAngleSeekBar;
+    private TextView earVerticalStatus;
+    private SeekBar earVerticalSeekBar;
     private Button ahogeShortButton;
     private Button ahogeRaiseButton;
     private long nativeLoadStartedAt;
@@ -104,8 +107,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         maskMode = SenMaskMode.fromPreference(prefs.getString("mask_mode", null));
         highPrecisionMaskSize = normalizeMaskSize(prefs.getInt("mask_size", 1024));
         earAngleOverrideEnabled = prefs.getBoolean("ear_angle_enabled", false);
-        earAngleDegrees = Math.max(-30.0f,
+        earAngleDegrees = Math.max(-50.0f,
                 Math.min(30.0f, prefs.getFloat("ear_angle_degrees", 0.0f)));
+        earVerticalOffset = Math.max(-50.0f,
+                Math.min(20.0f, prefs.getFloat("ear_vertical_offset", 0.0f)));
         ahogeShortened = prefs.getBoolean("ahoge_shortened", false);
         ahogeRaised = prefs.getBoolean("ahoge_raised", false);
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
@@ -285,7 +290,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(adjustmentControls);
 
         TextView earHeading = new TextView(this);
-        earHeading.setText("耳鳍角度试调（左右联动，不写回模型文件）");
+        earHeading.setText("耳鳍角度试调（负数放平；左右联动，不写回模型）");
         earHeading.setTextColor(Color.rgb(238, 207, 255));
         earHeading.setTextSize(11);
         earHeading.setPadding(dp(3), dp(5), 0, 0);
@@ -298,14 +303,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(earAngleStatus);
 
         earAngleSeekBar = new SeekBar(this);
-        earAngleSeekBar.setMax(60);
-        earAngleSeekBar.setProgress(Math.round(earAngleDegrees) + 30);
+        earAngleSeekBar.setMax(80);
+        earAngleSeekBar.setProgress(Math.round(earAngleDegrees) + 50);
         earAngleSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (!fromUser) return;
                 earAngleOverrideEnabled = true;
-                earAngleDegrees = progress - 30.0f;
+                earAngleDegrees = progress - 50.0f;
                 updateCustomizationControls();
             }
 
@@ -322,12 +327,53 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         Button earOriginal = panelButton("原VTS值");
         earOriginal.setOnClickListener(v -> restoreEarAngle());
         earPresets.addView(earOriginal, weightedButtonParams());
-        for (int angle : new int[]{0, 10, 20}) {
-            Button button = panelButton((angle > 0 ? "+" : "") + angle + "°");
+        for (int angle : new int[]{-20, -35, -50}) {
+            Button button = panelButton(angle + "°");
             button.setOnClickListener(v -> setEarAngleOverride(angle));
             earPresets.addView(button, weightedButtonParams());
         }
         panel.addView(earPresets);
+
+        TextView earVerticalHeading = new TextView(this);
+        earVerticalHeading.setText("耳鳍上下位置（负数向下；外侧、内侧与阴影整体联动）");
+        earVerticalHeading.setTextColor(Color.rgb(238, 207, 255));
+        earVerticalHeading.setTextSize(11);
+        earVerticalHeading.setPadding(dp(3), dp(5), 0, 0);
+        panel.addView(earVerticalHeading);
+
+        earVerticalStatus = new TextView(this);
+        earVerticalStatus.setTextColor(Color.rgb(205, 190, 220));
+        earVerticalStatus.setTextSize(10);
+        earVerticalStatus.setPadding(dp(3), dp(2), 0, 0);
+        panel.addView(earVerticalStatus);
+
+        earVerticalSeekBar = new SeekBar(this);
+        earVerticalSeekBar.setMax(70);
+        earVerticalSeekBar.setProgress(Math.round(earVerticalOffset) + 50);
+        earVerticalSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                earVerticalOffset = progress - 50.0f;
+                updateCustomizationControls();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                persistAndApplyCustomization();
+            }
+        });
+        panel.addView(earVerticalSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        LinearLayout earVerticalPresets = new LinearLayout(this);
+        earVerticalPresets.setOrientation(LinearLayout.HORIZONTAL);
+        for (int offset : new int[]{0, -15, -30, -50}) {
+            Button button = panelButton(offset == 0 ? "原高度" : "下移" + (-offset));
+            button.setOnClickListener(v -> setEarVerticalOffset(offset));
+            earVerticalPresets.addView(button, weightedButtonParams());
+        }
+        panel.addView(earVerticalPresets);
 
         TextView ahogeHeading = new TextView(this);
         ahogeHeading.setText("长呆毛运行时试调（两个选项可分别开关）");
@@ -477,10 +523,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
     private void setEarAngleOverride(float angle) {
         earAngleOverrideEnabled = true;
-        earAngleDegrees = Math.max(-30.0f, Math.min(30.0f, angle));
+        earAngleDegrees = Math.max(-50.0f, Math.min(30.0f, angle));
         if (earAngleSeekBar != null) {
-            int progress = Math.round(earAngleDegrees) + 30;
+            int progress = Math.round(earAngleDegrees) + 50;
             if (earAngleSeekBar.getProgress() != progress) earAngleSeekBar.setProgress(progress);
+        }
+        persistAndApplyCustomization();
+    }
+
+    private void setEarVerticalOffset(float offset) {
+        earVerticalOffset = Math.max(-50.0f, Math.min(20.0f, offset));
+        if (earVerticalSeekBar != null) {
+            int progress = Math.round(earVerticalOffset) + 50;
+            if (earVerticalSeekBar.getProgress() != progress) {
+                earVerticalSeekBar.setProgress(progress);
+            }
         }
         persistAndApplyCustomization();
     }
@@ -495,13 +552,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         prefs.edit()
                 .putBoolean("ear_angle_enabled", earAngleOverrideEnabled)
                 .putFloat("ear_angle_degrees", earAngleDegrees)
+                .putFloat("ear_vertical_offset", earVerticalOffset)
                 .putBoolean("ahoge_shortened", ahogeShortened)
                 .putBoolean("ahoge_raised", ahogeRaised)
                 .apply();
         updateCustomizationControls();
         if (glSurfaceView != null && renderer != null) {
             glSurfaceView.queueEvent(() -> renderer.setCustomization(
-                    earAngleOverrideEnabled, earAngleDegrees,
+                    earAngleOverrideEnabled, earAngleDegrees, earVerticalOffset,
                     ahogeShortened, ahogeRaised));
         }
         updateSummary();
@@ -511,8 +569,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (earAngleStatus != null) {
             earAngleStatus.setText(earAngleOverrideEnabled
                     ? String.format(java.util.Locale.ROOT,
-                    "当前联动角度：%+.0f°（滑杆范围 -30°～+30°）", earAngleDegrees)
+                    "当前联动角度：%+.0f°（负数放平；范围 -50°～+30°）", earAngleDegrees)
                     : "当前：导入的VTS原值（本次采集约 -8.8°）");
+        }
+        if (earVerticalStatus != null) {
+            earVerticalStatus.setText(String.format(java.util.Locale.ROOT,
+                    "当前位置：%+.0f（0为原高度；负数向下）", earVerticalOffset));
         }
         if (ahogeShortButton != null) {
             ahogeShortButton.setText("缩短：" + (ahogeShortened ? "开" : "关"));
@@ -735,6 +797,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         SenRenderOptions selectedOptions = new SenRenderOptions(
                 maskMode, highPrecisionMaskSize,
                 earAngleOverrideEnabled, earAngleDegrees,
+                earVerticalOffset,
                 ahogeShortened, ahogeRaised);
         rendererDetail = "";
         updateSummary();
@@ -908,6 +971,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 ? " · " + highPrecisionMaskSize + "px" : "")
                 + " · 耳鳍：" + (earAngleOverrideEnabled
                 ? String.format(java.util.Locale.ROOT, "%+.0f°", earAngleDegrees) : "VTS原值")
+                + String.format(java.util.Locale.ROOT, "/高度%+.0f", earVerticalOffset)
                 + " · 呆毛：" + (ahogeShortened ? "缩短" : "原长")
                 + "/" + (ahogeRaised ? "上移" : "原位")
                 + (rendererDetail.isEmpty() ? "" : "\n渲染实测：" + rendererDetail)

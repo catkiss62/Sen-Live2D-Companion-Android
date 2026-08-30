@@ -5,6 +5,7 @@ import com.live2d.sdk.cubism.framework.CubismFramework;
 import com.live2d.sdk.cubism.framework.ICubismModelSetting;
 import com.live2d.sdk.cubism.framework.math.CubismMatrix44;
 import com.live2d.sdk.cubism.framework.model.CubismModelMultiplyAndScreenColor;
+import com.live2d.sdk.cubism.framework.model.CubismModelPartInfo;
 import com.live2d.sdk.cubism.framework.model.CubismUserModel;
 import com.live2d.sdk.cubism.framework.motion.ACubismMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotion;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,9 +28,10 @@ final class SenLive2DModel extends CubismUserModel {
     private static final String[] EAR_ANGLE_PARAMETER_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
-    private static final String[] AHOGE_DRAWABLE_IDS = {
-            "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
+    private static final String[] AHOGE_PART_IDS = {
+            "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
+    private static final String[] EAR_PART_IDS = {"Part56"};
     private static final float AHOGE_SHORT_SCALE = 0.78f;
     private static final float AHOGE_RAISE_CANVAS_RATIO = 0.025f;
 
@@ -38,8 +41,9 @@ final class SenLive2DModel extends CubismUserModel {
     private File homeDirectory;
     private String appearanceDetail = "";
     private boolean frozenSnapshot;
+    private boolean geometryDiagnosticsAdded;
     private SenRenderOptions renderOptions = new SenRenderOptions(
-            SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, false, false);
+            SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f, false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -77,6 +81,7 @@ final class SenLive2DModel extends CubismUserModel {
         Map<String, Float> layout = new HashMap<>();
         if (setting.getLayoutMap(layout)) modelMatrix.setupFromLayout(layout);
         appearanceDetail = "";
+        geometryDiagnosticsAdded = false;
         if (frozenSnapshot) {
             applyFrozenProfile(frozenProfile, listener);
         } else {
@@ -89,7 +94,7 @@ final class SenLive2DModel extends CubismUserModel {
             // allowed to overwrite them afterwards; this build is a strict renderer parity test.
             applyEarAngleOverride();
             model.update();
-            applyAhogeTransform();
+            applyRuntimeGeometry();
         } else {
             updateScheduler.sortUpdatableList();
         }
@@ -119,17 +124,18 @@ final class SenLive2DModel extends CubismUserModel {
         updateScheduler.onLateUpdate(model, deltaSeconds);
         applyEarAngleOverride();
         model.update();
-        applyAhogeTransform();
+        applyRuntimeGeometry();
     }
 
-    void setCustomization(boolean earEnabled, float earAngleDegrees,
+    void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
                           boolean ahogeShortened, boolean ahogeRaised) {
         renderOptions = renderOptions.withCustomization(
-                earEnabled, earAngleDegrees, ahogeShortened, ahogeRaised);
+                earEnabled, earAngleDegrees, earVerticalOffset,
+                ahogeShortened, ahogeRaised);
         if (model == null || !frozenSnapshot) return;
         applyEarAngleOverride();
         model.update();
-        applyAhogeTransform();
+        applyRuntimeGeometry();
     }
 
     void draw(CubismMatrix44 matrix) {
@@ -270,12 +276,8 @@ final class SenLive2DModel extends CubismUserModel {
                         model.getModel().getParameterViews()[index].getValue());
             }
         }
-        int ahogeCount = 0;
-        for (String id : AHOGE_DRAWABLE_IDS) {
-            if (model.getDrawableIndex(CubismFramework.getIdManager().getId(id)) >= 0) ahogeCount++;
-        }
         appendAppearanceDetail("耳鳍角度参数 " + originalEarAngles.size() + "/3"
-                + " · 呆毛网格 " + ahogeCount + "/2");
+                + " · 几何对象改用Part层级定位");
     }
 
     private void applyEarAngleOverride() {
@@ -298,17 +300,41 @@ final class SenLive2DModel extends CubismUserModel {
         return -1;
     }
 
-    private void applyAhogeTransform() {
+    private void applyRuntimeGeometry() {
+        Set<Integer> earDrawables = collectChildDrawables(EAR_PART_IDS);
+        Set<Integer> ahogeDrawables = collectChildDrawables(AHOGE_PART_IDS);
+        if (!geometryDiagnosticsAdded) {
+            appendAppearanceDetail("耳鳍子网格 " + earDrawables.size()
+                    + "/可见 " + countVisible(earDrawables)
+                    + " · 呆毛子网格 " + ahogeDrawables.size()
+                    + "/可见 " + countVisible(ahogeDrawables));
+            geometryDiagnosticsAdded = true;
+        }
+        applyEarVerticalTransform(earDrawables);
+        applyAhogeTransform(ahogeDrawables);
+    }
+
+    private void applyEarVerticalTransform(Set<Integer> indices) {
+        if (Math.abs(renderOptions.earVerticalOffset) < 0.001f) return;
+        // UI units are tenths of a percent of the Cubism canvas. Negative means down.
+        float deltaY = getCanvasHeight() * renderOptions.earVerticalOffset / 1000.0f;
+        for (int index : indices) {
+            if (!isDrawableVisible(index)) continue;
+            float[] vertices = model.getDrawableVertices(index);
+            for (int i = 1; i < vertices.length; i += 2) vertices[i] += deltaY;
+        }
+    }
+
+    private void applyAhogeTransform(Set<Integer> candidates) {
         if (!renderOptions.ahogeShortened && !renderOptions.ahogeRaised) return;
 
-        int[] indices = new int[AHOGE_DRAWABLE_IDS.length];
+        int[] indices = new int[candidates.size()];
         int count = 0;
         float minX = Float.POSITIVE_INFINITY;
         float maxX = Float.NEGATIVE_INFINITY;
         float minY = Float.POSITIVE_INFINITY;
-        for (String id : AHOGE_DRAWABLE_IDS) {
-            int index = model.getDrawableIndex(CubismFramework.getIdManager().getId(id));
-            if (index < 0) continue;
+        for (int index : candidates) {
+            if (!isDrawableVisible(index)) continue;
             indices[count++] = index;
             float[] vertices = model.getDrawableVertices(index);
             for (int i = 0; i + 1 < vertices.length; i += 2) {
@@ -330,6 +356,37 @@ final class SenLive2DModel extends CubismUserModel {
                 vertices[i + 1] = minY + (vertices[i + 1] - minY) * scale + raise;
             }
         }
+    }
+
+    private Set<Integer> collectChildDrawables(String[] partIds) {
+        Set<Integer> result = new LinkedHashSet<>();
+        for (String partId : partIds) {
+            int partIndex = findExistingPartIndex(partId);
+            if (partIndex < 0 || partIndex >= model.getPartsHierarchy().size()) continue;
+            model.getPartChildDrawObjects(partIndex);
+            CubismModelPartInfo info = model.getPartsHierarchy().get(partIndex);
+            result.addAll(info.childDrawObjects.drawableIndices);
+        }
+        return result;
+    }
+
+    private int findExistingPartIndex(String id) {
+        for (int i = 0; i < model.getPartCount(); i++) {
+            if (id.equals(model.getPartId(i).getString())) return i;
+        }
+        return -1;
+    }
+
+    private int countVisible(Set<Integer> indices) {
+        int count = 0;
+        for (int index : indices) if (isDrawableVisible(index)) count++;
+        return count;
+    }
+
+    private boolean isDrawableVisible(int index) {
+        return index >= 0 && index < model.getDrawableCount()
+                && model.getDrawableDynamicFlagIsVisible(index)
+                && model.getDrawableOpacity(index) > 0.001f;
     }
 
     private void appendAppearanceDetail(String detail) {
