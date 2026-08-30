@@ -43,7 +43,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private volatile float stageTranslateX;
     private volatile float stageTranslateY;
     private volatile boolean touchFollowEnabled = true;
-    private volatile float earSpeedPercent = 150.0f;
+    private volatile float earSpeedPercent = 135.0f;
     private volatile float earAmplitudePercent = 100.0f;
 
     SenRenderer(Context context, Listener listener) {

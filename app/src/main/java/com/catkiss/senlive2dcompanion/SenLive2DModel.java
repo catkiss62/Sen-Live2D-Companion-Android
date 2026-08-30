@@ -65,6 +65,7 @@ final class SenLive2DModel extends CubismUserModel {
     private boolean pendingEarPhysicsActive;
     private final Map<Integer, float[]> ahogeReferenceVertices = new HashMap<>();
     private final List<HairSupportPoint> ahogeHairSupports = new ArrayList<>();
+    private final Set<Integer> rabbitEarDrivenDrawables = new HashSet<>();
     private float ahogeReferenceAnchorX;
     private float ahogeReferenceAnchorY;
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
@@ -527,9 +528,62 @@ final class SenLive2DModel extends CubismUserModel {
         }
         ahogeReferenceAnchorX = Float.isFinite(minX) ? (minX + maxX) * .5f : 0.0f;
         ahogeReferenceAnchorY = Float.isFinite(minY) ? minY : 0.0f;
+        detectRabbitEarDrivenDrawables();
         captureAhogeHairSupports();
         appendAppearanceDetail("呆毛头发整体支撑 " + ahogeHairSupports.size()
-                + "点 · 局部柔性 " + Math.round(AHOGE_FLEX_GAIN * 100.0f) + "%");
+                + "点 · 排除兔耳网格 " + rabbitEarDrivenDrawables.size()
+                + "个 · 局部柔性 " + Math.round(AHOGE_FLEX_GAIN * 100.0f) + "%");
+    }
+
+    /**
+     * The purchased model does not expose a stable semantic part id for every rabbit-ear
+     * Drawable. Selecting the nearest visible vertices therefore attached the ahoge support to
+     * the ears in v0.4.2. Probe the three confirmed rabbit-ear output parameters once at load
+     * time and exclude every Drawable whose vertices respond. This follows actual rig behaviour
+     * and does not guess from ArtMesh names or screen position.
+     */
+    private void detectRabbitEarDrivenDrawables() {
+        rabbitEarDrivenDrawables.clear();
+        if (rabbitEarPhysicsIndices.length == 0) return;
+        int parameterCount = model.getParameterCount();
+        float[] savedParameters = new float[parameterCount];
+        for (int i = 0; i < parameterCount; i++) {
+            savedParameters[i] = model.getModel().getParameterViews()[i].getValue();
+        }
+        Map<Integer, float[]> baselineVertices = new HashMap<>();
+        for (int drawable = 0; drawable < model.getDrawableCount(); drawable++) {
+            if (isDrawableVisible(drawable)) {
+                baselineVertices.put(drawable, model.getDrawableVertices(drawable).clone());
+            }
+        }
+        for (int parameterIndex : rabbitEarPhysicsIndices) {
+            float minimum = model.getParameterMinimumValue(parameterIndex);
+            float maximum = model.getParameterMaximumValue(parameterIndex);
+            float current = savedParameters[parameterIndex];
+            float probe = Math.max(2.0f, (maximum - minimum) * .12f);
+            float target = current + probe <= maximum ? current + probe : current - probe;
+            model.getModel().getParameterViews()[parameterIndex].setValue(
+                    Math.max(minimum, Math.min(maximum, target)));
+            model.update();
+            for (Map.Entry<Integer, float[]> entry : baselineVertices.entrySet()) {
+                float[] baseline = entry.getValue();
+                float[] currentVertices = model.getDrawableVertices(entry.getKey());
+                if (baseline.length != currentVertices.length) continue;
+                for (int i = 0; i < baseline.length; i++) {
+                    float delta = currentVertices[i] - baseline[i];
+                    if (delta * delta > 1.0e-8f) {
+                        rabbitEarDrivenDrawables.add(entry.getKey());
+                        break;
+                    }
+                }
+            }
+            model.getModel().getParameterViews()[parameterIndex].setValue(current);
+            model.update();
+        }
+        for (int i = 0; i < parameterCount; i++) {
+            model.getModel().getParameterViews()[i].setValue(savedParameters[i]);
+        }
+        model.update();
     }
 
     private void captureAhogeHairSupports() {
@@ -537,6 +591,7 @@ final class SenLive2DModel extends CubismUserModel {
         if (ahogeReferenceVertices.isEmpty()) return;
         Set<Integer> excluded = collectChildDrawables(AHOGE_PART_IDS);
         excluded.addAll(collectChildDrawables(TAIL_PART_IDS));
+        excluded.addAll(rabbitEarDrivenDrawables);
         List<HairSupportCandidate> candidates = new ArrayList<>();
         for (int drawable = 0; drawable < model.getDrawableCount(); drawable++) {
             if (excluded.contains(drawable) || !isDrawableVisible(drawable)) continue;

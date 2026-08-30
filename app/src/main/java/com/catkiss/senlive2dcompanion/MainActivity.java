@@ -49,17 +49,19 @@ import java.util.zip.ZipInputStream;
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int AHOGE_CONFIRMED_PRESET_VERSION = 3;
+    private static final int EAR_CONFIRMED_PRESET_VERSION = 1;
+    private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 1;
     private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
     private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
     private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
     private static final float CONFIRMED_AHOGE_X = -16.0f;
     private static final float CONFIRMED_AHOGE_Y = 70.0f;
-    private static final float DEFAULT_EAR_SPEED_PERCENT = 150.0f;
+    private static final float DEFAULT_EAR_SPEED_PERCENT = 135.0f;
     private static final float DEFAULT_EAR_AMPLITUDE_PERCENT = 100.0f;
-    private static final float DEFAULT_HEAD_ZONE_LEFT = .22f;
-    private static final float DEFAULT_HEAD_ZONE_TOP = .02f;
-    private static final float DEFAULT_HEAD_ZONE_RIGHT = .78f;
-    private static final float DEFAULT_HEAD_ZONE_BOTTOM = .36f;
+    private static final float DEFAULT_HEAD_ZONE_LEFT = .3875f;
+    private static final float DEFAULT_HEAD_ZONE_TOP = .2813f;
+    private static final float DEFAULT_HEAD_ZONE_RIGHT = .6234f;
+    private static final float DEFAULT_HEAD_ZONE_BOTTOM = .3778f;
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
 
@@ -141,6 +143,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         highPrecisionMaskSize = normalizeMaskSize(prefs.getInt("mask_size", 1024));
         // v0.3.7 retires the manual ear Drawable transforms. Clear old persisted test values so
         // an in-place APK upgrade always returns to the captured VTS ear state.
+        if (prefs.getInt("ear_confirmed_preset_version", 0)
+                < EAR_CONFIRMED_PRESET_VERSION) {
+            prefs.edit()
+                    .putInt("ear_confirmed_preset_version", EAR_CONFIRMED_PRESET_VERSION)
+                    .putFloat("ear_speed_percent", DEFAULT_EAR_SPEED_PERCENT)
+                    .putFloat("ear_amplitude_percent", DEFAULT_EAR_AMPLITUDE_PERCENT)
+                    .apply();
+        }
         earSpeedPercent = Math.max(50.0f, Math.min(250.0f,
                 prefs.getFloat("ear_speed_percent", DEFAULT_EAR_SPEED_PERCENT)));
         earAmplitudePercent = Math.max(50.0f, Math.min(250.0f,
@@ -174,6 +184,17 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 .remove("ahoge_root_drawable_id").remove("ahoge_root_vertex_index")
                 .remove("ahoge_root_model_x").remove("ahoge_root_model_y")
                 .remove("ahoge_root_distance").apply();
+        if (prefs.getInt("head_zone_confirmed_preset_version", 0)
+                < HEAD_ZONE_CONFIRMED_PRESET_VERSION) {
+            prefs.edit()
+                    .putInt("head_zone_confirmed_preset_version",
+                            HEAD_ZONE_CONFIRMED_PRESET_VERSION)
+                    .putFloat("head_zone_left", DEFAULT_HEAD_ZONE_LEFT)
+                    .putFloat("head_zone_top", DEFAULT_HEAD_ZONE_TOP)
+                    .putFloat("head_zone_right", DEFAULT_HEAD_ZONE_RIGHT)
+                    .putFloat("head_zone_bottom", DEFAULT_HEAD_ZONE_BOTTOM)
+                    .apply();
+        }
         headZoneLeft = clamp01(prefs.getFloat("head_zone_left", DEFAULT_HEAD_ZONE_LEFT));
         headZoneTop = clamp01(prefs.getFloat("head_zone_top", DEFAULT_HEAD_ZONE_TOP));
         headZoneRight = clamp01(prefs.getFloat("head_zone_right", DEFAULT_HEAD_ZONE_RIGHT));
@@ -230,7 +251,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.2 · 快速兔耳、头发九轴与自主待机测试");
+        statusText.setText("v0.4.3 · 待机底座、呆毛支撑与动作按钮修正版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -387,7 +408,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(adjustmentControls);
 
         TextView earNotice = new TextView(this);
-        earNotice.setText("兔耳双脉冲：继续走九轴→原生物理，只取三项兔耳输出。速度和幅度可独立实机调节，确认后再固化默认值。");
+        earNotice.setText("兔耳双脉冲：继续走九轴→原生物理，只取三项兔耳输出。确认预设为速度135%、幅度100%；滑杆保留用于以后试调，自主待机会低频触发。");
         earNotice.setTextColor(Color.rgb(220, 198, 238));
         earNotice.setTextSize(10);
         earNotice.setPadding(dp(3), dp(5), 0, dp(2));
@@ -483,7 +504,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         Button headZoneButton = panelButton("框选摸头范围");
         headZoneButton.setOnClickListener(v -> beginHeadZoneCalibration());
         headZoneRow.addView(headZoneButton, weightedButtonParams());
-        Button resetHeadZoneButton = panelButton("还原迷梦默认范围");
+        Button resetHeadZoneButton = panelButton("还原确认范围");
         resetHeadZoneButton.setOnClickListener(v -> resetHeadZone());
         headZoneRow.addView(resetHeadZoneButton, weightedButtonParams());
         panel.addView(headZoneRow);
@@ -521,8 +542,22 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         };
         addPerformanceGrid(panel, SenPerformanceEngine.EMOTIONS, emotionLabels, true);
 
+        TextView actionHeading = new TextView(this);
+        actionHeading.setText("程序动作测试（未加入自主待机的动作继续保留）");
+        actionHeading.setTextColor(Color.rgb(238, 207, 255));
+        actionHeading.setTextSize(12);
+        actionHeading.setPadding(0, dp(7), 0, dp(3));
+        panel.addView(actionHeading);
+        String[] manualActionLabels = {
+                "点头", "摇头", "歪头", "身体前倾", "身体后仰",
+                "惊讶一跳", "叹气", "撅嘴", "开心蹦跶", "倾听姿态",
+                "低头再抬起", "摸头常规", "摸头疑惑彩蛋"
+        };
+        addPerformanceGrid(panel, SenPerformanceEngine.MANUAL_TEST_ACTIONS,
+                manualActionLabels, false);
+
         TextView actionNote = adjustmentStatusText();
-        actionNote.setText("26条程序动作路线仍保留在源码中，并已分配给自主待机、情绪和摸头互动；测试按钮已移除，便于后续作为预设项目接入。ZIP预设动作/表情本轮不改。");
+        actionNote.setText("只隐藏已经成为自主待机职责的动作按钮；其余13条程序动作恢复测试入口。26条源码路线完整保留，ZIP预设动作/表情不改。");
         panel.addView(actionNote);
 
         TextView expressionHeading = new TextView(this);
@@ -854,7 +889,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         resetHeadZoneValues();
         persistHeadZone();
         updateHeadZoneStatus();
-        toastLong("摸头范围已恢复迷梦默认值");
+        toastLong("摸头范围已恢复确认值 0.3875/0.2813/0.6234/0.3778");
     }
 
     private void resetHeadZoneValues() {

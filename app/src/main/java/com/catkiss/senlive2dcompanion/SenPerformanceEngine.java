@@ -1,6 +1,7 @@
 package com.catkiss.senlive2dcompanion;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -21,11 +22,18 @@ final class SenPerformanceEngine {
     private static final float EMOTION_TRANSITION_SECONDS = .42f;
     private static final float ACTION_CROSSFADE_SECONDS = .24f;
     private static final float ACTION_PHYSICS_RELEASE_SECONDS = .55f;
-    private static final float NATURAL_BLINK_SECONDS = .22f;
+    // Mimeng closes and opens in about .20 s. Sen's eye-open baseline clips sooner when an
+    // additive close value is used, so the same numeric timing looks noticeably sharper here.
+    // Keep the close brisk, add a tiny closed hold, and let the eyes reopen more gently.
+    private static final float NATURAL_BLINK_CLOSE_SECONDS = .13f;
+    private static final float NATURAL_BLINK_HOLD_SECONDS = .04f;
+    private static final float NATURAL_BLINK_OPEN_SECONDS = .17f;
+    private static final float NATURAL_BLINK_SECONDS = NATURAL_BLINK_CLOSE_SECONDS
+            + NATURAL_BLINK_HOLD_SECONDS + NATURAL_BLINK_OPEN_SECONDS;
     private static final float EAR_PULSE_SECONDS = .34f;
     private static final float EAR_PULSE_GAP_SECONDS = .10f;
     private static final float EAR_SETTLE_SECONDS = .82f;
-    private static final float DEFAULT_EAR_SPEED = 1.50f;
+    private static final float DEFAULT_EAR_SPEED = 1.35f;
     private static final float DEFAULT_EAR_AMPLITUDE = 1.00f;
     interface ParameterWriter {
         void add(String id, float value);
@@ -46,15 +54,19 @@ final class SenPerformanceEngine {
             "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
             "head_pat", "head_pat_confused"));
 
+    static final List<String> MANUAL_TEST_ACTIONS = Collections.unmodifiableList(Arrays.asList(
+            "nod", "shake_head", "tilt_head", "lean_forward", "lean_back",
+            "blink_surprised", "sigh", "pout", "excited_bounce", "listening",
+            "look_down_up", "head_pat", "head_pat_confused"));
+
     private static final Map<String, Motion> MOTIONS = createMotions();
 
     static {
         validateMotionLibrary();
     }
 
-    // User-facing action buttons were removed after these routes became autonomous-idle duties.
-    // Keep the names explicit here so they can be split back into manual tests without rebuilding
-    // the motion library. Duplicate entries are intentional weights.
+    // Only routes actually assigned to autonomous idle lose their manual test button. Other
+    // program actions remain user-testable. Duplicate entries are intentional weights.
     private static final List<String> ROUTINE_IDLE_ACTIONS = Arrays.asList(
             "head_tilt_idle", "head_tilt_idle", "side_look", "weight_shift",
             "gentle_lean", "slow_blink", "look_around", "look_around",
@@ -63,12 +75,13 @@ final class SenPerformanceEngine {
     private final Random random = new Random();
     private String emotion = "normal";
     private String action;
-    private String previousIdle;
+    private final List<String> recentIdleActions = new ArrayList<>();
     private float actionTime;
     private float elapsed;
     private float nextIdleAt = 8.0f;
     private float nextShowcaseAt = 30.0f;
     private float nextBlinkAt = 2.2f;
+    private float nextIdleEarTwitchAt = 24.0f;
     private float blinkTime = -1.0f;
     private float earTwitchTime = -1.0f;
     private float earSpeed = DEFAULT_EAR_SPEED;
@@ -144,6 +157,7 @@ final class SenPerformanceEngine {
         nextIdleAt = elapsed + 4.0f + random.nextFloat() * 5.0f;
         nextShowcaseAt = elapsed + 28.0f + random.nextFloat() * 32.0f;
         nextBlinkAt = elapsed + 1.2f + random.nextFloat() * 2.0f;
+        nextIdleEarTwitchAt = elapsed + 18.0f + random.nextFloat() * 20.0f;
         if (!enabled) blinkTime = -1.0f;
     }
 
@@ -174,26 +188,29 @@ final class SenPerformanceEngine {
         updateEmotion(dt, writer);
         updateTouchFollow(dt, writer);
 
-        if (autoIdle) applySoftWindIdle(writer, action == null ? 1.0f : .24f);
+        // The real wind_sway_soft route is now the continuous idle base. It is not a small
+        // optional overlay: it replaces the old still-standing state, including between and
+        // underneath random actions, as Mimeng keeps its idle layer active under actions.
+        if (autoIdle) applyLoopingSoftWindIdle(writer);
 
         if (autoIdle && action == null) {
+            if (elapsed >= nextIdleEarTwitchAt) {
+                triggerEarTwitch();
+                nextIdleEarTwitchAt = elapsed + 28.0f + random.nextFloat() * 40.0f;
+            }
             if (elapsed >= nextShowcaseAt) {
                 float roll = random.nextFloat();
                 String next = roll < .55f ? "wind_sway_medium"
                         : (roll < .86f ? "showcase_orbit" : "wind_sway_showcase");
-                previousIdle = next;
+                rememberIdleAction(next);
                 playAction(next);
                 nextShowcaseAt = elapsed + 48.0f + random.nextFloat() * 52.0f;
                 nextIdleAt = elapsed + 8.0f + random.nextFloat() * 6.0f;
             } else if (elapsed >= nextIdleAt) {
-                String next;
-                do {
-                    next = ROUTINE_IDLE_ACTIONS.get(
-                            random.nextInt(ROUTINE_IDLE_ACTIONS.size()));
-                } while (ROUTINE_IDLE_ACTIONS.size() > 1 && next.equals(previousIdle));
-                previousIdle = next;
+                String next = chooseRoutineIdleAction();
+                rememberIdleAction(next);
                 playAction(next);
-                nextIdleAt = elapsed + 5.0f + random.nextFloat() * 7.0f;
+                nextIdleAt = elapsed + 4.8f + random.nextFloat() * 6.7f;
             }
         }
 
@@ -244,18 +261,37 @@ final class SenPerformanceEngine {
         return EAR_SETTLE_SECONDS / (float) Math.sqrt(earSpeed);
     }
 
-    private void applySoftWindIdle(ParameterWriter writer, float gain) {
-        float t = elapsed;
-        writer.add("ParamAngleX", gain * ((float) Math.sin(t * .55f) * 2.1f
-                + (float) Math.sin(t * .21f + 1.2f) * .85f));
-        writer.add("ParamAngleY", gain * ((float) Math.sin(t * .43f + .7f) * 1.15f
-                + (float) Math.sin(t * .19f) * .48f));
-        writer.add("ParamAngleZ", gain * ((float) Math.sin(t * .31f + 2.1f) * 1.7f
-                + (float) Math.sin(t * .13f) * .55f));
-        writer.add("ParamBodyAngleX", gain * ((float) Math.sin(t * .36f) * 1.35f
-                + (float) Math.sin(t * .17f + 1.4f) * .52f));
-        writer.add("ParamBodyAngleY", gain * (float) Math.sin(t * .28f + .5f) * .16f);
-        writer.add("ParamBodyAngleZ", gain * (float) Math.sin(t * .23f + 2.4f) * .58f);
+    private void applyLoopingSoftWindIdle(ParameterWriter writer) {
+        float duration = duration("wind_sway_soft");
+        float phaseA = elapsed % duration;
+        float phaseB = (phaseA + duration * .5f) % duration;
+        String[] ids = {"ParamAngleX", "ParamAngleY", "ParamAngleZ",
+                "ParamBodyAngleX", "ParamBodyAngleY", "ParamBodyAngleZ",
+                "ParamEyeBallX", "ParamEyeBallY"};
+        float[] gains = {HEAD_GAIN, HEAD_GAIN, HEAD_GAIN,
+                BODY_GAIN, BODY_GAIN, BODY_GAIN, 1.0f, 1.0f};
+        for (int channel = 0; channel < ids.length; channel++) {
+            // Two half-cycle-offset copies cover each other's zero envelope, so the exact
+            // wind_sway_soft path loops without returning to a visible still pose.
+            float value = (wind(phaseA, duration, .68f, channel)
+                    + wind(phaseB, duration, .68f, channel)) * .72f * gains[channel];
+            if (channel == 0) value = clamp(value, -24.0f, 24.0f);
+            writer.add(ids[channel], value);
+        }
+    }
+
+    private String chooseRoutineIdleAction() {
+        List<String> candidates = new ArrayList<>();
+        for (String name : ROUTINE_IDLE_ACTIONS) {
+            if (!recentIdleActions.contains(name)) candidates.add(name);
+        }
+        List<String> pool = candidates.isEmpty() ? ROUTINE_IDLE_ACTIONS : candidates;
+        return pool.get(random.nextInt(pool.size()));
+    }
+
+    private void rememberIdleAction(String name) {
+        recentIdleActions.add(name);
+        while (recentIdleActions.size() > 3) recentIdleActions.remove(0);
     }
 
     float getBreathValue() {
@@ -366,9 +402,16 @@ final class SenPerformanceEngine {
         }
         if (blinkTime < 0.0f) return;
         blinkTime += dt;
-        float progress = clamp(blinkTime / NATURAL_BLINK_SECONDS, 0.0f, 1.0f);
-        float triangle = 1.0f - Math.abs(progress * 2.0f - 1.0f);
-        float close = smoothStep(triangle);
+        float close;
+        if (blinkTime < NATURAL_BLINK_CLOSE_SECONDS) {
+            close = smoothStep(blinkTime / NATURAL_BLINK_CLOSE_SECONDS);
+        } else if (blinkTime < NATURAL_BLINK_CLOSE_SECONDS + NATURAL_BLINK_HOLD_SECONDS) {
+            close = 1.0f;
+        } else {
+            float openTime = blinkTime - NATURAL_BLINK_CLOSE_SECONDS
+                    - NATURAL_BLINK_HOLD_SECONDS;
+            close = 1.0f - smoothStep(openTime / NATURAL_BLINK_OPEN_SECONDS);
+        }
         // Applied after the active action, matching Mimeng's final min-to-closed blink layer.
         writer.add("ParamEyeLOpen", -1.50f * close);
         writer.add("ParamEyeROpen", -1.50f * close);
@@ -705,6 +748,9 @@ final class SenPerformanceEngine {
     private static void validateMotionLibrary() {
         if (!MOTIONS.keySet().equals(new LinkedHashSet<>(ACTIONS))) {
             throw new IllegalStateException("Program action list and motion library differ");
+        }
+        if (!ACTIONS.containsAll(MANUAL_TEST_ACTIONS)) {
+            throw new IllegalStateException("Manual test action is missing from motion library");
         }
         for (Map.Entry<String, Motion> entry : MOTIONS.entrySet()) {
             Motion motion = entry.getValue();
