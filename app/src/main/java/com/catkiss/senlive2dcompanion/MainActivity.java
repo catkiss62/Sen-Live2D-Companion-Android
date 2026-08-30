@@ -251,7 +251,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.3 · 待机底座、呆毛支撑与动作按钮修正版");
+        statusText.setText("v0.4.4 · 完整动作入口与CDI头部支撑修正版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -469,7 +469,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(ahogeHeading);
 
         TextView ahogeNote = adjustmentStatusText();
-        ahogeNote.setText("位置、大小和角度不再开放调整；运行时由头顶周围多组头发/头部网格共同支撑，只保留18%局部柔性，避免大幅点头或摇头时漂浮。");
+        ahogeNote.setText("位置、大小和角度固定；只使用模型CDI明确命名的头部/脸部/头发网格支撑，排除耳朵、尾巴、呆毛与头饰，禁止运行时缩放，只保留8%局部柔性。");
         panel.addView(ahogeNote);
         Button ahogeResetButton = panelButton("还原确认的呆毛预设");
         ahogeResetButton.setOnClickListener(v -> resetAhogeTransform());
@@ -543,21 +543,24 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         addPerformanceGrid(panel, SenPerformanceEngine.EMOTIONS, emotionLabels, true);
 
         TextView actionHeading = new TextView(this);
-        actionHeading.setText("程序动作测试（未加入自主待机的动作继续保留）");
+        actionHeading.setText("程序动作测试（完整26项；暂不自动隐藏任何按钮）");
         actionHeading.setTextColor(Color.rgb(238, 207, 255));
         actionHeading.setTextSize(12);
         actionHeading.setPadding(0, dp(7), 0, dp(3));
         panel.addView(actionHeading);
         String[] manualActionLabels = {
-                "点头", "摇头", "歪头", "身体前倾", "身体后仰",
-                "惊讶一跳", "叹气", "撅嘴", "开心蹦跶", "倾听姿态",
-                "低头再抬起", "摸头常规", "摸头疑惑彩蛋"
+                "点头", "摇头", "歪头", "前倾", "后仰",
+                "惊讶眨眼", "叹气", "撅嘴", "兴奋弹跳", "倾听",
+                "环顾", "轻摆", "低头抬头", "小点头", "待机歪头",
+                "侧看", "重心切换", "轻靠", "叹气下沉", "慢眨眼",
+                "柔风摆动", "明显风摆", "展示级大摆", "视频式环绕",
+                "摸头常规", "摸头疑惑彩蛋"
         };
         addPerformanceGrid(panel, SenPerformanceEngine.MANUAL_TEST_ACTIONS,
                 manualActionLabels, false);
 
         TextView actionNote = adjustmentStatusText();
-        actionNote.setText("只隐藏已经成为自主待机职责的动作按钮；其余13条程序动作恢复测试入口。26条源码路线完整保留，ZIP预设动作/表情不改。");
+        actionNote.setText("已恢复优化自主待机前的完整26项入口，包括曾要求删除及已加入待机的动作；后续只按实机逐项确认结果删除按钮。ZIP预设动作/表情不改。");
         panel.addView(actionNote);
 
         TextView expressionHeading = new TextView(this);
@@ -1319,7 +1322,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 " · 呆毛：高%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY)
-                + " · 呆毛支撑：头发整体九轴/局部18%"
+                + " · 呆毛支撑：CDI头部/头发、固定缩放、局部8%"
                 + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")

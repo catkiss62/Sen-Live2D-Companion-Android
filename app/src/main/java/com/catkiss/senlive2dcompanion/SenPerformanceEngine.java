@@ -54,10 +54,9 @@ final class SenPerformanceEngine {
             "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
             "head_pat", "head_pat_confused"));
 
-    static final List<String> MANUAL_TEST_ACTIONS = Collections.unmodifiableList(Arrays.asList(
-            "nod", "shake_head", "tilt_head", "lean_forward", "lean_back",
-            "blink_surprised", "sigh", "pout", "excited_bounce", "listening",
-            "look_down_up", "head_pat", "head_pat_confused"));
+    // Keep every program motion manually testable until the owner has reviewed and removed
+    // buttons one by one. Autonomous-idle membership must never implicitly hide an action.
+    static final List<String> MANUAL_TEST_ACTIONS = ACTIONS;
 
     private static final Map<String, Motion> MOTIONS = createMotions();
 

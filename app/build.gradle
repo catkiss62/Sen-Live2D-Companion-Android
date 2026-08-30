@@ -18,8 +18,8 @@ android {
         applicationId 'com.catkiss.senlive2dcompanion'
         minSdk 26
         targetSdk 34
-        versionCode 21
-        versionName '0.4.3-idle-correction-test'
+        versionCode 22
+        versionName '0.4.4-full-actions-head-rig-test'
     }
 
     signingConfigs {
