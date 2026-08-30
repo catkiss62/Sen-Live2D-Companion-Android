@@ -24,9 +24,9 @@ final class SenPerformanceEngine {
     private static final float NATURAL_BLINK_SECONDS = .22f;
     private static final float EAR_PULSE_SECONDS = .34f;
     private static final float EAR_PULSE_GAP_SECONDS = .10f;
-    private static final float EAR_INPUT_SECONDS = EAR_PULSE_SECONDS * 2.0f
-            + EAR_PULSE_GAP_SECONDS;
     private static final float EAR_SETTLE_SECONDS = .82f;
+    private static final float DEFAULT_EAR_SPEED = 1.50f;
+    private static final float DEFAULT_EAR_AMPLITUDE = 1.00f;
     interface ParameterWriter {
         void add(String id, float value);
         void set(String id, float value);
@@ -52,9 +52,13 @@ final class SenPerformanceEngine {
         validateMotionLibrary();
     }
 
-    private static final List<String> IDLE_ACTIONS = Arrays.asList(
-            "small_nod", "head_tilt_idle", "side_look", "weight_shift",
-            "gentle_lean", "slow_blink", "look_around", "soft_sway", "wind_sway_soft");
+    // User-facing action buttons were removed after these routes became autonomous-idle duties.
+    // Keep the names explicit here so they can be split back into manual tests without rebuilding
+    // the motion library. Duplicate entries are intentional weights.
+    private static final List<String> ROUTINE_IDLE_ACTIONS = Arrays.asList(
+            "head_tilt_idle", "head_tilt_idle", "side_look", "weight_shift",
+            "gentle_lean", "slow_blink", "look_around", "look_around",
+            "soft_sway", "soft_sway", "small_nod", "sigh_sink");
 
     private final Random random = new Random();
     private String emotion = "normal";
@@ -63,9 +67,12 @@ final class SenPerformanceEngine {
     private float actionTime;
     private float elapsed;
     private float nextIdleAt = 8.0f;
+    private float nextShowcaseAt = 30.0f;
     private float nextBlinkAt = 2.2f;
     private float blinkTime = -1.0f;
     private float earTwitchTime = -1.0f;
+    private float earSpeed = DEFAULT_EAR_SPEED;
+    private float earAmplitude = DEFAULT_EAR_AMPLITUDE;
     private boolean autoIdle;
     private Map<String, Float> lastActionValues = new HashMap<>();
     private Map<String, Float> actionTransitionFromValues = new HashMap<>();
@@ -112,6 +119,11 @@ final class SenPerformanceEngine {
         earTwitchTime = 0.0f;
     }
 
+    void setEarTuning(float speedPercent, float amplitudePercent) {
+        earSpeed = clamp(speedPercent / 100.0f, .50f, 2.50f);
+        earAmplitude = clamp(amplitudePercent / 100.0f, .50f, 2.50f);
+    }
+
     void setTouchFollowEnabled(boolean enabled) {
         touchFollowEnabled = enabled;
         if (!enabled) touchActive = false;
@@ -130,6 +142,7 @@ final class SenPerformanceEngine {
     void setAutoIdle(boolean enabled) {
         autoIdle = enabled;
         nextIdleAt = elapsed + 4.0f + random.nextFloat() * 5.0f;
+        nextShowcaseAt = elapsed + 28.0f + random.nextFloat() * 32.0f;
         nextBlinkAt = elapsed + 1.2f + random.nextFloat() * 2.0f;
         if (!enabled) blinkTime = -1.0f;
     }
@@ -161,14 +174,27 @@ final class SenPerformanceEngine {
         updateEmotion(dt, writer);
         updateTouchFollow(dt, writer);
 
-        if (autoIdle && action == null && elapsed >= nextIdleAt) {
-            String next;
-            do {
-                next = IDLE_ACTIONS.get(random.nextInt(IDLE_ACTIONS.size()));
-            } while (IDLE_ACTIONS.size() > 1 && next.equals(previousIdle));
-            previousIdle = next;
-            playAction(next);
-            nextIdleAt = elapsed + 7.0f + random.nextFloat() * 8.0f;
+        if (autoIdle) applySoftWindIdle(writer, action == null ? 1.0f : .24f);
+
+        if (autoIdle && action == null) {
+            if (elapsed >= nextShowcaseAt) {
+                float roll = random.nextFloat();
+                String next = roll < .55f ? "wind_sway_medium"
+                        : (roll < .86f ? "showcase_orbit" : "wind_sway_showcase");
+                previousIdle = next;
+                playAction(next);
+                nextShowcaseAt = elapsed + 48.0f + random.nextFloat() * 52.0f;
+                nextIdleAt = elapsed + 8.0f + random.nextFloat() * 6.0f;
+            } else if (elapsed >= nextIdleAt) {
+                String next;
+                do {
+                    next = ROUTINE_IDLE_ACTIONS.get(
+                            random.nextInt(ROUTINE_IDLE_ACTIONS.size()));
+                } while (ROUTINE_IDLE_ACTIONS.size() > 1 && next.equals(previousIdle));
+                previousIdle = next;
+                playAction(next);
+                nextIdleAt = elapsed + 5.0f + random.nextFloat() * 7.0f;
+            }
         }
 
         updateAction(dt, writer);
@@ -176,7 +202,7 @@ final class SenPerformanceEngine {
 
         if (earTwitchTime >= 0.0f) {
             earTwitchTime += dt;
-            if (earTwitchTime >= EAR_INPUT_SECONDS + EAR_SETTLE_SECONDS) {
+            if (earTwitchTime >= earInputSeconds() + earSettleSeconds()) {
                 earTwitchTime = -1.0f;
             }
         }
@@ -185,13 +211,15 @@ final class SenPerformanceEngine {
     /** Two broader copies of the slow-blink driver, evaluated only by the isolated ear rig. */
     float getEarPhysicsDrive() {
         if (earTwitchTime < 0.0f) return 0.0f;
-        if (earTwitchTime >= EAR_INPUT_SECONDS) return 0.0f;
-        float secondStart = EAR_PULSE_SECONDS + EAR_PULSE_GAP_SECONDS;
-        float phase = earTwitchTime < EAR_PULSE_SECONDS
-                ? earTwitchTime / EAR_PULSE_SECONDS
-                : (earTwitchTime - secondStart) / EAR_PULSE_SECONDS;
+        float pulseSeconds = EAR_PULSE_SECONDS / earSpeed;
+        float gapSeconds = EAR_PULSE_GAP_SECONDS / earSpeed;
+        if (earTwitchTime >= pulseSeconds * 2.0f + gapSeconds) return 0.0f;
+        float secondStart = pulseSeconds + gapSeconds;
+        float phase = earTwitchTime < pulseSeconds
+                ? earTwitchTime / pulseSeconds
+                : (earTwitchTime - secondStart) / pulseSeconds;
         if (phase < 0.0f || phase > 1.0f) return 0.0f;
-        return (float) Math.pow(Math.sin(Math.PI * phase), 1.25);
+        return earAmplitude * (float) Math.pow(Math.sin(Math.PI * phase), 1.15);
     }
 
     boolean isEarPhysicsActive() {
@@ -200,9 +228,34 @@ final class SenPerformanceEngine {
 
     float getEarPhysicsMix() {
         if (earTwitchTime < 0.0f) return 0.0f;
-        if (earTwitchTime <= EAR_INPUT_SECONDS) return 1.0f;
-        float release = (earTwitchTime - EAR_INPUT_SECONDS) / EAR_SETTLE_SECONDS;
+        float inputSeconds = earInputSeconds();
+        if (earTwitchTime <= inputSeconds) return 1.0f;
+        float release = (earTwitchTime - inputSeconds) / earSettleSeconds();
         return 1.0f - smoothStep(release);
+    }
+
+    private float earInputSeconds() {
+        return (EAR_PULSE_SECONDS * 2.0f + EAR_PULSE_GAP_SECONDS) / earSpeed;
+    }
+
+    private float earSettleSeconds() {
+        // Keep enough inertia after a fast pulse; scaling only halfway avoids cutting the
+        // native physics tail as aggressively as the input itself.
+        return EAR_SETTLE_SECONDS / (float) Math.sqrt(earSpeed);
+    }
+
+    private void applySoftWindIdle(ParameterWriter writer, float gain) {
+        float t = elapsed;
+        writer.add("ParamAngleX", gain * ((float) Math.sin(t * .55f) * 2.1f
+                + (float) Math.sin(t * .21f + 1.2f) * .85f));
+        writer.add("ParamAngleY", gain * ((float) Math.sin(t * .43f + .7f) * 1.15f
+                + (float) Math.sin(t * .19f) * .48f));
+        writer.add("ParamAngleZ", gain * ((float) Math.sin(t * .31f + 2.1f) * 1.7f
+                + (float) Math.sin(t * .13f) * .55f));
+        writer.add("ParamBodyAngleX", gain * ((float) Math.sin(t * .36f) * 1.35f
+                + (float) Math.sin(t * .17f + 1.4f) * .52f));
+        writer.add("ParamBodyAngleY", gain * (float) Math.sin(t * .28f + .5f) * .16f);
+        writer.add("ParamBodyAngleZ", gain * (float) Math.sin(t * .23f + 2.4f) * .58f);
     }
 
     float getBreathValue() {

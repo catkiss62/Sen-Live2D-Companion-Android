@@ -18,7 +18,9 @@ import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -34,7 +36,7 @@ final class SenLive2DModel extends CubismUserModel {
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
-    private static final float AHOGE_FLEX_GAIN = .60f;
+    private static final float AHOGE_FLEX_GAIN = .18f;
     private static final float EAR_HIDDEN_EYE_DRIVE = -1.05f;
     private static final float EAR_HIDDEN_NINE_AXIS_DRIVE = -6.0f;
     private static final String[] ARM_PHYSICS_OUTPUT_IDS = {
@@ -62,10 +64,13 @@ final class SenLive2DModel extends CubismUserModel {
     private float pendingEarPhysicsMix;
     private boolean pendingEarPhysicsActive;
     private final Map<Integer, float[]> ahogeReferenceVertices = new HashMap<>();
+    private final List<HairSupportPoint> ahogeHairSupports = new ArrayList<>();
+    private float ahogeReferenceAnchorX;
+    private float ahogeReferenceAnchorY;
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
-            100.0f, 100.0f, 0.0f, 0.0f, 0.0f, "", -1, false, false);
+            100.0f, 100.0f, 0.0f, 0.0f, 0.0f, false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -201,6 +206,10 @@ final class SenLive2DModel extends CubismUserModel {
         performance.triggerEarTwitch();
     }
 
+    void setEarTuning(float speedPercent, float amplitudePercent) {
+        performance.setEarTuning(speedPercent, amplitudePercent);
+    }
+
     void setTouchFollowEnabled(boolean enabled) {
         performance.setTouchFollowEnabled(enabled);
     }
@@ -211,10 +220,6 @@ final class SenLive2DModel extends CubismUserModel {
 
     void triggerHeadPat(boolean confused) {
         performance.triggerHeadPat(confused);
-    }
-
-    void setAhogeRoot(String drawableId, int vertexIndex) {
-        renderOptions = renderOptions.withAhogeRoot(drawableId, vertexIndex);
     }
 
     void setAutoIdle(boolean enabled) {
@@ -489,44 +494,6 @@ final class SenLive2DModel extends CubismUserModel {
         return -1;
     }
 
-    AhogeRootSelection calibrateAhogeRoot(float clipX, float clipY,
-                                           CubismMatrix44 projection) {
-        if (model == null || modelMatrix == null || projection == null) return null;
-        Set<Integer> ahoge = collectChildDrawables(AHOGE_PART_IDS);
-        float[] combined = new float[16];
-        CubismMatrix44.multiply(modelMatrix.getArray(), projection.getArray(), combined);
-        float bestDistance = Float.POSITIVE_INFINITY;
-        int bestDrawable = -1;
-        int bestVertex = -1;
-        for (int drawable = 0; drawable < model.getDrawableCount(); drawable++) {
-            if (ahoge.contains(drawable) || !isDrawableVisible(drawable)) continue;
-            float[] vertices = model.getDrawableVertices(drawable);
-            for (int vertex = 0; vertex * 2 + 1 < vertices.length; vertex++) {
-                int offset = vertex * 2;
-                float projectedX = combined[0] * vertices[offset]
-                        + combined[4] * vertices[offset + 1] + combined[12];
-                float projectedY = combined[1] * vertices[offset]
-                        + combined[5] * vertices[offset + 1] + combined[13];
-                float dx = projectedX - clipX;
-                float dy = projectedY - clipY;
-                float distance = dx * dx + dy * dy;
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    bestDrawable = drawable;
-                    bestVertex = vertex;
-                }
-            }
-        }
-        if (bestDrawable < 0) return null;
-        String drawableId = model.getDrawableId(bestDrawable).getString();
-        setAhogeRoot(drawableId, bestVertex);
-        float[] selectedVertices = model.getDrawableVertices(bestDrawable);
-        int selectedOffset = bestVertex * 2;
-        return new AhogeRootSelection(drawableId, bestVertex,
-                (float) Math.sqrt(bestDistance),
-                selectedVertices[selectedOffset], selectedVertices[selectedOffset + 1]);
-    }
-
     private void applyRuntimeGeometry() {
         Set<Integer> ahogeDrawables = collectChildDrawables(AHOGE_PART_IDS);
         Set<Integer> tailDrawables = collectChildDrawables(TAIL_PART_IDS);
@@ -538,23 +505,65 @@ final class SenLive2DModel extends CubismUserModel {
                     + "/可见 " + countVisible(tailDrawables));
             geometryDiagnosticsAdded = true;
         }
-        applyAhogeTransform(ahogeDrawables);
+        applyAhogeHairRig(ahogeDrawables);
         applyTailMirror(tailDrawables);
     }
 
     private void captureAhogeReferenceGeometry() {
         ahogeReferenceVertices.clear();
+        float minX = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
         for (int index : collectChildDrawables(AHOGE_PART_IDS)) {
             if (isDrawableVisible(index)) {
-                ahogeReferenceVertices.put(index, model.getDrawableVertices(index).clone());
+                float[] vertices = model.getDrawableVertices(index).clone();
+                ahogeReferenceVertices.put(index, vertices);
+                for (int i = 0; i + 1 < vertices.length; i += 2) {
+                    minX = Math.min(minX, vertices[i]);
+                    maxX = Math.max(maxX, vertices[i]);
+                    minY = Math.min(minY, vertices[i + 1]);
+                }
             }
         }
-        appendAppearanceDetail("呆毛局部物理摆幅 " + Math.round(AHOGE_FLEX_GAIN * 100.0f)
-                + "%");
+        ahogeReferenceAnchorX = Float.isFinite(minX) ? (minX + maxX) * .5f : 0.0f;
+        ahogeReferenceAnchorY = Float.isFinite(minY) ? minY : 0.0f;
+        captureAhogeHairSupports();
+        appendAppearanceDetail("呆毛头发整体支撑 " + ahogeHairSupports.size()
+                + "点 · 局部柔性 " + Math.round(AHOGE_FLEX_GAIN * 100.0f) + "%");
     }
 
-    private void stiffenAhogeGeometry(Set<Integer> candidates) {
+    private void captureAhogeHairSupports() {
+        ahogeHairSupports.clear();
         if (ahogeReferenceVertices.isEmpty()) return;
+        Set<Integer> excluded = collectChildDrawables(AHOGE_PART_IDS);
+        excluded.addAll(collectChildDrawables(TAIL_PART_IDS));
+        List<HairSupportCandidate> candidates = new ArrayList<>();
+        for (int drawable = 0; drawable < model.getDrawableCount(); drawable++) {
+            if (excluded.contains(drawable) || !isDrawableVisible(drawable)) continue;
+            float[] vertices = model.getDrawableVertices(drawable);
+            for (int vertex = 0; vertex * 2 + 1 < vertices.length; vertex++) {
+                int offset = vertex * 2;
+                float dx = vertices[offset] - ahogeReferenceAnchorX;
+                float dy = vertices[offset + 1] - ahogeReferenceAnchorY;
+                candidates.add(new HairSupportCandidate(drawable, vertex,
+                        vertices[offset], vertices[offset + 1], dx * dx + dy * dy));
+            }
+        }
+        candidates.sort(Comparator.comparingDouble(
+                (HairSupportCandidate value) -> value.distanceSquared));
+        Map<Integer, Integer> perDrawable = new HashMap<>();
+        for (HairSupportCandidate candidate : candidates) {
+            int used = perDrawable.getOrDefault(candidate.drawableIndex, 0);
+            if (used >= 4) continue;
+            ahogeHairSupports.add(new HairSupportPoint(candidate.drawableIndex,
+                    candidate.vertexIndex, candidate.referenceX, candidate.referenceY));
+            perDrawable.put(candidate.drawableIndex, used + 1);
+            if (ahogeHairSupports.size() >= 20) break;
+        }
+    }
+
+    private SimilarityTransform estimateAhogeTransform(Set<Integer> candidates) {
+        if (ahogeReferenceVertices.isEmpty()) return null;
         double referenceCenterX = 0.0;
         double referenceCenterY = 0.0;
         double currentCenterX = 0.0;
@@ -573,7 +582,7 @@ final class SenLive2DModel extends CubismUserModel {
                 points++;
             }
         }
-        if (points < 3) return;
+        if (points < 3) return null;
         referenceCenterX /= points;
         referenceCenterY /= points;
         currentCenterX /= points;
@@ -596,82 +605,89 @@ final class SenLive2DModel extends CubismUserModel {
                 cross += rx * cy - ry * cx;
             }
         }
-        if (denominator < 1e-8) return;
-        double a = dot / denominator;
-        double b = cross / denominator;
+        if (denominator < 1e-8) return null;
+        return new SimilarityTransform((float) referenceCenterX, (float) referenceCenterY,
+                (float) currentCenterX, (float) currentCenterY,
+                (float) (dot / denominator), (float) (cross / denominator));
+    }
+
+    private SimilarityTransform estimateHairSupportTransform() {
+        if (ahogeHairSupports.size() < 3) return null;
+        double referenceCenterX = 0.0;
+        double referenceCenterY = 0.0;
+        double currentCenterX = 0.0;
+        double currentCenterY = 0.0;
+        int count = 0;
+        for (HairSupportPoint point : ahogeHairSupports) {
+            if (!isDrawableVisible(point.drawableIndex)) continue;
+            float[] vertices = model.getDrawableVertices(point.drawableIndex);
+            int offset = point.vertexIndex * 2;
+            if (offset < 0 || offset + 1 >= vertices.length) continue;
+            referenceCenterX += point.referenceX;
+            referenceCenterY += point.referenceY;
+            currentCenterX += vertices[offset];
+            currentCenterY += vertices[offset + 1];
+            count++;
+        }
+        if (count < 3) return null;
+        referenceCenterX /= count;
+        referenceCenterY /= count;
+        currentCenterX /= count;
+        currentCenterY /= count;
+        double denominator = 0.0;
+        double dot = 0.0;
+        double cross = 0.0;
+        for (HairSupportPoint point : ahogeHairSupports) {
+            if (!isDrawableVisible(point.drawableIndex)) continue;
+            float[] vertices = model.getDrawableVertices(point.drawableIndex);
+            int offset = point.vertexIndex * 2;
+            if (offset < 0 || offset + 1 >= vertices.length) continue;
+            double rx = point.referenceX - referenceCenterX;
+            double ry = point.referenceY - referenceCenterY;
+            double cx = vertices[offset] - currentCenterX;
+            double cy = vertices[offset + 1] - currentCenterY;
+            denominator += rx * rx + ry * ry;
+            dot += rx * cx + ry * cy;
+            cross += rx * cy - ry * cx;
+        }
+        if (denominator < 1e-8) return null;
+        return new SimilarityTransform((float) referenceCenterX, (float) referenceCenterY,
+                (float) currentCenterX, (float) currentCenterY,
+                (float) (dot / denominator), (float) (cross / denominator));
+    }
+
+    private void applyAhogeHairRig(Set<Integer> candidates) {
+        SimilarityTransform selfTransform = estimateAhogeTransform(candidates);
+        SimilarityTransform hairTransform = estimateHairSupportTransform();
+        if (selfTransform == null) return;
+        if (hairTransform == null) hairTransform = selfTransform;
+
+        float scale = renderOptions.ahogeScalePercent / 100.0f;
+        float widthScale = renderOptions.ahogeWidthPercent / 100.0f;
+        double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
+        float cos = (float) Math.cos(radians);
+        float sin = (float) Math.sin(radians);
+        float offsetX = getCanvasWidth() * renderOptions.ahogeOffsetX / 1000.0f;
+        float offsetY = getCanvasHeight() * renderOptions.ahogeOffsetY / 1000.0f;
         for (int index : candidates) {
             if (!isDrawableVisible(index)) continue;
             float[] reference = ahogeReferenceVertices.get(index);
             float[] current = model.getDrawableVertices(index);
             if (reference == null || reference.length != current.length) continue;
             for (int i = 0; i + 1 < current.length; i += 2) {
-                double rx = reference[i] - referenceCenterX;
-                double ry = reference[i + 1] - referenceCenterY;
-                float rigidX = (float) (currentCenterX + a * rx - b * ry);
-                float rigidY = (float) (currentCenterY + b * rx + a * ry);
-                current[i] = rigidX + (current[i] - rigidX) * AHOGE_FLEX_GAIN;
-                current[i + 1] = rigidY + (current[i + 1] - rigidY) * AHOGE_FLEX_GAIN;
-            }
-        }
-    }
+                float selfX = selfTransform.mapX(reference[i], reference[i + 1]);
+                float selfY = selfTransform.mapY(reference[i], reference[i + 1]);
+                float residualX = current[i] - selfX;
+                float residualY = current[i + 1] - selfY;
 
-    private void applyAhogeTransform(Set<Integer> candidates) {
-        boolean unchanged = Math.abs(renderOptions.ahogeScalePercent - 100.0f) < 0.001f
-                && Math.abs(renderOptions.ahogeWidthPercent - 100.0f) < 0.001f
-                && Math.abs(renderOptions.ahogeRotationDegrees) < 0.001f
-                && Math.abs(renderOptions.ahogeOffsetX) < 0.001f
-                && Math.abs(renderOptions.ahogeOffsetY) < 0.001f
-                && renderOptions.ahogeRootDrawableId.isEmpty();
-        if (unchanged) return;
-
-        stiffenAhogeGeometry(candidates);
-
-        int[] indices = new int[candidates.size()];
-        int count = 0;
-        float minX = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
-        for (int index : candidates) {
-            if (!isDrawableVisible(index)) continue;
-            indices[count++] = index;
-            float[] vertices = model.getDrawableVertices(index);
-            for (int i = 0; i + 1 < vertices.length; i += 2) {
-                minX = Math.min(minX, vertices[i]);
-                maxX = Math.max(maxX, vertices[i]);
-                minY = Math.min(minY, vertices[i + 1]);
-            }
-        }
-        if (count == 0 || !Float.isFinite(minX) || !Float.isFinite(minY)) return;
-
-        float anchorX = (minX + maxX) * 0.5f;
-        float anchorY = minY;
-        float targetX = anchorX;
-        float targetY = anchorY;
-        int rootDrawable = findDrawableIndex(renderOptions.ahogeRootDrawableId);
-        if (rootDrawable >= 0 && isDrawableVisible(rootDrawable)) {
-            float[] rootVertices = model.getDrawableVertices(rootDrawable);
-            int rootOffset = renderOptions.ahogeRootVertexIndex * 2;
-            if (rootOffset >= 0 && rootOffset + 1 < rootVertices.length) {
-                targetX = rootVertices[rootOffset];
-                targetY = rootVertices[rootOffset + 1];
-            }
-        }
-        float scale = renderOptions.ahogeScalePercent / 100.0f;
-        float widthScale = renderOptions.ahogeWidthPercent / 100.0f;
-        double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
-        float cos = (float) Math.cos(radians);
-        float sin = (float) Math.sin(radians);
-        float translateX = targetX - anchorX
-                + getCanvasWidth() * renderOptions.ahogeOffsetX / 1000.0f;
-        float translateY = targetY - anchorY
-                + getCanvasHeight() * renderOptions.ahogeOffsetY / 1000.0f;
-        for (int n = 0; n < count; n++) {
-            float[] vertices = model.getDrawableVertices(indices[n]);
-            for (int i = 0; i + 1 < vertices.length; i += 2) {
-                float dx = (vertices[i] - anchorX) * scale * widthScale;
-                float dy = (vertices[i + 1] - anchorY) * scale;
-                vertices[i] = anchorX + dx * cos - dy * sin + translateX;
-                vertices[i + 1] = anchorY + dx * sin + dy * cos + translateY;
+                float dx = (reference[i] - ahogeReferenceAnchorX) * scale * widthScale;
+                float dy = (reference[i + 1] - ahogeReferenceAnchorY) * scale;
+                float confirmedX = ahogeReferenceAnchorX + dx * cos - dy * sin + offsetX;
+                float confirmedY = ahogeReferenceAnchorY + dx * sin + dy * cos + offsetY;
+                current[i] = hairTransform.mapX(confirmedX, confirmedY)
+                        + residualX * AHOGE_FLEX_GAIN;
+                current[i + 1] = hairTransform.mapY(confirmedX, confirmedY)
+                        + residualY * AHOGE_FLEX_GAIN;
             }
         }
     }
@@ -718,14 +734,6 @@ final class SenLive2DModel extends CubismUserModel {
     private int findExistingPartIndex(String id) {
         for (int i = 0; i < model.getPartCount(); i++) {
             if (id.equals(model.getPartId(i).getString())) return i;
-        }
-        return -1;
-    }
-
-    private int findDrawableIndex(String id) {
-        if (id == null || id.isEmpty()) return -1;
-        for (int i = 0; i < model.getDrawableCount(); i++) {
-            if (id.equals(model.getDrawableId(i).getString())) return i;
         }
         return -1;
     }
@@ -813,20 +821,66 @@ final class SenLive2DModel extends CubismUserModel {
         return Math.min(64, Math.max(2, (groups + 31) / 32));
     }
 
-    static final class AhogeRootSelection {
-        final String drawableId;
+    private static final class HairSupportCandidate {
+        final int drawableIndex;
         final int vertexIndex;
-        final float distance;
-        final float modelX;
-        final float modelY;
+        final float referenceX;
+        final float referenceY;
+        final float distanceSquared;
 
-        AhogeRootSelection(String drawableId, int vertexIndex, float distance,
-                           float modelX, float modelY) {
-            this.drawableId = drawableId;
+        HairSupportCandidate(int drawableIndex, int vertexIndex,
+                             float referenceX, float referenceY, float distanceSquared) {
+            this.drawableIndex = drawableIndex;
             this.vertexIndex = vertexIndex;
-            this.distance = distance;
-            this.modelX = modelX;
-            this.modelY = modelY;
+            this.referenceX = referenceX;
+            this.referenceY = referenceY;
+            this.distanceSquared = distanceSquared;
+        }
+    }
+
+    private static final class HairSupportPoint {
+        final int drawableIndex;
+        final int vertexIndex;
+        final float referenceX;
+        final float referenceY;
+
+        HairSupportPoint(int drawableIndex, int vertexIndex, float referenceX, float referenceY) {
+            this.drawableIndex = drawableIndex;
+            this.vertexIndex = vertexIndex;
+            this.referenceX = referenceX;
+            this.referenceY = referenceY;
+        }
+    }
+
+    private static final class SimilarityTransform {
+        final float referenceCenterX;
+        final float referenceCenterY;
+        final float currentCenterX;
+        final float currentCenterY;
+        final float a;
+        final float b;
+
+        SimilarityTransform(float referenceCenterX, float referenceCenterY,
+                            float currentCenterX, float currentCenterY,
+                            float a, float b) {
+            this.referenceCenterX = referenceCenterX;
+            this.referenceCenterY = referenceCenterY;
+            this.currentCenterX = currentCenterX;
+            this.currentCenterY = currentCenterY;
+            this.a = a;
+            this.b = b;
+        }
+
+        float mapX(float x, float y) {
+            float dx = x - referenceCenterX;
+            float dy = y - referenceCenterY;
+            return currentCenterX + a * dx - b * dy;
+        }
+
+        float mapY(float x, float y) {
+            float dx = x - referenceCenterX;
+            float dy = y - referenceCenterY;
+            return currentCenterY + b * dx + a * dy;
         }
     }
 

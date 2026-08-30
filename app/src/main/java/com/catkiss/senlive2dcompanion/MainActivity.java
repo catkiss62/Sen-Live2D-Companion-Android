@@ -48,12 +48,18 @@ import java.util.zip.ZipInputStream;
 
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
-    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 2;
+    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 3;
     private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
     private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
     private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
     private static final float CONFIRMED_AHOGE_X = -16.0f;
     private static final float CONFIRMED_AHOGE_Y = 70.0f;
+    private static final float DEFAULT_EAR_SPEED_PERCENT = 150.0f;
+    private static final float DEFAULT_EAR_AMPLITUDE_PERCENT = 100.0f;
+    private static final float DEFAULT_HEAD_ZONE_LEFT = .22f;
+    private static final float DEFAULT_HEAD_ZONE_TOP = .02f;
+    private static final float DEFAULT_HEAD_ZONE_RIGHT = .78f;
+    private static final float DEFAULT_HEAD_ZONE_BOTTOM = .36f;
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
 
@@ -78,20 +84,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private boolean freezeVtsSnapshot = true;
     private SenMaskMode maskMode = SenMaskMode.HIGH_PRECISION;
     private int highPrecisionMaskSize = 1024;
-    private boolean earAngleOverrideEnabled;
-    private float earAngleDegrees;
-    private float earVerticalOffset;
+    private float earSpeedPercent;
+    private float earAmplitudePercent;
     private float ahogeScalePercent;
     private float ahogeWidthPercent;
     private float ahogeRotationDegrees;
     private float ahogeOffsetX;
     private float ahogeOffsetY;
-    private String ahogeRootDrawableId = "";
-    private int ahogeRootVertexIndex = -1;
-    private float ahogeRootModelX = Float.NaN;
-    private float ahogeRootModelY = Float.NaN;
-    private float ahogeRootDistance = Float.NaN;
-    private boolean ahogeRootTapPending;
     private boolean tailMirrored;
     private boolean adjustmentEnabled;
     private float stageScale = 1.0f;
@@ -101,22 +100,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float lastTouchY;
     private ScaleGestureDetector scaleGestureDetector;
     private Button adjustmentButton;
-    private TextView earAngleStatus;
-    private SeekBar earAngleSeekBar;
-    private TextView earVerticalStatus;
-    private SeekBar earVerticalSeekBar;
-    private TextView ahogeScaleStatus;
-    private SeekBar ahogeScaleSeekBar;
-    private TextView ahogeWidthStatus;
-    private SeekBar ahogeWidthSeekBar;
-    private TextView ahogeRotationStatus;
-    private SeekBar ahogeRotationSeekBar;
-    private TextView ahogeXStatus;
-    private SeekBar ahogeXSeekBar;
-    private TextView ahogeYStatus;
-    private SeekBar ahogeYSeekBar;
-    private TextView ahogeRootStatus;
-    private Button tailMirrorButton;
+    private TextView earSpeedStatus;
+    private SeekBar earSpeedSeekBar;
+    private TextView earAmplitudeStatus;
+    private SeekBar earAmplitudeSeekBar;
     private Button autoIdleButton;
     private Button touchFollowButton;
     private boolean autoIdleEnabled;
@@ -128,6 +115,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float headPatLastY;
     private float headPatTravel;
     private long headPatStartedAt;
+    private float headZoneLeft;
+    private float headZoneTop;
+    private float headZoneRight;
+    private float headZoneBottom;
+    private boolean headZoneCalibrationMode;
+    private float headZoneFirstX = Float.NaN;
+    private float headZoneFirstY = Float.NaN;
+    private TextView headZoneStatus;
     private SenOutfitPresets.Preset selectedOutfit;
     private long nativeLoadStartedAt;
     private String rendererDetail = "";
@@ -146,9 +141,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         highPrecisionMaskSize = normalizeMaskSize(prefs.getInt("mask_size", 1024));
         // v0.3.7 retires the manual ear Drawable transforms. Clear old persisted test values so
         // an in-place APK upgrade always returns to the captured VTS ear state.
-        earAngleOverrideEnabled = false;
-        earAngleDegrees = 0.0f;
-        earVerticalOffset = 0.0f;
+        earSpeedPercent = Math.max(50.0f, Math.min(250.0f,
+                prefs.getFloat("ear_speed_percent", DEFAULT_EAR_SPEED_PERCENT)));
+        earAmplitudePercent = Math.max(50.0f, Math.min(250.0f,
+                prefs.getFloat("ear_amplitude_percent", DEFAULT_EAR_AMPLITUDE_PERCENT)));
         prefs.edit().remove("ear_angle_enabled").remove("ear_angle_degrees")
                 .remove("ear_vertical_offset").apply();
         if (prefs.getInt("ahoge_confirmed_preset_version", 0)
@@ -165,28 +161,26 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     .remove("ahoge_root_model_x")
                     .remove("ahoge_root_model_y")
                     .remove("ahoge_root_distance")
+                    .putBoolean("tail_mirrored", true)
                     .apply();
         }
-        ahogeScalePercent = Math.max(40.0f, Math.min(160.0f,
-                prefs.contains("ahoge_scale_percent")
-                        ? prefs.getFloat("ahoge_scale_percent", 100.0f)
-                        : (prefs.getBoolean("ahoge_shortened", false) ? 78.0f : 100.0f)));
-        ahogeWidthPercent = Math.max(40.0f, Math.min(160.0f,
-                prefs.getFloat("ahoge_width_percent", 100.0f)));
-        ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f,
-                prefs.getFloat("ahoge_rotation_degrees", 0.0f)));
-        ahogeOffsetX = Math.max(-100.0f, Math.min(100.0f,
-                prefs.getFloat("ahoge_offset_x", 0.0f)));
-        ahogeOffsetY = Math.max(-100.0f, Math.min(100.0f,
-                prefs.contains("ahoge_offset_y")
-                        ? prefs.getFloat("ahoge_offset_y", 0.0f)
-                        : (prefs.getBoolean("ahoge_raised", false) ? 25.0f : 0.0f)));
-        ahogeRootDrawableId = prefs.getString("ahoge_root_drawable_id", "");
-        ahogeRootVertexIndex = prefs.getInt("ahoge_root_vertex_index", -1);
-        ahogeRootModelX = prefs.getFloat("ahoge_root_model_x", Float.NaN);
-        ahogeRootModelY = prefs.getFloat("ahoge_root_model_y", Float.NaN);
-        ahogeRootDistance = prefs.getFloat("ahoge_root_distance", Float.NaN);
-        tailMirrored = prefs.getBoolean("tail_mirrored", false);
+        ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
+        ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
+        ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
+        ahogeOffsetX = CONFIRMED_AHOGE_X;
+        ahogeOffsetY = CONFIRMED_AHOGE_Y;
+        tailMirrored = true;
+        prefs.edit().putBoolean("tail_mirrored", true)
+                .remove("ahoge_root_drawable_id").remove("ahoge_root_vertex_index")
+                .remove("ahoge_root_model_x").remove("ahoge_root_model_y")
+                .remove("ahoge_root_distance").apply();
+        headZoneLeft = clamp01(prefs.getFloat("head_zone_left", DEFAULT_HEAD_ZONE_LEFT));
+        headZoneTop = clamp01(prefs.getFloat("head_zone_top", DEFAULT_HEAD_ZONE_TOP));
+        headZoneRight = clamp01(prefs.getFloat("head_zone_right", DEFAULT_HEAD_ZONE_RIGHT));
+        headZoneBottom = clamp01(prefs.getFloat("head_zone_bottom", DEFAULT_HEAD_ZONE_BOTTOM));
+        if (headZoneRight - headZoneLeft < .08f || headZoneBottom - headZoneTop < .06f) {
+            resetHeadZoneValues();
+        }
         autoIdleEnabled = prefs.getBoolean("auto_idle_enabled", false);
         touchFollowEnabled = prefs.getBoolean("touch_follow_enabled", true);
         selectedOutfit = SenOutfitPresets.fromId(
@@ -236,7 +230,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.1 · 九轴兔耳、连续动作与待机眨眼测试");
+        statusText.setText("v0.4.2 · 快速兔耳、头发九轴与自主待机测试");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -250,6 +244,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 24, 0);
         renderer = new SenRenderer(this, this);
         renderer.setTouchFollowEnabled(touchFollowEnabled);
+        renderer.setEarTuning(earSpeedPercent, earAmplitudePercent);
         glSurfaceView.setRenderer(renderer);
         glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         glSurfaceView.setPreserveEGLContextOnPause(true);
@@ -392,159 +387,79 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(adjustmentControls);
 
         TextView earNotice = new TextView(this);
-        earNotice.setText("兔耳双脉冲：复用慢眨眼的九轴→原生物理路线；隐藏驱动不会画到眼睛或头部，只取 ParamL_angle / ParamR_angle / ParamR_angle2 三项兔耳输出。脉冲已加宽并放大。");
+        earNotice.setText("兔耳双脉冲：继续走九轴→原生物理，只取三项兔耳输出。速度和幅度可独立实机调节，确认后再固化默认值。");
         earNotice.setTextColor(Color.rgb(220, 198, 238));
         earNotice.setTextSize(10);
         earNotice.setPadding(dp(3), dp(5), 0, dp(2));
         panel.addView(earNotice);
 
-        Button earTwitchButton = panelButton("兔耳：九轴柔性大幅摆动两次");
+        earSpeedStatus = adjustmentStatusText();
+        panel.addView(earSpeedStatus);
+        earSpeedSeekBar = new SeekBar(this);
+        earSpeedSeekBar.setMax(200);
+        earSpeedSeekBar.setProgress(Math.round(earSpeedPercent) - 50);
+        earSpeedSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                earSpeedPercent = progress + 50.0f;
+                updateCustomizationControls();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                persistAndApplyEarTuning();
+            }
+        });
+        panel.addView(earSpeedSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        earAmplitudeStatus = adjustmentStatusText();
+        panel.addView(earAmplitudeStatus);
+        earAmplitudeSeekBar = new SeekBar(this);
+        earAmplitudeSeekBar.setMax(200);
+        earAmplitudeSeekBar.setProgress(Math.round(earAmplitudePercent) - 50);
+        earAmplitudeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                earAmplitudePercent = progress + 50.0f;
+                updateCustomizationControls();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                persistAndApplyEarTuning();
+            }
+        });
+        panel.addView(earAmplitudeSeekBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
+
+        Button earTwitchButton = panelButton("测试：猫耳快速抖动两次");
         earTwitchButton.setOnClickListener(v -> glSurfaceView.queueEvent(
                 () -> renderer.triggerEarTwitch()));
         panel.addView(earTwitchButton);
 
         TextView ahogeHeading = new TextView(this);
-        ahogeHeading.setText("长呆毛（已确认默认56/83/-49/-16/+70；发根固定）");
+        ahogeHeading.setText("长呆毛（固定确认预设 56/83/-49/-16/+70）");
         ahogeHeading.setTextColor(Color.rgb(238, 207, 255));
         ahogeHeading.setTextSize(11);
         ahogeHeading.setPadding(dp(3), dp(5), 0, 0);
         panel.addView(ahogeHeading);
 
-        ahogeScaleStatus = adjustmentStatusText();
-        panel.addView(ahogeScaleStatus);
-        ahogeScaleSeekBar = new SeekBar(this);
-        ahogeScaleSeekBar.setMax(120);
-        ahogeScaleSeekBar.setProgress(Math.round(ahogeScalePercent) - 40);
-        ahogeScaleSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                ahogeScalePercent = progress + 40.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyCustomization();
-            }
-        });
-        panel.addView(ahogeScaleSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeWidthStatus = adjustmentStatusText();
-        panel.addView(ahogeWidthStatus);
-        ahogeWidthSeekBar = new SeekBar(this);
-        ahogeWidthSeekBar.setMax(120);
-        ahogeWidthSeekBar.setProgress(Math.round(ahogeWidthPercent) - 40);
-        ahogeWidthSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                ahogeWidthPercent = progress + 40.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyCustomization();
-            }
-        });
-        panel.addView(ahogeWidthSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeRotationStatus = adjustmentStatusText();
-        panel.addView(ahogeRotationStatus);
-        ahogeRotationSeekBar = new SeekBar(this);
-        ahogeRotationSeekBar.setMax(180);
-        ahogeRotationSeekBar.setProgress(Math.round(ahogeRotationDegrees) + 90);
-        ahogeRotationSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                ahogeRotationDegrees = progress - 90.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyCustomization();
-            }
-        });
-        panel.addView(ahogeRotationSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeXStatus = adjustmentStatusText();
-        panel.addView(ahogeXStatus);
-        ahogeXSeekBar = new SeekBar(this);
-        ahogeXSeekBar.setMax(200);
-        ahogeXSeekBar.setProgress(Math.round(ahogeOffsetX) + 100);
-        ahogeXSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                ahogeOffsetX = progress - 100.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyCustomization();
-            }
-        });
-        panel.addView(ahogeXSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeYStatus = adjustmentStatusText();
-        panel.addView(ahogeYStatus);
-        ahogeYSeekBar = new SeekBar(this);
-        ahogeYSeekBar.setMax(200);
-        ahogeYSeekBar.setProgress(Math.round(ahogeOffsetY) + 100);
-        ahogeYSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                ahogeOffsetY = progress - 100.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyCustomization();
-            }
-        });
-        panel.addView(ahogeYSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        LinearLayout ahogeResetRow = new LinearLayout(this);
-        ahogeResetRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button ahogeResetButton = panelButton("还原呆毛");
+        TextView ahogeNote = adjustmentStatusText();
+        ahogeNote.setText("位置、大小和角度不再开放调整；运行时由头顶周围多组头发/头部网格共同支撑，只保留18%局部柔性，避免大幅点头或摇头时漂浮。");
+        panel.addView(ahogeNote);
+        Button ahogeResetButton = panelButton("还原确认的呆毛预设");
         ahogeResetButton.setOnClickListener(v -> resetAhogeTransform());
-        ahogeResetRow.addView(ahogeResetButton, weightedButtonParams());
-        Button ahogeRootButton = panelButton("点选发根");
-        ahogeRootButton.setOnClickListener(v -> beginAhogeRootCalibration());
-        ahogeResetRow.addView(ahogeRootButton, weightedButtonParams());
-        Button ahogeAutoRootButton = panelButton("自动发根");
-        ahogeAutoRootButton.setOnClickListener(v -> clearAhogeRootCalibration());
-        ahogeResetRow.addView(ahogeAutoRootButton, weightedButtonParams());
-        panel.addView(ahogeResetRow);
-
-        ahogeRootStatus = adjustmentStatusText();
-        panel.addView(ahogeRootStatus);
+        panel.addView(ahogeResetButton);
 
         TextView tailHeading = new TextView(this);
-        tailHeading.setText("尾巴左右位置（以模型中心线镜像，身体中心不变）");
+        tailHeading.setText("尾巴：固定右侧（中心线镜像；身体中心不变）");
         tailHeading.setTextColor(Color.rgb(238, 207, 255));
         tailHeading.setTextSize(11);
         tailHeading.setPadding(dp(3), dp(5), 0, 0);
         panel.addView(tailHeading);
-
-        tailMirrorButton = panelButton("");
-        tailMirrorButton.setOnClickListener(v -> {
-            tailMirrored = !tailMirrored;
-            persistAndApplyCustomization();
-        });
-        panel.addView(tailMirrorButton);
-        updateCustomizationControls();
 
         TextView interactionHeading = new TextView(this);
         interactionHeading.setText("触屏互动（迷梦极限跟随路线；头部区域来回抚摸可触发摸头）");
@@ -563,27 +478,27 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         });
         panel.addView(touchFollowButton);
 
-        LinearLayout headPatTestRow = new LinearLayout(this);
-        headPatTestRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button headPatButton = panelButton("测试摸头");
-        headPatButton.setOnClickListener(v -> glSurfaceView.queueEvent(
-                () -> renderer.triggerHeadPat(false)));
-        headPatTestRow.addView(headPatButton, weightedButtonParams());
-        Button confusedPatButton = panelButton("测试疑惑彩蛋");
-        confusedPatButton.setOnClickListener(v -> glSurfaceView.queueEvent(
-                () -> renderer.triggerHeadPat(true)));
-        headPatTestRow.addView(confusedPatButton, weightedButtonParams());
-        panel.addView(headPatTestRow);
+        LinearLayout headZoneRow = new LinearLayout(this);
+        headZoneRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button headZoneButton = panelButton("框选摸头范围");
+        headZoneButton.setOnClickListener(v -> beginHeadZoneCalibration());
+        headZoneRow.addView(headZoneButton, weightedButtonParams());
+        Button resetHeadZoneButton = panelButton("还原迷梦默认范围");
+        resetHeadZoneButton.setOnClickListener(v -> resetHeadZone());
+        headZoneRow.addView(resetHeadZoneButton, weightedButtonParams());
+        panel.addView(headZoneRow);
+        headZoneStatus = adjustmentStatusText();
+        panel.addView(headZoneStatus);
 
         TextView dynamicHeading = new TextView(this);
-        dynamicHeading.setText("动态基础（原生物理常开；自主待机含自然眨眼，默认关闭）");
+        dynamicHeading.setText("动态基础（原生物理常开；自主待机使用持续柔风底座、自然眨眼和随机动作池）");
         dynamicHeading.setTextColor(Color.rgb(238, 207, 255));
         dynamicHeading.setTextSize(12);
         dynamicHeading.setPadding(0, dp(7), 0, dp(3));
         panel.addView(dynamicHeading);
 
         autoIdleButton = panelButton(autoIdleEnabled
-                ? "自主待机：开启（含自然眨眼）" : "自主待机：关闭（只手动测试）");
+                ? "自主待机：开启（柔风+眨眼+随机动作）" : "自主待机：关闭");
         autoIdleButton.setOnClickListener(v -> {
             autoIdleEnabled = !autoIdleEnabled;
             prefs.edit().putBoolean("auto_idle_enabled", autoIdleEnabled).apply();
@@ -606,21 +521,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         };
         addPerformanceGrid(panel, SenPerformanceEngine.EMOTIONS, emotionLabels, true);
 
-        TextView actionHeading = new TextView(this);
-        actionHeading.setText("移植动作（26个；展示级大动作只手动测试）");
-        actionHeading.setTextColor(Color.rgb(238, 207, 255));
-        actionHeading.setTextSize(12);
-        actionHeading.setPadding(0, dp(7), 0, dp(3));
-        panel.addView(actionHeading);
-        String[] actionLabels = {
-                "点头", "摇头", "歪头", "前倾", "后仰",
-                "惊讶眨眼", "叹气", "撅嘴", "兴奋弹跳", "倾听",
-                "环顾", "轻摆", "低头抬头", "小点头", "待机歪头",
-                "侧看", "重心切换", "轻靠", "叹气下沉", "慢眨眼",
-                "柔风摆动", "明显风摆", "展示级大摆", "视频式环绕",
-                "摸头常规", "摸头疑惑彩蛋"
-        };
-        addPerformanceGrid(panel, SenPerformanceEngine.ACTIONS, actionLabels, false);
+        TextView actionNote = adjustmentStatusText();
+        actionNote.setText("26条程序动作路线仍保留在源码中，并已分配给自主待机、情绪和摸头互动；测试按钮已移除，便于后续作为预设项目接入。ZIP预设动作/表情本轮不改。");
+        panel.addView(actionNote);
 
         TextView expressionHeading = new TextView(this);
         expressionHeading.setText("Sen ZIP 原生表情/道具（Watermark仅作模型自带测试项）");
@@ -670,12 +573,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     }
                 });
         glSurfaceView.setOnTouchListener((view, event) -> {
-            if (ahogeRootTapPending && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                ahogeRootTapPending = false;
-                float clipX = event.getX() * 2.0f / Math.max(1, view.getWidth()) - 1.0f;
-                float clipY = 1.0f - event.getY() * 2.0f / Math.max(1, view.getHeight());
-                glSurfaceView.queueEvent(() -> renderer.requestAhogeRootCalibration(clipX, clipY));
-                toastLong("已记录点击位置，正在绑定最近的头部网格顶点");
+            if (headZoneCalibrationMode && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                handleHeadZoneCalibration(view, event.getX(), event.getY());
                 return true;
             }
             if (!adjustmentEnabled) return handleStageInteraction(view, event);
@@ -725,7 +624,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             headPatTriggered = false;
             float nx = headPatLastX / Math.max(1, view.getWidth());
             float ny = headPatLastY / Math.max(1, view.getHeight());
-            headPatCandidate = nx >= .22f && nx <= .78f && ny >= .02f && ny <= .36f;
+            headPatCandidate = isInHeadZone(nx, ny, 0.0f);
             queueTouchTarget(view, true, headPatLastX, headPatLastY);
             return true;
         }
@@ -743,7 +642,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             headPatLastY = y;
             float nx = x / Math.max(1, view.getWidth());
             float ny = y / Math.max(1, view.getHeight());
-            if (nx < .14f || nx > .86f || ny < 0.0f || ny > .44f) {
+            if (!isInHeadZone(nx, ny, .08f)) {
                 headPatCandidate = false;
             }
             long duration = SystemClock.elapsedRealtime() - headPatStartedAt;
@@ -831,112 +730,35 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         return 512;
     }
 
-    private void setEarAngleOverride(float angle) {
-        earAngleOverrideEnabled = true;
-        earAngleDegrees = Math.max(-50.0f, Math.min(30.0f, angle));
-        if (earAngleSeekBar != null) {
-            int progress = Math.round(earAngleDegrees) + 50;
-            if (earAngleSeekBar.getProgress() != progress) earAngleSeekBar.setProgress(progress);
-        }
-        persistAndApplyCustomization();
-    }
-
-    private void setEarVerticalOffset(float offset) {
-        earVerticalOffset = Math.max(-50.0f, Math.min(20.0f, offset));
-        if (earVerticalSeekBar != null) {
-            int progress = Math.round(earVerticalOffset) + 50;
-            if (earVerticalSeekBar.getProgress() != progress) {
-                earVerticalSeekBar.setProgress(progress);
-            }
-        }
-        persistAndApplyCustomization();
-    }
-
-    private void restoreEarAngle() {
-        earAngleOverrideEnabled = false;
-        persistAndApplyCustomization();
-        toastLong("耳鳍已恢复导入的VTS原值（本次采集约 -8.8°）");
-    }
-
     private void resetAhogeTransform() {
         ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
         ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
         ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
         ahogeOffsetX = CONFIRMED_AHOGE_X;
         ahogeOffsetY = CONFIRMED_AHOGE_Y;
-        ahogeRootDrawableId = "";
-        ahogeRootVertexIndex = -1;
-        ahogeRootModelX = Float.NaN;
-        ahogeRootModelY = Float.NaN;
-        ahogeRootDistance = Float.NaN;
-        syncAhogeSeekBars();
         persistAndApplyCustomization();
-        if (glSurfaceView != null) glSurfaceView.queueEvent(
-                () -> renderer.setAhogeRoot("", -1));
-        toastLong("呆毛已恢复确认预设 56/83/-49/-16/+70 与自动发根");
-    }
-
-    private void beginAhogeRootCalibration() {
-        ahogeRootTapPending = true;
-        if (!adjustmentEnabled) {
-            adjustmentEnabled = true;
-            adjustmentButton.setText("调整模型：开启");
-        }
-        toastLong("请在上方模型上点击呆毛实际发根；将绑定最近的头部网格顶点");
-    }
-
-    private void clearAhogeRootCalibration() {
-        ahogeRootTapPending = false;
-        ahogeRootDrawableId = "";
-        ahogeRootVertexIndex = -1;
-        ahogeRootModelX = Float.NaN;
-        ahogeRootModelY = Float.NaN;
-        ahogeRootDistance = Float.NaN;
-        prefs.edit().remove("ahoge_root_drawable_id")
-                .remove("ahoge_root_vertex_index")
-                .remove("ahoge_root_model_x")
-                .remove("ahoge_root_model_y")
-                .remove("ahoge_root_distance").apply();
-        glSurfaceView.queueEvent(() -> renderer.setAhogeRoot("", -1));
-        updateCustomizationControls();
-        updateSummary();
-        toastLong("呆毛发根已恢复为自动计算位置");
-    }
-
-    private void syncAhogeSeekBars() {
-        if (ahogeScaleSeekBar != null) {
-            ahogeScaleSeekBar.setProgress(Math.round(ahogeScalePercent) - 40);
-        }
-        if (ahogeWidthSeekBar != null) {
-            ahogeWidthSeekBar.setProgress(Math.round(ahogeWidthPercent) - 40);
-        }
-        if (ahogeRotationSeekBar != null) {
-            ahogeRotationSeekBar.setProgress(Math.round(ahogeRotationDegrees) + 90);
-        }
-        if (ahogeXSeekBar != null) {
-            ahogeXSeekBar.setProgress(Math.round(ahogeOffsetX) + 100);
-        }
-        if (ahogeYSeekBar != null) {
-            ahogeYSeekBar.setProgress(Math.round(ahogeOffsetY) + 100);
-        }
+        toastLong("呆毛已恢复固定预设 56/83/-49/-16/+70 与头发整体九轴支撑");
     }
 
     private void persistAndApplyCustomization() {
+        ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
+        ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
+        ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
+        ahogeOffsetX = CONFIRMED_AHOGE_X;
+        ahogeOffsetY = CONFIRMED_AHOGE_Y;
+        tailMirrored = true;
         prefs.edit()
-                .putBoolean("ear_angle_enabled", earAngleOverrideEnabled)
-                .putFloat("ear_angle_degrees", earAngleDegrees)
-                .putFloat("ear_vertical_offset", earVerticalOffset)
                 .putFloat("ahoge_scale_percent", ahogeScalePercent)
                 .putFloat("ahoge_width_percent", ahogeWidthPercent)
                 .putFloat("ahoge_rotation_degrees", ahogeRotationDegrees)
                 .putFloat("ahoge_offset_x", ahogeOffsetX)
                 .putFloat("ahoge_offset_y", ahogeOffsetY)
-                .putString("ahoge_root_drawable_id", ahogeRootDrawableId)
-                .putInt("ahoge_root_vertex_index", ahogeRootVertexIndex)
-                .putFloat("ahoge_root_model_x", ahogeRootModelX)
-                .putFloat("ahoge_root_model_y", ahogeRootModelY)
-                .putFloat("ahoge_root_distance", ahogeRootDistance)
-                .putBoolean("tail_mirrored", tailMirrored)
+                .remove("ahoge_root_drawable_id")
+                .remove("ahoge_root_vertex_index")
+                .remove("ahoge_root_model_x")
+                .remove("ahoge_root_model_y")
+                .remove("ahoge_root_distance")
+                .putBoolean("tail_mirrored", true)
                 .apply();
         updateCustomizationControls();
         if (glSurfaceView != null && renderer != null) {
@@ -949,56 +771,124 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     }
 
     private void updateCustomizationControls() {
-        if (earAngleStatus != null) {
-            earAngleStatus.setText(earAngleOverrideEnabled
-                    ? String.format(java.util.Locale.ROOT,
-                    "当前联动角度：%+.0f°（负数放平；范围 -50°～+30°）", earAngleDegrees)
-                    : "当前：导入的VTS原值（本次采集约 -8.8°）");
+        if (earSpeedStatus != null) {
+            earSpeedStatus.setText(String.format(java.util.Locale.ROOT,
+                    "兔耳速度：%.0f%%（50%%～250%%）", earSpeedPercent));
         }
-        if (earVerticalStatus != null) {
-            earVerticalStatus.setText(String.format(java.util.Locale.ROOT,
-                    "当前位置：%+.0f（0为原高度；负数向下）", earVerticalOffset));
-        }
-        if (ahogeScaleStatus != null) {
-            ahogeScaleStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛高度：%.0f%%（发根固定；范围40%%～160%%）", ahogeScalePercent));
-        }
-        if (ahogeWidthStatus != null) {
-            ahogeWidthStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛宽度：%.0f%%（变瘦/变胖；范围40%%～160%%）", ahogeWidthPercent));
-        }
-        if (ahogeRotationStatus != null) {
-            ahogeRotationStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛旋转：%+.0f°（范围-90°～+90°）", ahogeRotationDegrees));
-        }
-        if (ahogeXStatus != null) {
-            ahogeXStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛左右：%+.0f（负数向左，正数向右）", ahogeOffsetX));
-        }
-        if (ahogeYStatus != null) {
-            ahogeYStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛上下：%+.0f（正数向上，负数向下）", ahogeOffsetY));
-        }
-        if (ahogeRootStatus != null) {
-            ahogeRootStatus.setText(ahogeRootDrawableId.isEmpty()
-                    ? "呆毛发根：自动（点选后会显示可回填预设的网格、顶点与模型坐标）"
-                    : String.format(java.util.Locale.ROOT,
-                    "呆毛发根：%s / 顶点%d / 模型X%+.5f / Y%+.5f / 点击误差%.5f",
-                    ahogeRootDrawableId, ahogeRootVertexIndex,
-                    ahogeRootModelX, ahogeRootModelY, ahogeRootDistance));
-        }
-        if (tailMirrorButton != null) {
-            tailMirrorButton.setText(tailMirrored
-                    ? "尾巴：右侧（中心线镜像）" : "尾巴：左侧（模型原始）");
+        if (earAmplitudeStatus != null) {
+            earAmplitudeStatus.setText(String.format(java.util.Locale.ROOT,
+                    "兔耳幅度：%.0f%%（50%%～250%%）", earAmplitudePercent));
         }
         if (autoIdleButton != null) {
             autoIdleButton.setText(autoIdleEnabled
-                    ? "自主待机：开启（含自然眨眼）" : "自主待机：关闭（只手动测试）");
+                    ? "自主待机：开启（柔风+眨眼+随机动作）" : "自主待机：关闭");
         }
         if (touchFollowButton != null) {
             touchFollowButton.setText(touchFollowEnabled
                     ? "极限触屏跟随：开启" : "极限触屏跟随：关闭");
         }
+        updateHeadZoneStatus();
+    }
+
+    private void persistAndApplyEarTuning() {
+        earSpeedPercent = Math.max(50.0f, Math.min(250.0f, earSpeedPercent));
+        earAmplitudePercent = Math.max(50.0f, Math.min(250.0f, earAmplitudePercent));
+        prefs.edit()
+                .putFloat("ear_speed_percent", earSpeedPercent)
+                .putFloat("ear_amplitude_percent", earAmplitudePercent)
+                .apply();
+        updateCustomizationControls();
+        if (glSurfaceView != null && renderer != null) {
+            glSurfaceView.queueEvent(() -> renderer.setEarTuning(
+                    earSpeedPercent, earAmplitudePercent));
+        }
+    }
+
+    private void beginHeadZoneCalibration() {
+        headZoneCalibrationMode = true;
+        headZoneFirstX = Float.NaN;
+        headZoneFirstY = Float.NaN;
+        adjustmentEnabled = false;
+        if (adjustmentButton != null) adjustmentButton.setText("调整模型：关闭");
+        toastLong("请在上方舞台依次点击摸头矩形的两个对角；完成后会显示 L/T/R/B 数值");
+    }
+
+    private void handleHeadZoneCalibration(View view, float x, float y) {
+        float nx = clamp01(x / Math.max(1, view.getWidth()));
+        float ny = clamp01(y / Math.max(1, view.getHeight()));
+        if (Float.isNaN(headZoneFirstX)) {
+            headZoneFirstX = nx;
+            headZoneFirstY = ny;
+            toastLong(String.format(java.util.Locale.ROOT,
+                    "第一点 X=%.4f / Y=%.4f；请点击矩形另一对角", nx, ny));
+            return;
+        }
+        float left = Math.min(headZoneFirstX, nx);
+        float top = Math.min(headZoneFirstY, ny);
+        float right = Math.max(headZoneFirstX, nx);
+        float bottom = Math.max(headZoneFirstY, ny);
+        if (right - left < .08f || bottom - top < .06f) {
+            headZoneFirstX = Float.NaN;
+            headZoneFirstY = Float.NaN;
+            toastLong("框选范围太小（宽至少8%、高至少6%）；请重新点击两个对角");
+            return;
+        }
+        headZoneLeft = left;
+        headZoneTop = top;
+        headZoneRight = right;
+        headZoneBottom = bottom;
+        headZoneCalibrationMode = false;
+        headZoneFirstX = Float.NaN;
+        headZoneFirstY = Float.NaN;
+        persistHeadZone();
+        updateHeadZoneStatus();
+        toastLong(String.format(java.util.Locale.ROOT,
+                "摸头范围已保存：L %.4f / T %.4f / R %.4f / B %.4f",
+                headZoneLeft, headZoneTop, headZoneRight, headZoneBottom));
+    }
+
+    private void resetHeadZone() {
+        headZoneCalibrationMode = false;
+        headZoneFirstX = Float.NaN;
+        headZoneFirstY = Float.NaN;
+        resetHeadZoneValues();
+        persistHeadZone();
+        updateHeadZoneStatus();
+        toastLong("摸头范围已恢复迷梦默认值");
+    }
+
+    private void resetHeadZoneValues() {
+        headZoneLeft = DEFAULT_HEAD_ZONE_LEFT;
+        headZoneTop = DEFAULT_HEAD_ZONE_TOP;
+        headZoneRight = DEFAULT_HEAD_ZONE_RIGHT;
+        headZoneBottom = DEFAULT_HEAD_ZONE_BOTTOM;
+    }
+
+    private void persistHeadZone() {
+        prefs.edit()
+                .putFloat("head_zone_left", headZoneLeft)
+                .putFloat("head_zone_top", headZoneTop)
+                .putFloat("head_zone_right", headZoneRight)
+                .putFloat("head_zone_bottom", headZoneBottom)
+                .apply();
+    }
+
+    private void updateHeadZoneStatus() {
+        if (headZoneStatus == null) return;
+        headZoneStatus.setText(String.format(java.util.Locale.ROOT,
+                "摸头范围（舞台归一化）：L %.4f / T %.4f / R %.4f / B %.4f",
+                headZoneLeft, headZoneTop, headZoneRight, headZoneBottom));
+    }
+
+    private boolean isInHeadZone(float x, float y, float margin) {
+        return x >= Math.max(0.0f, headZoneLeft - margin)
+                && x <= Math.min(1.0f, headZoneRight + margin)
+                && y >= Math.max(0.0f, headZoneTop - margin)
+                && y <= Math.min(1.0f, headZoneBottom + margin);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
     }
 
     private void resetStageTransform() {
@@ -1218,8 +1108,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 false, 0.0f, 0.0f,
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY,
-                ahogeRootDrawableId, ahogeRootVertexIndex,
-                tailMirrored, autoIdleEnabled);
+                true, autoIdleEnabled);
         rendererDetail = "";
         updateSummary();
         glSurfaceView.queueEvent(() -> renderer.requestModel(
@@ -1387,15 +1276,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 + "\n当前蒙版：" + maskMode.displayName()
                 + (maskMode == SenMaskMode.HIGH_PRECISION
                 ? " · " + highPrecisionMaskSize + "px" : "")
-                + " · 兔耳：隔离九轴双脉冲/加宽放大"
+                + String.format(java.util.Locale.ROOT,
+                " · 兔耳：隔离九轴双脉冲/速度%.0f%%/幅度%.0f%%",
+                earSpeedPercent, earAmplitudePercent)
                 + " · 服装：" + selectedOutfit.displayName
                 + String.format(java.util.Locale.ROOT,
                 " · 呆毛：高%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY)
-                + " · 发根：" + (ahogeRootDrawableId.isEmpty() ? "自动"
-                : ahogeRootDrawableId + "#" + ahogeRootVertexIndex)
-                + " · 尾巴：" + (tailMirrored ? "右侧镜像" : "左侧原始")
+                + " · 呆毛支撑：头发整体九轴/局部18%"
+                + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")
                 + (rendererDetail.isEmpty() ? "" : "\n渲染实测：" + rendererDetail)
@@ -1424,26 +1314,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             toastLong(freezeVtsSnapshot
                     ? maskMode.displayName() + " 动态底座已加载：可测试情绪、动作、耳鳍与尾巴"
                     : "Sen 原始状态已加载，可用于对照");
-        });
-    }
-
-    @Override
-    public void onAhogeRootCalibrated(String drawableId, int vertexIndex,
-                                      float modelX, float modelY, float distance) {
-        runOnUiThread(() -> {
-            ahogeRootDrawableId = drawableId == null ? "" : drawableId;
-            ahogeRootVertexIndex = vertexIndex;
-            ahogeRootModelX = modelX;
-            ahogeRootModelY = modelY;
-            ahogeRootDistance = distance;
-            // Root calibration only changes the dynamic anchor. Keep the five confirmed visual
-            // values intact so selecting a root cannot flip/reposition the approved preset.
-            syncAhogeSeekBars();
-            persistAndApplyCustomization();
-            toastLong(String.format(java.util.Locale.ROOT,
-                    "呆毛发根参数：%s / 顶点%d / X%+.5f / Y%+.5f",
-                    ahogeRootDrawableId, ahogeRootVertexIndex,
-                    ahogeRootModelX, ahogeRootModelY));
         });
     }
 
