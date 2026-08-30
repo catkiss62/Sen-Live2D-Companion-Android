@@ -37,7 +37,10 @@
 - 同时修复预览调整：双指缩放围绕两指焦点计算，单指接管时重新取得有效指针，限制异常平移，避免放大后模型偶发移出画面。
 - Inochi Creator使用Inochi2D自己的模型和渲染体系，不能读取Cubism `.moc3`，仅能作为“蒙版需要明确隔离与合成”的概念佐证；本项目不引入其代码、不增加所谓C渲染器，避免污染Cubism诊断路线。
 - 首次编译 run `33297316523` 失败：`CubismRendererAndroid.create()` 的公开返回类型是父类 `CubismRenderer`，接收为Android子类时必须显式转换；仅此一处编译错误，已修正后重建。此失败不代表A/B/C算法或模型实机结果。
-- 本段为制作前登记。源码commit、Actions run、APK校验值和实机结果须在完成后补录。
+- 修正后源码 commit：`cff7c15dce17fe94c8af14df0b537f0d53d9bd90`；Actions run `33297412426` 为 `success`，Java编译、APK生成、签名和产物上传全部成功。
+- APK：`3,751,867` bytes，SHA-256 `31a64fa30e37e9bd554c44c2149f8ec07f220cfaf2b6a00702ceb4541578d42e`。
+- Actions ZIP：`3,236,013` bytes，SHA-256 `c4336fdfcf398aaf76504830b25db77dc6e7a9422e19e2c564524a0031b29478`。
+- 当前仍为“已制作待确认”。Actions成功只证明代码和官方Cubism接口正确编译，不代表三种蒙版模式的实机画面已经正确。
 
 ### 2026-08-29 · v0.3.2 VTS静态冻结对照（本轮制作）
 
