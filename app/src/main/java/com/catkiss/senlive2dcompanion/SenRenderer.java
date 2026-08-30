@@ -68,10 +68,13 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
-                          boolean ahogeShortened, boolean ahogeRaised) {
+                          float ahogeScalePercent, float ahogeRotationDegrees,
+                          float ahogeOffsetX, float ahogeOffsetY,
+                          boolean tailMirrored) {
         if (model != null) {
             model.setCustomization(earEnabled, earAngleDegrees, earVerticalOffset,
-                    ahogeShortened, ahogeRaised);
+                    ahogeScalePercent, ahogeRotationDegrees,
+                    ahogeOffsetX, ahogeOffsetY, tailMirrored);
         }
     }
 

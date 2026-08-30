@@ -31,19 +31,22 @@ final class SenLive2DModel extends CubismUserModel {
     private static final String[] AHOGE_PART_IDS = {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
-    private static final String[] EAR_PART_IDS = {"Part56"};
-    private static final float AHOGE_SHORT_SCALE = 0.78f;
-    private static final float AHOGE_RAISE_CANVAS_RATIO = 0.025f;
+    private static final String[] TAIL_PART_IDS = {"Part239"};
+    private static final float EAR_DETECTION_LOW = -20.0f;
+    private static final float EAR_DETECTION_HIGH = 20.0f;
+    private static final float VERTEX_CHANGE_EPSILON = 0.00001f;
 
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
     private final Map<String, Float> originalEarAngles = new HashMap<>();
+    private final Set<Integer> earAffectedDrawables = new LinkedHashSet<>();
     private ICubismModelSetting setting;
     private File homeDirectory;
     private String appearanceDetail = "";
     private boolean frozenSnapshot;
     private boolean geometryDiagnosticsAdded;
     private SenRenderOptions renderOptions = new SenRenderOptions(
-            SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f, false, false);
+            SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
+            100.0f, 0.0f, 0.0f, 0.0f, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -82,6 +85,7 @@ final class SenLive2DModel extends CubismUserModel {
         if (setting.getLayoutMap(layout)) modelMatrix.setupFromLayout(layout);
         appearanceDetail = "";
         geometryDiagnosticsAdded = false;
+        earAffectedDrawables.clear();
         if (frozenSnapshot) {
             applyFrozenProfile(frozenProfile, listener);
         } else {
@@ -90,6 +94,8 @@ final class SenLive2DModel extends CubismUserModel {
         captureOriginalEarAngles();
         applyVtsArtMeshColors(appearance, listener);
         if (frozenSnapshot) {
+            listener.onStatus("正在自动识别耳鳍参数实际影响的网格…");
+            detectEarAffectedDrawables();
             // Calculate all Drawable vertices once from the captured VTS values. No scheduler is
             // allowed to overwrite them afterwards; this build is a strict renderer parity test.
             applyEarAngleOverride();
@@ -128,10 +134,13 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
-                          boolean ahogeShortened, boolean ahogeRaised) {
+                          float ahogeScalePercent, float ahogeRotationDegrees,
+                          float ahogeOffsetX, float ahogeOffsetY,
+                          boolean tailMirrored) {
         renderOptions = renderOptions.withCustomization(
                 earEnabled, earAngleDegrees, earVerticalOffset,
-                ahogeShortened, ahogeRaised);
+                ahogeScalePercent, ahogeRotationDegrees,
+                ahogeOffsetX, ahogeOffsetY, tailMirrored);
         if (model == null || !frozenSnapshot) return;
         applyEarAngleOverride();
         model.update();
@@ -277,7 +286,7 @@ final class SenLive2DModel extends CubismUserModel {
             }
         }
         appendAppearanceDetail("耳鳍角度参数 " + originalEarAngles.size() + "/3"
-                + " · 几何对象改用Part层级定位");
+                + " · 几何对象改用参数影响检测");
     }
 
     private void applyEarAngleOverride() {
@@ -301,17 +310,20 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     private void applyRuntimeGeometry() {
-        Set<Integer> earDrawables = collectChildDrawables(EAR_PART_IDS);
         Set<Integer> ahogeDrawables = collectChildDrawables(AHOGE_PART_IDS);
+        Set<Integer> tailDrawables = collectChildDrawables(TAIL_PART_IDS);
         if (!geometryDiagnosticsAdded) {
-            appendAppearanceDetail("耳鳍子网格 " + earDrawables.size()
-                    + "/可见 " + countVisible(earDrawables)
+            appendAppearanceDetail("耳鳍自动网格 " + earAffectedDrawables.size()
+                    + "/可见 " + countVisible(earAffectedDrawables)
                     + " · 呆毛子网格 " + ahogeDrawables.size()
-                    + "/可见 " + countVisible(ahogeDrawables));
+                    + "/可见 " + countVisible(ahogeDrawables)
+                    + " · 尾巴子网格 " + tailDrawables.size()
+                    + "/可见 " + countVisible(tailDrawables));
             geometryDiagnosticsAdded = true;
         }
-        applyEarVerticalTransform(earDrawables);
+        applyEarVerticalTransform(earAffectedDrawables);
         applyAhogeTransform(ahogeDrawables);
+        applyTailMirror(tailDrawables);
     }
 
     private void applyEarVerticalTransform(Set<Integer> indices) {
@@ -326,7 +338,11 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     private void applyAhogeTransform(Set<Integer> candidates) {
-        if (!renderOptions.ahogeShortened && !renderOptions.ahogeRaised) return;
+        boolean unchanged = Math.abs(renderOptions.ahogeScalePercent - 100.0f) < 0.001f
+                && Math.abs(renderOptions.ahogeRotationDegrees) < 0.001f
+                && Math.abs(renderOptions.ahogeOffsetX) < 0.001f
+                && Math.abs(renderOptions.ahogeOffsetY) < 0.001f;
+        if (unchanged) return;
 
         int[] indices = new int[candidates.size()];
         int count = 0;
@@ -346,15 +362,70 @@ final class SenLive2DModel extends CubismUserModel {
         if (count == 0 || !Float.isFinite(minX) || !Float.isFinite(minY)) return;
 
         float anchorX = (minX + maxX) * 0.5f;
-        float raise = renderOptions.ahogeRaised
-                ? Math.max(0.02f, getCanvasHeight() * AHOGE_RAISE_CANVAS_RATIO) : 0.0f;
-        float scale = renderOptions.ahogeShortened ? AHOGE_SHORT_SCALE : 1.0f;
+        float scale = renderOptions.ahogeScalePercent / 100.0f;
+        double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
+        float cos = (float) Math.cos(radians);
+        float sin = (float) Math.sin(radians);
+        float translateX = getCanvasWidth() * renderOptions.ahogeOffsetX / 1000.0f;
+        float translateY = getCanvasHeight() * renderOptions.ahogeOffsetY / 1000.0f;
         for (int n = 0; n < count; n++) {
             float[] vertices = model.getDrawableVertices(indices[n]);
             for (int i = 0; i + 1 < vertices.length; i += 2) {
-                vertices[i] = anchorX + (vertices[i] - anchorX) * scale;
-                vertices[i + 1] = minY + (vertices[i + 1] - minY) * scale + raise;
+                float dx = (vertices[i] - anchorX) * scale;
+                float dy = (vertices[i + 1] - minY) * scale;
+                vertices[i] = anchorX + dx * cos - dy * sin + translateX;
+                vertices[i + 1] = minY + dx * sin + dy * cos + translateY;
             }
+        }
+    }
+
+    private void applyTailMirror(Set<Integer> indices) {
+        if (!renderOptions.tailMirrored) return;
+        for (int index : indices) {
+            if (!isDrawableVisible(index)) continue;
+            float[] vertices = model.getDrawableVertices(index);
+            for (int i = 0; i + 1 < vertices.length; i += 2) vertices[i] = -vertices[i];
+        }
+    }
+
+    private void detectEarAffectedDrawables() {
+        earAffectedDrawables.clear();
+        if (originalEarAngles.isEmpty()) return;
+
+        writeAllEarAngles(EAR_DETECTION_LOW);
+        model.update();
+        int drawableCount = model.getDrawableCount();
+        float[][] lowVertices = new float[drawableCount][];
+        boolean[] lowVisible = new boolean[drawableCount];
+        for (int i = 0; i < drawableCount; i++) {
+            lowVertices[i] = model.getDrawableVertices(i).clone();
+            lowVisible[i] = isDrawableVisible(i);
+        }
+
+        writeAllEarAngles(EAR_DETECTION_HIGH);
+        model.update();
+        for (int i = 0; i < drawableCount; i++) {
+            if (!lowVisible[i] && !isDrawableVisible(i)) continue;
+            float[] low = lowVertices[i];
+            float[] high = model.getDrawableVertices(i);
+            int length = Math.min(low.length, high.length);
+            for (int vertex = 0; vertex < length; vertex++) {
+                if (Math.abs(low[vertex] - high[vertex]) > VERTEX_CHANGE_EPSILON) {
+                    earAffectedDrawables.add(i);
+                    break;
+                }
+            }
+        }
+
+        applyEarAngleOverride();
+        model.update();
+        appendAppearanceDetail("耳鳍参数影响网格 " + earAffectedDrawables.size());
+    }
+
+    private void writeAllEarAngles(float value) {
+        for (String id : EAR_ANGLE_PARAMETER_IDS) {
+            int index = findParameterIndex(id);
+            if (index >= 0) model.getModel().getParameterViews()[index].setValue(value);
         }
     }
 
