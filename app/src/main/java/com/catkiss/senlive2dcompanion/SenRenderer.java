@@ -30,6 +30,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private final Listener listener;
     private final NativeTextureManager textures = new NativeTextureManager();
     private final CubismMatrix44 projection = CubismMatrix44.create();
+    private final CubismMatrix44 interactionMvp = CubismMatrix44.create();
 
     private SenLive2DModel model;
     private ModelRequest pendingRequest;
@@ -45,6 +46,11 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private volatile boolean touchFollowEnabled = true;
     private volatile float earSpeedPercent = 135.0f;
     private volatile float earAmplitudePercent = 100.0f;
+    private volatile float modelBoundsLeft;
+    private volatile float modelBoundsRight;
+    private volatile float modelBoundsTop;
+    private volatile float modelBoundsBottom;
+    private volatile boolean modelBoundsValid;
 
     SenRenderer(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -65,6 +71,20 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         float translationLimit = 0.9f + 0.5f * stageScale;
         stageTranslateX = Math.max(-translationLimit, Math.min(translationLimit, translateX));
         stageTranslateY = Math.max(-translationLimit, Math.min(translationLimit, translateY));
+    }
+
+    boolean screenToModelNormalized(float screenX, float screenY, float[] result) {
+        if (!modelBoundsValid || result == null || result.length < 2) return false;
+        float left = modelBoundsLeft;
+        float right = modelBoundsRight;
+        float top = modelBoundsTop;
+        float bottom = modelBoundsBottom;
+        if (right - left < 1e-5f || top - bottom < 1e-5f) return false;
+        float clipX = screenX * 2.0f - 1.0f;
+        float clipY = 1.0f - screenY * 2.0f;
+        result[0] = (clipX - left) / (right - left);
+        result[1] = (top - clipY) / (top - bottom);
+        return Float.isFinite(result[0]) && Float.isFinite(result[1]);
     }
 
     void applyExpression(String name) {
@@ -191,11 +211,26 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             }
             projection.scaleRelative(stageScale, stageScale);
             projection.translateRelative(stageTranslateX, stageTranslateY);
+            updateInteractionBounds();
             model.draw(projection);
         } catch (Throwable error) {
             listener.onError(error);
             releaseCurrentModel();
         }
+    }
+
+    private void updateInteractionBounds() {
+        model.copyMvpMatrix(projection, interactionMvp);
+        float x1 = interactionMvp.transformX(model.getReferenceDrawableLeft());
+        float x2 = interactionMvp.transformX(model.getReferenceDrawableRight());
+        float y1 = interactionMvp.transformY(model.getReferenceDrawableTop());
+        float y2 = interactionMvp.transformY(model.getReferenceDrawableBottom());
+        modelBoundsLeft = Math.min(x1, x2);
+        modelBoundsRight = Math.max(x1, x2);
+        modelBoundsTop = Math.max(y1, y2);
+        modelBoundsBottom = Math.min(y1, y2);
+        modelBoundsValid = modelBoundsRight - modelBoundsLeft > 1e-5f
+                && modelBoundsTop - modelBoundsBottom > 1e-5f;
     }
 
     void release() {
@@ -244,6 +279,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     private void releaseCurrentModel() {
+        modelBoundsValid = false;
         textures.releaseAll();
         if (model != null) {
             model.closeModel();

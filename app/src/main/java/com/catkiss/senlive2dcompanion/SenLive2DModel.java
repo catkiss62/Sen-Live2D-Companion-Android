@@ -1,13 +1,11 @@
 package com.catkiss.senlive2dcompanion;
 
 import com.live2d.sdk.cubism.framework.CubismModelSettingJson;
-import com.live2d.sdk.cubism.framework.CubismCdiJson;
 import com.live2d.sdk.cubism.framework.CubismFramework;
 import com.live2d.sdk.cubism.framework.ICubismModelSetting;
 import com.live2d.sdk.cubism.framework.math.CubismMatrix44;
 import com.live2d.sdk.cubism.framework.model.CubismModelMultiplyAndScreenColor;
 import com.live2d.sdk.cubism.framework.model.CubismModelPartInfo;
-import com.live2d.sdk.cubism.framework.model.CubismModelObjectInfo;
 import com.live2d.sdk.cubism.framework.model.CubismUserModel;
 import com.live2d.sdk.cubism.framework.motion.ACubismMotion;
 import com.live2d.sdk.cubism.framework.motion.ACubismUpdater;
@@ -27,7 +25,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -39,7 +36,6 @@ final class SenLive2DModel extends CubismUserModel {
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
-    private static final float AHOGE_FLEX_GAIN = .08f;
     private static final float EAR_HIDDEN_EYE_DRIVE = -1.05f;
     private static final float EAR_HIDDEN_NINE_AXIS_DRIVE = -6.0f;
     private static final String[] ARM_PHYSICS_OUTPUT_IDS = {
@@ -67,12 +63,13 @@ final class SenLive2DModel extends CubismUserModel {
     private float pendingEarPhysicsMix;
     private boolean pendingEarPhysicsActive;
     private final Map<Integer, float[]> ahogeReferenceVertices = new HashMap<>();
-    private final List<HairSupportPoint> ahogeHairSupports = new ArrayList<>();
-    private final Set<Integer> rabbitEarDrivenDrawables = new HashSet<>();
-    private final Set<Integer> cdiHeadHairDrawables = new LinkedHashSet<>();
-    private final List<String> cdiHeadHairPartNames = new ArrayList<>();
+    private final List<AhogeRootPoint> ahogeRootPoints = new ArrayList<>();
     private float ahogeReferenceAnchorX;
     private float ahogeReferenceAnchorY;
+    private float referenceDrawableLeft = -1.0f;
+    private float referenceDrawableRight = 1.0f;
+    private float referenceDrawableTop = 1.0f;
+    private float referenceDrawableBottom = -1.0f;
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -130,6 +127,7 @@ final class SenLive2DModel extends CubismUserModel {
         applyVtsArtMeshColors(appearance, listener);
         updateScheduler.sortUpdatableList();
         model.update();
+        captureReferenceDrawableBounds();
         captureAhogeReferenceGeometry();
         applyRuntimeGeometry();
         appendAppearanceDetail("动态底座：VTS→情绪/动作→原生物理→运行时几何");
@@ -190,6 +188,17 @@ final class SenLive2DModel extends CubismUserModel {
         renderer.setMvpMatrix(matrix);
         renderer.drawModel();
     }
+
+    void copyMvpMatrix(CubismMatrix44 projection, CubismMatrix44 destination) {
+        destination.setMatrix(projection);
+        CubismMatrix44.multiply(modelMatrix.getArray(), destination.getArray(),
+                destination.getArray());
+    }
+
+    float getReferenceDrawableLeft() { return referenceDrawableLeft; }
+    float getReferenceDrawableRight() { return referenceDrawableRight; }
+    float getReferenceDrawableTop() { return referenceDrawableTop; }
+    float getReferenceDrawableBottom() { return referenceDrawableBottom; }
 
     void setExpression(String name) {
         ACubismMotion motion = expressions.get(name);
@@ -533,241 +542,40 @@ final class SenLive2DModel extends CubismUserModel {
         }
         ahogeReferenceAnchorX = Float.isFinite(minX) ? (minX + maxX) * .5f : 0.0f;
         ahogeReferenceAnchorY = Float.isFinite(minY) ? minY : 0.0f;
-        detectRabbitEarDrivenDrawables();
-        resolveCdiHeadHairDrawables();
-        captureAhogeHairSupports();
-        appendAppearanceDetail("呆毛CDI头部/头发支撑 " + ahogeHairSupports.size()
-                + "点/" + cdiHeadHairDrawables.size() + "网格"
-                + (cdiHeadHairPartNames.isEmpty() ? " · CDI未识别，不回退全模型猜测"
-                : " · 部件 " + String.join("/", cdiHeadHairPartNames))
-                + " · 排除兔耳网格 " + rabbitEarDrivenDrawables.size()
-                + "个 · 固定缩放/局部柔性 "
-                + Math.round(AHOGE_FLEX_GAIN * 100.0f) + "%");
+        captureAhogeRootPoints();
+        appendAppearanceDetail("呆毛原生物理后变换 · 自身发根 "
+                + ahogeRootPoints.size() + "点 · 无外部头发/兔耳/尾巴支撑");
     }
 
-    /**
-     * The purchased model does not expose a stable semantic part id for every rabbit-ear
-     * Drawable. Selecting the nearest visible vertices therefore attached the ahoge support to
-     * the ears in v0.4.2. Probe the three confirmed rabbit-ear output parameters once at load
-     * time and exclude every Drawable whose vertices respond. This follows actual rig behaviour
-     * and does not guess from ArtMesh names or screen position.
-     */
-    private void detectRabbitEarDrivenDrawables() {
-        rabbitEarDrivenDrawables.clear();
-        if (rabbitEarPhysicsIndices.length == 0) return;
-        int parameterCount = model.getParameterCount();
-        float[] savedParameters = new float[parameterCount];
-        for (int i = 0; i < parameterCount; i++) {
-            savedParameters[i] = model.getModel().getParameterViews()[i].getValue();
-        }
-        Map<Integer, float[]> baselineVertices = new HashMap<>();
-        for (int drawable = 0; drawable < model.getDrawableCount(); drawable++) {
-            if (isDrawableVisible(drawable)) {
-                baselineVertices.put(drawable, model.getDrawableVertices(drawable).clone());
-            }
-        }
-        for (int parameterIndex : rabbitEarPhysicsIndices) {
-            float minimum = model.getParameterMinimumValue(parameterIndex);
-            float maximum = model.getParameterMaximumValue(parameterIndex);
-            float current = savedParameters[parameterIndex];
-            float probe = Math.max(2.0f, (maximum - minimum) * .12f);
-            float target = current + probe <= maximum ? current + probe : current - probe;
-            model.getModel().getParameterViews()[parameterIndex].setValue(
-                    Math.max(minimum, Math.min(maximum, target)));
-            model.update();
-            for (Map.Entry<Integer, float[]> entry : baselineVertices.entrySet()) {
-                float[] baseline = entry.getValue();
-                float[] currentVertices = model.getDrawableVertices(entry.getKey());
-                if (baseline.length != currentVertices.length) continue;
-                for (int i = 0; i < baseline.length; i++) {
-                    float delta = currentVertices[i] - baseline[i];
-                    if (delta * delta > 1.0e-8f) {
-                        rabbitEarDrivenDrawables.add(entry.getKey());
-                        break;
-                    }
-                }
-            }
-            model.getModel().getParameterViews()[parameterIndex].setValue(current);
-            model.update();
-        }
-        for (int i = 0; i < parameterCount; i++) {
-            model.getModel().getParameterViews()[i].setValue(savedParameters[i]);
-        }
-        model.update();
-    }
-
-    /**
-     * Resolve stable head and hair geometry from the model's own cdi3 display information.
-     * v0.4.2/v0.4.3 searched all visible vertices by distance, which successively attached the
-     * ahoge to rabbit ears and the tail. A semantic allow-list is safer: if the purchased model
-     * does not provide usable display names, leave the support list empty instead of guessing.
-     */
-    private void resolveCdiHeadHairDrawables() {
-        cdiHeadHairDrawables.clear();
-        cdiHeadHairPartNames.clear();
-        String displayInfo = setting == null ? "" : setting.getDisplayInfoFileName();
-        if (displayInfo == null || displayInfo.isEmpty()) return;
-        try {
-            CubismCdiJson cdi = CubismCdiJson.create(NativeFileLoader.readFile(child(displayInfo)));
-            Set<Integer> stableHead = new LinkedHashSet<>();
-            Set<Integer> hair = new LinkedHashSet<>();
-            Set<Integer> semanticExcluded = new LinkedHashSet<>();
-            for (int i = 0; i < cdi.getPartsCount(); i++) {
-                String id = cdi.getPartsId(i);
-                String name = cdi.getPartsName(i);
-                if (id == null || id.isEmpty() || name == null) continue;
-                String normalized = normalizePartName(name);
-                if (isAhogeSupportExcludedName(normalized)) {
-                    semanticExcluded.addAll(collectChildDrawables(new String[]{id}));
-                    continue;
-                }
-                boolean headPart = containsAny(normalized,
-                        "头部", "頭部", "头皮", "頭皮", "脸", "臉", "顔", "面部",
-                        "head", "face", "scalp", "skull");
-                boolean hairPart = containsAny(normalized,
-                        "头发", "頭髮", "髪", "发", "髮", "刘海", "瀏海", "前髪", "後髪",
-                        "hair", "bang", "fringe");
-                if (!headPart && !hairPart) continue;
-
-                // Direct children avoid a broad parent such as "Head" pulling ears and props
-                // back into the candidate set. Recursive descendants are only a fallback when
-                // the named part is a pure container with no direct drawable.
-                Set<Integer> direct = collectDirectChildDrawables(id);
-                Set<Integer> resolved = direct.isEmpty()
-                        ? collectChildDrawables(new String[]{id}) : direct;
-                if (headPart) stableHead.addAll(resolved);
-                else hair.addAll(resolved);
-                if (cdiHeadHairPartNames.size() < 4 && !cdiHeadHairPartNames.contains(name)) {
-                    cdiHeadHairPartNames.add(name);
-                }
-            }
-            cdiHeadHairDrawables.addAll(stableHead);
-            cdiHeadHairDrawables.addAll(hair);
-            cdiHeadHairDrawables.removeAll(semanticExcluded);
-            cdiHeadHairDrawables.removeAll(collectChildDrawables(AHOGE_PART_IDS));
-            cdiHeadHairDrawables.removeAll(collectChildDrawables(TAIL_PART_IDS));
-            cdiHeadHairDrawables.removeAll(rabbitEarDrivenDrawables);
-        } catch (Exception ignored) {
-            cdiHeadHairDrawables.clear();
-            cdiHeadHairPartNames.clear();
-        }
-    }
-
-    private static String normalizePartName(String name) {
-        return name.toLowerCase(Locale.ROOT)
-                .replace(" ", "").replace("_", "").replace("-", "");
-    }
-
-    private static boolean containsAny(String value, String... needles) {
-        for (String needle : needles) if (value.contains(needle)) return true;
-        return false;
-    }
-
-    private static boolean isAhogeSupportExcludedName(String name) {
-        return containsAny(name,
-                "呆毛", "ahoge", "antenna",
-                "兔", "rabbit", "耳", "ear", "鱼鳍", "魚鰭", "fin",
-                "尾", "tail", "鲸", "鯨", "whale",
-                "发夹", "髮夾", "hairpin", "发饰", "髮飾", "accessory",
-                "头饰", "頭飾", "headwear", "headband", "hairband",
-                "帽", "hat", "冠", "crown", "蝴蝶结", "蝴蝶結", "ribbon", "bow",
-                "女仆", "女僕", "maid");
-    }
-
-    private void captureAhogeHairSupports() {
-        ahogeHairSupports.clear();
-        if (ahogeReferenceVertices.isEmpty() || cdiHeadHairDrawables.isEmpty()) return;
-        Set<Integer> excluded = collectChildDrawables(AHOGE_PART_IDS);
-        excluded.addAll(collectChildDrawables(TAIL_PART_IDS));
-        excluded.addAll(rabbitEarDrivenDrawables);
-        List<HairSupportCandidate> candidates = new ArrayList<>();
-        for (int drawable : cdiHeadHairDrawables) {
-            if (excluded.contains(drawable) || !isDrawableVisible(drawable)) continue;
-            float[] vertices = model.getDrawableVertices(drawable);
+    private void captureAhogeRootPoints() {
+        ahogeRootPoints.clear();
+        List<AhogeRootCandidate> candidates = new ArrayList<>();
+        for (Map.Entry<Integer, float[]> entry : ahogeReferenceVertices.entrySet()) {
+            float[] vertices = entry.getValue();
             for (int vertex = 0; vertex * 2 + 1 < vertices.length; vertex++) {
                 int offset = vertex * 2;
                 float dx = vertices[offset] - ahogeReferenceAnchorX;
                 float dy = vertices[offset + 1] - ahogeReferenceAnchorY;
-                candidates.add(new HairSupportCandidate(drawable, vertex,
+                candidates.add(new AhogeRootCandidate(entry.getKey(), vertex,
                         vertices[offset], vertices[offset + 1], dx * dx + dy * dy));
             }
         }
-        candidates.sort(Comparator.comparingDouble(
-                (HairSupportCandidate value) -> value.distanceSquared));
-        Map<Integer, Integer> perDrawable = new HashMap<>();
-        for (HairSupportCandidate candidate : candidates) {
-            int used = perDrawable.getOrDefault(candidate.drawableIndex, 0);
-            if (used >= 3) continue;
-            ahogeHairSupports.add(new HairSupportPoint(candidate.drawableIndex,
+        candidates.sort(Comparator.comparingDouble(value -> value.distanceSquared));
+        for (AhogeRootCandidate candidate : candidates) {
+            ahogeRootPoints.add(new AhogeRootPoint(candidate.drawableIndex,
                     candidate.vertexIndex, candidate.referenceX, candidate.referenceY));
-            perDrawable.put(candidate.drawableIndex, used + 1);
-            if (ahogeHairSupports.size() >= 15) break;
+            if (ahogeRootPoints.size() >= 12) break;
         }
     }
 
-    private SimilarityTransform estimateAhogeTransform(Set<Integer> candidates) {
-        if (ahogeReferenceVertices.isEmpty()) return null;
-        double referenceCenterX = 0.0;
-        double referenceCenterY = 0.0;
-        double currentCenterX = 0.0;
-        double currentCenterY = 0.0;
-        int points = 0;
-        for (int index : candidates) {
-            if (!isDrawableVisible(index)) continue;
-            float[] reference = ahogeReferenceVertices.get(index);
-            float[] current = model.getDrawableVertices(index);
-            if (reference == null || reference.length != current.length) continue;
-            for (int i = 0; i + 1 < current.length; i += 2) {
-                referenceCenterX += reference[i];
-                referenceCenterY += reference[i + 1];
-                currentCenterX += current[i];
-                currentCenterY += current[i + 1];
-                points++;
-            }
-        }
-        if (points < 3) return null;
-        referenceCenterX /= points;
-        referenceCenterY /= points;
-        currentCenterX /= points;
-        currentCenterY /= points;
-        double denominator = 0.0;
-        double dot = 0.0;
-        double cross = 0.0;
-        for (int index : candidates) {
-            if (!isDrawableVisible(index)) continue;
-            float[] reference = ahogeReferenceVertices.get(index);
-            float[] current = model.getDrawableVertices(index);
-            if (reference == null || reference.length != current.length) continue;
-            for (int i = 0; i + 1 < current.length; i += 2) {
-                double rx = reference[i] - referenceCenterX;
-                double ry = reference[i + 1] - referenceCenterY;
-                double cx = current[i] - currentCenterX;
-                double cy = current[i + 1] - currentCenterY;
-                denominator += rx * rx + ry * ry;
-                dot += rx * cx + ry * cy;
-                cross += rx * cy - ry * cx;
-            }
-        }
-        if (denominator < 1e-8) return null;
-        // The support transform may contain perspective deformation or local hair physics.
-        // Applying its fitted scale made the ahoge visibly grow/shrink during extreme touch
-        // tracking. Preserve only translation and rotation; the confirmed 56/83 size is fixed.
-        double rotationLength = Math.hypot(dot, cross);
-        double rotationA = rotationLength < 1e-8 ? 1.0 : dot / rotationLength;
-        double rotationB = rotationLength < 1e-8 ? 0.0 : cross / rotationLength;
-        return new SimilarityTransform((float) referenceCenterX, (float) referenceCenterY,
-                (float) currentCenterX, (float) currentCenterY,
-                (float) rotationA, (float) rotationB);
-    }
-
-    private SimilarityTransform estimateHairSupportTransform() {
-        if (ahogeHairSupports.size() < 3) return null;
+    private SimilarityTransform estimateAhogeRootTransform() {
+        if (ahogeRootPoints.isEmpty()) return null;
         double referenceCenterX = 0.0;
         double referenceCenterY = 0.0;
         double currentCenterX = 0.0;
         double currentCenterY = 0.0;
         int count = 0;
-        for (HairSupportPoint point : ahogeHairSupports) {
+        for (AhogeRootPoint point : ahogeRootPoints) {
             if (!isDrawableVisible(point.drawableIndex)) continue;
             float[] vertices = model.getDrawableVertices(point.drawableIndex);
             int offset = point.vertexIndex * 2;
@@ -778,7 +586,7 @@ final class SenLive2DModel extends CubismUserModel {
             currentCenterY += vertices[offset + 1];
             count++;
         }
-        if (count < 3) return null;
+        if (count == 0) return null;
         referenceCenterX /= count;
         referenceCenterY /= count;
         currentCenterX /= count;
@@ -786,7 +594,7 @@ final class SenLive2DModel extends CubismUserModel {
         double denominator = 0.0;
         double dot = 0.0;
         double cross = 0.0;
-        for (HairSupportPoint point : ahogeHairSupports) {
+        for (AhogeRootPoint point : ahogeRootPoints) {
             if (!isDrawableVisible(point.drawableIndex)) continue;
             float[] vertices = model.getDrawableVertices(point.drawableIndex);
             int offset = point.vertexIndex * 2;
@@ -799,7 +607,10 @@ final class SenLive2DModel extends CubismUserModel {
             dot += rx * cx + ry * cy;
             cross += rx * cy - ry * cx;
         }
-        if (denominator < 1e-8) return null;
+        if (denominator < 1e-8) {
+            return new SimilarityTransform((float) referenceCenterX, (float) referenceCenterY,
+                    (float) currentCenterX, (float) currentCenterY, 1.0f, 0.0f);
+        }
         double rotationLength = Math.hypot(dot, cross);
         double rotationA = rotationLength < 1e-8 ? 1.0 : dot / rotationLength;
         double rotationB = rotationLength < 1e-8 ? 0.0 : cross / rotationLength;
@@ -809,10 +620,8 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     private void applyAhogeHairRig(Set<Integer> candidates) {
-        SimilarityTransform selfTransform = estimateAhogeTransform(candidates);
-        SimilarityTransform hairTransform = estimateHairSupportTransform();
-        if (selfTransform == null) return;
-        if (hairTransform == null) hairTransform = selfTransform;
+        SimilarityTransform rootTransform = estimateAhogeRootTransform();
+        if (rootTransform == null) return;
 
         float scale = renderOptions.ahogeScalePercent / 100.0f;
         float widthScale = renderOptions.ahogeWidthPercent / 100.0f;
@@ -821,26 +630,43 @@ final class SenLive2DModel extends CubismUserModel {
         float sin = (float) Math.sin(radians);
         float offsetX = getCanvasWidth() * renderOptions.ahogeOffsetX / 1000.0f;
         float offsetY = getCanvasHeight() * renderOptions.ahogeOffsetY / 1000.0f;
+        float currentAnchorX = rootTransform.mapX(
+                ahogeReferenceAnchorX, ahogeReferenceAnchorY);
+        float currentAnchorY = rootTransform.mapY(
+                ahogeReferenceAnchorX, ahogeReferenceAnchorY);
         for (int index : candidates) {
             if (!isDrawableVisible(index)) continue;
-            float[] reference = ahogeReferenceVertices.get(index);
             float[] current = model.getDrawableVertices(index);
-            if (reference == null || reference.length != current.length) continue;
             for (int i = 0; i + 1 < current.length; i += 2) {
-                float selfX = selfTransform.mapX(reference[i], reference[i + 1]);
-                float selfY = selfTransform.mapY(reference[i], reference[i + 1]);
-                float residualX = current[i] - selfX;
-                float residualY = current[i + 1] - selfY;
-
-                float dx = (reference[i] - ahogeReferenceAnchorX) * scale * widthScale;
-                float dy = (reference[i + 1] - ahogeReferenceAnchorY) * scale;
-                float confirmedX = ahogeReferenceAnchorX + dx * cos - dy * sin + offsetX;
-                float confirmedY = ahogeReferenceAnchorY + dx * sin + dy * cos + offsetY;
-                current[i] = hairTransform.mapX(confirmedX, confirmedY)
-                        + residualX * AHOGE_FLEX_GAIN;
-                current[i + 1] = hairTransform.mapY(confirmedX, confirmedY)
-                        + residualY * AHOGE_FLEX_GAIN;
+                float dx = (current[i] - currentAnchorX) * scale * widthScale;
+                float dy = (current[i + 1] - currentAnchorY) * scale;
+                current[i] = currentAnchorX + dx * cos - dy * sin + offsetX;
+                current[i + 1] = currentAnchorY + dx * sin + dy * cos + offsetY;
             }
+        }
+    }
+
+    private void captureReferenceDrawableBounds() {
+        float left = Float.POSITIVE_INFINITY;
+        float right = Float.NEGATIVE_INFINITY;
+        float top = Float.NEGATIVE_INFINITY;
+        float bottom = Float.POSITIVE_INFINITY;
+        for (int drawable = 0; drawable < model.getDrawableCount(); drawable++) {
+            if (model.getDrawableOpacity(drawable) <= .001f) continue;
+            float[] vertices = model.getDrawableVertices(drawable);
+            for (int i = 0; i + 1 < vertices.length; i += 2) {
+                left = Math.min(left, vertices[i]);
+                right = Math.max(right, vertices[i]);
+                top = Math.max(top, vertices[i + 1]);
+                bottom = Math.min(bottom, vertices[i + 1]);
+            }
+        }
+        if (Float.isFinite(left) && Float.isFinite(right) && right - left > 1e-5f
+                && Float.isFinite(top) && Float.isFinite(bottom) && top - bottom > 1e-5f) {
+            referenceDrawableLeft = left;
+            referenceDrawableRight = right;
+            referenceDrawableTop = top;
+            referenceDrawableBottom = bottom;
         }
     }
 
@@ -879,19 +705,6 @@ final class SenLive2DModel extends CubismUserModel {
             model.getPartChildDrawObjects(partIndex);
             CubismModelPartInfo info = model.getPartsHierarchy().get(partIndex);
             result.addAll(info.childDrawObjects.drawableIndices);
-        }
-        return result;
-    }
-
-    private Set<Integer> collectDirectChildDrawables(String partId) {
-        Set<Integer> result = new LinkedHashSet<>();
-        int partIndex = findExistingPartIndex(partId);
-        if (partIndex < 0 || partIndex >= model.getPartsHierarchy().size()) return result;
-        CubismModelPartInfo info = model.getPartsHierarchy().get(partIndex);
-        for (CubismModelObjectInfo object : info.objects) {
-            if (object.objectType == CubismModelObjectInfo.ObjectType.DRAWABLE) {
-                result.add(object.objectIndex);
-            }
         }
         return result;
     }
@@ -986,14 +799,14 @@ final class SenLive2DModel extends CubismUserModel {
         return Math.min(64, Math.max(2, (groups + 31) / 32));
     }
 
-    private static final class HairSupportCandidate {
+    private static final class AhogeRootCandidate {
         final int drawableIndex;
         final int vertexIndex;
         final float referenceX;
         final float referenceY;
         final float distanceSquared;
 
-        HairSupportCandidate(int drawableIndex, int vertexIndex,
+        AhogeRootCandidate(int drawableIndex, int vertexIndex,
                              float referenceX, float referenceY, float distanceSquared) {
             this.drawableIndex = drawableIndex;
             this.vertexIndex = vertexIndex;
@@ -1003,13 +816,13 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
-    private static final class HairSupportPoint {
+    private static final class AhogeRootPoint {
         final int drawableIndex;
         final int vertexIndex;
         final float referenceX;
         final float referenceY;
 
-        HairSupportPoint(int drawableIndex, int vertexIndex, float referenceX, float referenceY) {
+        AhogeRootPoint(int drawableIndex, int vertexIndex, float referenceX, float referenceY) {
             this.drawableIndex = drawableIndex;
             this.vertexIndex = vertexIndex;
             this.referenceX = referenceX;

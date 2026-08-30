@@ -50,7 +50,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int AHOGE_CONFIRMED_PRESET_VERSION = 3;
     private static final int EAR_CONFIRMED_PRESET_VERSION = 1;
-    private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 1;
+    private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 2;
     private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
     private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
     private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
@@ -124,6 +124,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private boolean headZoneCalibrationMode;
     private float headZoneFirstX = Float.NaN;
     private float headZoneFirstY = Float.NaN;
+    private final float[] headZonePoint = new float[2];
     private TextView headZoneStatus;
     private SenOutfitPresets.Preset selectedOutfit;
     private long nativeLoadStartedAt;
@@ -251,7 +252,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.4 · 完整动作入口与CDI头部支撑修正版");
+        statusText.setText("v0.4.5 · 模型局部摸头与原生呆毛变形修正版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -469,7 +470,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(ahogeHeading);
 
         TextView ahogeNote = adjustmentStatusText();
-        ahogeNote.setText("位置、大小和角度固定；只使用模型CDI明确命名的头部/脸部/头发网格支撑，排除耳朵、尾巴、呆毛与头饰，禁止运行时缩放，只保留8%局部柔性。");
+        ahogeNote.setText("位置、大小和角度固定；保留模型原生头发物理，只在原生更新后围绕呆毛自身固定发根施加外观变换，不再绑定任何外部头发、兔耳或尾巴网格。");
         panel.addView(ahogeNote);
         Button ahogeResetButton = panelButton("还原确认的呆毛预设");
         ahogeResetButton.setOnClickListener(v -> resetAhogeTransform());
@@ -660,9 +661,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             headPatTravel = 0.0f;
             headPatStartedAt = SystemClock.elapsedRealtime();
             headPatTriggered = false;
-            float nx = headPatLastX / Math.max(1, view.getWidth());
-            float ny = headPatLastY / Math.max(1, view.getHeight());
-            headPatCandidate = isInHeadZone(nx, ny, 0.0f);
+            headPatCandidate = screenToModelPoint(
+                    view, headPatLastX, headPatLastY, headZonePoint)
+                    && isInHeadZone(headZonePoint[0], headZonePoint[1], 0.0f);
             queueTouchTarget(view, true, headPatLastX, headPatLastY);
             return true;
         }
@@ -678,9 +679,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             headPatTravel += (float) Math.sqrt(dx * dx + dy * dy);
             headPatLastX = x;
             headPatLastY = y;
-            float nx = x / Math.max(1, view.getWidth());
-            float ny = y / Math.max(1, view.getHeight());
-            if (!isInHeadZone(nx, ny, .08f)) {
+            if (!screenToModelPoint(view, x, y, headZonePoint)
+                    || !isInHeadZone(headZonePoint[0], headZonePoint[1], .08f)) {
                 headPatCandidate = false;
             }
             long duration = SystemClock.elapsedRealtime() - headPatStartedAt;
@@ -852,8 +852,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     }
 
     private void handleHeadZoneCalibration(View view, float x, float y) {
-        float nx = clamp01(x / Math.max(1, view.getWidth()));
-        float ny = clamp01(y / Math.max(1, view.getHeight()));
+        if (!screenToModelPoint(view, x, y, headZonePoint)) {
+            toastLong("模型边界尚未就绪，请等待模型显示后重新框选");
+            return;
+        }
+        float nx = clamp01(headZonePoint[0]);
+        float ny = clamp01(headZonePoint[1]);
         if (Float.isNaN(headZoneFirstX)) {
             headZoneFirstX = nx;
             headZoneFirstY = ny;
@@ -914,8 +918,15 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void updateHeadZoneStatus() {
         if (headZoneStatus == null) return;
         headZoneStatus.setText(String.format(java.util.Locale.ROOT,
-                "摸头范围（舞台归一化）：L %.4f / T %.4f / R %.4f / B %.4f",
+                "摸头范围（模型局部归一化，随模型移动/缩放）：L %.4f / T %.4f / R %.4f / B %.4f",
                 headZoneLeft, headZoneTop, headZoneRight, headZoneBottom));
+    }
+
+    private boolean screenToModelPoint(View view, float x, float y, float[] result) {
+        if (renderer == null) return false;
+        float screenX = x / Math.max(1, view.getWidth());
+        float screenY = y / Math.max(1, view.getHeight());
+        return renderer.screenToModelNormalized(screenX, screenY, result);
     }
 
     private boolean isInHeadZone(float x, float y, float margin) {
@@ -1322,7 +1333,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 " · 呆毛：高%.0f%%/宽%.0f%%/%+.0f°/X%+.0f/Y%+.0f",
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY)
-                + " · 呆毛支撑：CDI头部/头发、固定缩放、局部8%"
+                + " · 呆毛：原生物理后按自身发根变换"
                 + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")
