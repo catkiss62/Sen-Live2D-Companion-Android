@@ -20,12 +20,13 @@
 
 Sen 的长期静态错层已由C高精度蒙版解决，v0.3.7也已恢复原生物理、20个情绪入口和24个动作入口。当前目标是把已采集并确认的外观从“手动导入文件”整理为可靠的内置服装预设，同时保持动态层不会覆盖服装选择。
 
-本阶段仍不接DeepSeek或TTS；三套服装已实机确认。用户补充的完整模型包已确认独立物理链`PhysicsSetting7 Hair_Z -> ParamAngleZ3 (Hair Z)`，而App当前仍在`model.update()`后按呆毛包围框近似锚点重写顶点。当前制作v0.4.7诊断包：加入完全跳过呆毛运行时几何的原生直通开关和`ParamAngleZ3`实时读数；同时扩展Windows VTS采集器，采集呆毛根部/方向点的ArtMesh三角形与重心权重并用临时标记验证。ZIP预设动作继续暂缓。
+本阶段仍不接DeepSeek或TTS；三套服装已实机确认。用户补充的完整模型包已确认独立物理链`PhysicsSetting7 Hair_Z -> ParamAngleZ3 (Hair Z)`，而App当前仍在`model.update()`后按呆毛包围框近似锚点重写顶点。v0.4.7诊断包和Windows采集器v0.2.0均已构建，等待用户分别验证原生直通根部稳定性、`ParamAngleZ3`读数和VTS精确锚点；尚未把未采集的锚点猜入Android。ZIP预设动作继续暂缓。
 
 ## 当前版本与下一步顺序
 
-- Android：当前制作`v0.4.7-ahoge-native-passthrough-anchor-capture-test`；目标是先用硬旁路判定漂移来自模型原生链还是App顶点后处理，不把编译结果写成实机结论。
-- v0.4.7本轮计划、待制作：诊断开关开启时必须完全不调用`applyAhogeHairRig()`，保留`model.update()`/原生物理结果且不套用`56/83/-49/-16/+70`；界面实时显示`ParamAngleZ3`存在性与数值。Windows采集器订阅官方`ModelClickedEvent`，连续采集根部点和邻近方向点的全部`artMeshHits`，保存三角形顶点ID/重心权重，并允许把临时标记钉到选定候选上验证。
+- Android：`v0.4.7-ahoge-native-passthrough-anchor-capture-test`，**代码与Actions构建已完成，等待目标手机验证原生直通和`ParamAngleZ3`实时读数**。
+- v0.4.7已制作、待实机确认：诊断开关开启时完全不调用`applyAhogeHairRig()`，保留`model.update()`/原生物理顶点且不套用`56/83/-49/-16/+70`；关闭后恢复v0.4.6后处理用于同机对照。界面每0.5秒显示`ParamAngleZ3 (Hair Z)`当前值、声明范围和当前模式。
+- Windows采集器v0.2.0已制作、待电脑确认：订阅官方`ModelClickedEvent`，依次采集根部点和邻近头皮方向点的全部`artMeshHits`及三角形顶点ID/重心权重；可轮换候选并用自动清理的青色临时标记验证，最后输出`Sen.ahoge-anchor.json`。Android精确锚点绑定必须等用户发回该JSON后再实现。
 - v0.4.6 Android基线：`v0.4.6-ahoge-motion-headpat-preset-test`，**代码与Actions构建已完成，等待目标手机实机确认三项呆毛运动幅度与新摸头确认范围**。
 - v0.4.6本轮制作、待实机确认：呆毛确认外观`56/83/-49/-16/+70`保持固定，只把原生物理后的运动贡献拆为三项`0%～100%`滑杆：根部位移跟随、根部旋转跟随、局部柔性/抖动。三项都为`100%`等价于v0.4.5；都为`0%`时形成“固定在模型自身坐标、仅随整个舞台移动/缩放”的最简单对照，不再寻找或绑定任何外部ArtMesh。数值持久化并提供还原按钮，供用户逐项压低后回填最终预设。
 - 用户v0.4.5重新框选并截图得到模型局部范围`L 0.4927 / T 0.0482 / R 0.7095 / B 0.1088`。该坐标已经经过当前模型投影的逆换算，与框选时的舞台放大/移动无关；v0.4.6将其升级为新安装、覆盖安装及“还原确认范围”的默认值。
@@ -69,10 +70,19 @@ Sen 的长期静态错层已由C高精度蒙版解决，v0.3.7也已恢复原生
 - 耳朵参数结论：`RabbitEarrs/RabbitEarrs2`是0/1部件选择器，不是连续动作轴；`ParamBreath`会同时扰动头发、胸部和尾巴。真正连续输出仍是`ParamL_angle/ParamR_angle/ParamR_angle2`。v0.4.1以独立物理实例消费隐藏慢眨眼/九轴输入，再只复制这三项输出，避免直接硬加角度。
 - 呆毛旧版以每帧自身网格包围框重算锚点并保留较大局部变形，已由实机证明会漂浮；v0.4.2废弃该路线，改用周围头发/头部多点整体支撑。
 - 上一基线：`v0.3.7-dynamic-foundation-test`，情绪/动作与用户调整后的颜色已实机确认可运行。
-- Windows：`Sen VTS Parameter Capture v0.1.0`，**核心采集流程已电脑确认**。
+- Windows：`Sen VTS Parameter Capture v0.2.0`，**v0.1.0参数采集已电脑确认；v0.2.0呆毛点击/标记流程待电脑确认**。
 - 固定顺序：静态部件缺失/错层已经由C高精度蒙版解决；本轮自动识别真正受耳鳍角度影响的网格，加入呆毛四轴精调和尾巴中心线镜像。实机确认以后，才恢复物理、九轴、表情、动作和AI功能。
 
 ## 最近构建记录
+
+### 2026-08-31 · v0.4.7 原生呆毛直通、Hair Z诊断与VTS锚点采集（构建成功、待实机确认）
+
+- Android加入“呆毛原生直通”硬旁路：开启时App不写任何呆毛顶点，也不套用确认外观`56/83/-49/-16/+70`；这会改变呆毛外观位置，属于预期诊断现象，本轮只判断根部是否稳定。关闭后完整恢复v0.4.6三项后处理对照。界面实时显示`ParamAngleZ3 (Hair Z)`值与声明范围。
+- Windows采集器升级到v0.2.0：连续记录根部点/方向点下所有重叠ArtMesh的三角形与重心权重；优先建议已知长呆毛候选，仍允许逐个轮换所有候选。临时青色标记通过`ItemPinRequest`钉在候选上，只清理本插件道具并在断开时自动卸载；保存包会记录最后一次成功放置标记的候选。
+- 远程功能 commit：`99d318e161ddf23dd7dbfb56c787f3411fe56213`。Android Actions run `33382879333` 为`success`；Windows Actions run `33382879382`为`success`，两个工作流均一次构建通过。
+- Android Actions ZIP：`3,281,829` bytes，SHA-256 `96a748c4bfd7d4dea0d1130526d2b0b8497d166261cce03d68c07470d603e90c`，与GitHub artifact digest一致。APK：`3,801,051` bytes，SHA-256 `2a28eadf5248f89c19b4ee5ddaec13d431d92c4af4d7b0213972ed5b7fb78d5c`。
+- Windows Actions外层ZIP：`12,865,068` bytes，SHA-256 `be0788efd156284570109c88dcb255a1a014334832277e55bbd1c6d82347b136`，与GitHub artifact digest一致。内层分发ZIP：`12,861,082` bytes，SHA-256 `fe8b35ca701c3d093ffd214ac0e0c6324a7dfd3a4a0ab99a25fd84b49a02f4d7`；EXE：`13,112,247` bytes，SHA-256 `71054b1954137f795947e31de6972418c968cdf873154ca3bb473657e9d2dada`。两层ZIP结构均完整。
+- 待确认顺序：先在Android关闭直通观察旧路线及Hair Z读数，再开启直通只判断发根是否固定；随后在Windows采集根部+方向点，逐个验证青色候选，正确时保存并回传`Sen.ahoge-anchor.json`。不得在拿到JSON前继续猜锚点。
 
 ### 2026-08-31 · v0.4.6 呆毛三项运动幅度与模型局部摸头确认范围（构建成功、待实机确认）
 
