@@ -16,11 +16,14 @@ import com.live2d.sdk.cubism.framework.motion.CubismPoseUpdater;
 import com.live2d.sdk.cubism.framework.physics.CubismPhysics;
 import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -62,10 +65,10 @@ final class SenLive2DModel extends CubismUserModel {
     private float pendingEarPhysicsDrive;
     private float pendingEarPhysicsMix;
     private boolean pendingEarPhysicsActive;
-    private final Map<Integer, float[]> ahogeReferenceVertices = new HashMap<>();
-    private final List<AhogeRootPoint> ahogeRootPoints = new ArrayList<>();
-    private float ahogeReferenceAnchorX;
-    private float ahogeReferenceAnchorY;
+    private final List<AhogeHit> lastRootHits = new ArrayList<>();
+    private final List<AhogeHit> lastDirectionHits = new ArrayList<>();
+    private AhogeAnchorPoint ahogeRootAnchor;
+    private AhogeAnchorPoint ahogeDirectionAnchor;
     private float referenceDrawableLeft = -1.0f;
     private float referenceDrawableRight = 1.0f;
     private float referenceDrawableTop = 1.0f;
@@ -73,8 +76,8 @@ final class SenLive2DModel extends CubismUserModel {
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
-            100.0f, 100.0f, 0.0f, 0.0f, 0.0f,
-            50.0f, 50.0f, 50.0f, false, false, false);
+            100.0f, 100.0f, 100.0f, 0.0f, 0.0f, 0.0f,
+            50.0f, 50.0f, 50.0f, false, "", false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -129,7 +132,7 @@ final class SenLive2DModel extends CubismUserModel {
         updateScheduler.sortUpdatableList();
         model.update();
         captureReferenceDrawableBounds();
-        captureAhogeReferenceGeometry();
+        restoreAhogeAnchors(renderOptions.ahogeAnchorJson);
         applyRuntimeGeometry();
         appendAppearanceDetail("动态底座：VTS→情绪/动作→原生物理→运行时几何");
 
@@ -168,13 +171,15 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
-                          float ahogeScalePercent, float ahogeWidthPercent,
+                          float ahogeScalePercent, float ahogeLengthPercent,
+                          float ahogeWidthPercent,
                           float ahogeRotationDegrees,
                           float ahogeOffsetX, float ahogeOffsetY,
                           boolean tailMirrored) {
         renderOptions = renderOptions.withCustomization(
                 false, 0.0f, 0.0f,
-                ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
+                ahogeScalePercent, ahogeLengthPercent, ahogeWidthPercent,
+                ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY, tailMirrored);
         if (model == null) return;
         model.loadParameters();
@@ -200,18 +205,112 @@ final class SenLive2DModel extends CubismUserModel {
         applyRuntimeGeometry();
     }
 
+    void setAhogeAnchorJson(String anchorJson) {
+        renderOptions = renderOptions.withAhogeAnchorJson(anchorJson);
+        restoreAhogeAnchors(anchorJson);
+    }
+
     String getAhogeDiagnostic() {
         if (model == null) return "ParamAngleZ3：模型未加载";
         int index = findParameterIndex("ParamAngleZ3");
-        if (index < 0) {
-            return "ParamAngleZ3：模型中不存在 · 模式："
-                    + (renderOptions.ahogeNativePassthrough ? "原生直通" : "App后处理");
-        }
+        float hairZ = index < 0 ? Float.NaN : model.getParameterValue(index);
+        float[] root = ahogeRootAnchor == null ? null : ahogeRootAnchor.currentPoint(model);
+        float[] direction = ahogeDirectionAnchor == null
+                ? null : ahogeDirectionAnchor.currentPoint(model);
+        String anchor = root == null || direction == null
+                ? "固定点：未采集"
+                : String.format(java.util.Locale.ROOT,
+                "根(%+.4f,%+.4f) → 向(%+.4f,%+.4f) · %s",
+                root[0], root[1], direction[0], direction[1],
+                ahogeRootAnchor.drawableId);
         return String.format(java.util.Locale.ROOT,
-                "ParamAngleZ3 (Hair Z)：%+.4f · 范围[%+.2f, %+.2f] · 模式：%s",
-                model.getParameterValue(index),
-                model.getParameterMinimumValue(index), model.getParameterMaximumValue(index),
-                renderOptions.ahogeNativePassthrough ? "原生直通" : "App后处理");
+                "Hair Z：%s · 模式：%s\n%s\n形状：整体%.0f%% / 长度%.0f%% / 宽度%.0f%% / 角度%+.0f°",
+                Float.isFinite(hairZ) ? String.format(java.util.Locale.ROOT, "%+.4f", hairZ)
+                        : "不存在",
+                renderOptions.ahogeNativePassthrough ? "原生直通"
+                        : (hasCompleteAhogeAnchor() ? "固定根部调整" : "无固定点→原生保护"),
+                anchor,
+                renderOptions.ahogeScalePercent, renderOptions.ahogeLengthPercent,
+                renderOptions.ahogeWidthPercent, renderOptions.ahogeRotationDegrees);
+    }
+
+    boolean hasCompleteAhogeAnchor() {
+        return ahogeRootAnchor != null && ahogeDirectionAnchor != null;
+    }
+
+    float[] getAhogeAnchorModelPoints() {
+        if (!hasCompleteAhogeAnchor() || model == null) return null;
+        float[] root = ahogeRootAnchor.currentPoint(model);
+        float[] direction = ahogeDirectionAnchor.currentPoint(model);
+        if (root == null || direction == null) return null;
+        return new float[]{root[0], root[1], direction[0], direction[1]};
+    }
+
+    AhogeCaptureResult captureAhogeAnchor(float modelX, float modelY,
+                                          float tolerance, boolean rootPoint) {
+        if (model == null) return AhogeCaptureResult.error("模型尚未加载");
+        List<AhogeHit> hits = findAhogeHits(modelX, modelY, tolerance);
+        if (hits.isEmpty()) {
+            return AhogeCaptureResult.error("点击位置没有命中长呆毛网格；请放大后点在线条内部");
+        }
+        if (rootPoint) {
+            lastRootHits.clear();
+            lastRootHits.addAll(hits);
+            lastDirectionHits.clear();
+            return AhogeCaptureResult.rootAccepted(String.format(java.util.Locale.ROOT,
+                    "根部已采集：模型坐标(%+.5f,%+.5f)，命中%d个候选；请点根部朝尖端方向的第二点",
+                    modelX, modelY, hits.size()));
+        }
+        if (lastRootHits.isEmpty()) {
+            return AhogeCaptureResult.error("请先采集根部点");
+        }
+        lastDirectionHits.clear();
+        lastDirectionHits.addAll(hits);
+        AhogeHit[] pair = chooseAnchorPair(lastRootHits, lastDirectionHits);
+        if (pair == null) {
+            return AhogeCaptureResult.error("两个点过近或无法形成稳定方向；请重新从根部开始采集");
+        }
+        ahogeRootAnchor = pair[0].toAnchorPoint();
+        ahogeDirectionAnchor = pair[1].toAnchorPoint();
+        String json = buildAhogeAnchorJson();
+        renderOptions = renderOptions.withAhogeAnchorJson(json);
+        return AhogeCaptureResult.complete(String.format(java.util.Locale.ROOT,
+                "固定点已完成：%s · 根(%+.5f,%+.5f) → 方向(%+.5f,%+.5f)",
+                ahogeRootAnchor.drawableId, modelXOf(ahogeRootAnchor), modelYOf(ahogeRootAnchor),
+                modelXOf(ahogeDirectionAnchor), modelYOf(ahogeDirectionAnchor)), json);
+    }
+
+    String buildAhogeDiagnosticJson() {
+        try {
+            JSONObject result = new JSONObject();
+            result.put("schema", "sen-ahoge-headpat-diagnostics");
+            result.put("schemaVersion", 1);
+            result.put("coordinateSystem", new JSONObject()
+                    .put("anchor", "Cubism model-local barycentric triangle coordinates")
+                    .put("screenPixelsUsedAsPersistentCoordinates", false)
+                    .put("stageZoomAndTranslationAffectAnchor", false));
+            result.put("anchorCapture", new JSONObject(buildAhogeAnchorJson()));
+            result.put("referenceDrawableBounds", new JSONObject()
+                    .put("left", referenceDrawableLeft)
+                    .put("right", referenceDrawableRight)
+                    .put("top", referenceDrawableTop)
+                    .put("bottom", referenceDrawableBottom));
+            int hairIndex = findParameterIndex("ParamAngleZ3");
+            result.put("currentParameters", new JSONObject()
+                    .put("ParamAngleZ3", hairIndex < 0 ? JSONObject.NULL
+                            : model.getParameterValue(hairIndex))
+                    .put("overallPercent", renderOptions.ahogeScalePercent)
+                    .put("lengthPercent", renderOptions.ahogeLengthPercent)
+                    .put("widthPercent", renderOptions.ahogeWidthPercent)
+                    .put("rotationDegrees", renderOptions.ahogeRotationDegrees)
+                    .put("translationX", 0)
+                    .put("translationY", 0)
+                    .put("nativePassthrough", renderOptions.ahogeNativePassthrough));
+            return result.toString(2);
+        } catch (JSONException error) {
+            return "{\"schema\":\"sen-ahoge-headpat-diagnostics\",\"error\":\""
+                    + error.getClass().getSimpleName() + "\"}";
+        }
     }
 
     void draw(CubismMatrix44 matrix) {
@@ -550,173 +649,194 @@ final class SenLive2DModel extends CubismUserModel {
                     + " · 呆毛子网格 " + ahogeDrawables.size()
                     + "/可见 " + countVisible(ahogeDrawables)
                     + " · 呆毛模式 "
-                    + (renderOptions.ahogeNativePassthrough ? "原生直通" : "App后处理")
+                    + (renderOptions.ahogeNativePassthrough ? "原生直通"
+                    : (hasCompleteAhogeAnchor() ? "固定根部调整" : "原生保护"))
                     + " · 尾巴子网格 " + tailDrawables.size()
                     + "/可见 " + countVisible(tailDrawables));
             geometryDiagnosticsAdded = true;
         }
-        // Diagnostic hard bypass: keep the exact vertices produced by Cubism Core/model.update().
-        // This intentionally skips the confirmed static transform as well as all App-side root
-        // estimation, so an on-device comparison can isolate the authored moc3/physics chain.
-        if (!renderOptions.ahogeNativePassthrough) {
-            applyAhogeHairRig(ahogeDrawables);
+        // Keep the exact native vertices as the source. The adjusted mode is only allowed to
+        // apply one affine transform around the captured barycentric root anchor. With no valid
+        // pair of anchors we deliberately fall back to native output instead of guessing.
+        if (!renderOptions.ahogeNativePassthrough && hasCompleteAhogeAnchor()) {
+            applyAnchoredAhogeTransform(ahogeDrawables);
         }
         applyTailMirror(tailDrawables);
     }
 
-    private void captureAhogeReferenceGeometry() {
-        ahogeReferenceVertices.clear();
-        float minX = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
-        for (int index : collectChildDrawables(AHOGE_PART_IDS)) {
-            if (isDrawableVisible(index)) {
-                float[] vertices = model.getDrawableVertices(index).clone();
-                ahogeReferenceVertices.put(index, vertices);
-                for (int i = 0; i + 1 < vertices.length; i += 2) {
-                    minX = Math.min(minX, vertices[i]);
-                    maxX = Math.max(maxX, vertices[i]);
-                    minY = Math.min(minY, vertices[i + 1]);
+    private void restoreAhogeAnchors(String json) {
+        ahogeRootAnchor = null;
+        ahogeDirectionAnchor = null;
+        if (json == null || json.trim().isEmpty() || model == null) return;
+        try {
+            JSONObject object = new JSONObject(json);
+            AhogeAnchorPoint root = AhogeAnchorPoint.fromJson(
+                    object.optJSONObject("root"), model);
+            AhogeAnchorPoint direction = AhogeAnchorPoint.fromJson(
+                    object.optJSONObject("direction"), model);
+            if (root != null && direction != null) {
+                ahogeRootAnchor = root;
+                ahogeDirectionAnchor = direction;
+                appendAppearanceDetail("呆毛固定点已恢复 · " + root.drawableId);
+            }
+        } catch (JSONException ignored) {
+            appendAppearanceDetail("呆毛固定点JSON无效，已回退原生保护");
+        }
+    }
+
+    private List<AhogeHit> findAhogeHits(float x, float y, float tolerance) {
+        List<AhogeHit> hits = new ArrayList<>();
+        AhogeHit nearest = null;
+        float nearestDistanceSquared = Float.POSITIVE_INFINITY;
+        int[] renderOrders = model.getRenderOrders();
+        for (int drawable : collectChildDrawables(AHOGE_PART_IDS)) {
+            if (!isDrawableVisible(drawable)) continue;
+            float[] vertices = model.getDrawableVertices(drawable);
+            short[] indices = model.getDrawableVertexIndices(drawable);
+            String drawableId = model.getDrawableId(drawable).getString();
+            int renderOrder = drawable < renderOrders.length ? renderOrders[drawable] : 0;
+            for (int i = 0; i + 2 < indices.length; i += 3) {
+                int v1 = indices[i] & 0xffff;
+                int v2 = indices[i + 1] & 0xffff;
+                int v3 = indices[i + 2] & 0xffff;
+                if (!validVertex(vertices, v1) || !validVertex(vertices, v2)
+                        || !validVertex(vertices, v3)) continue;
+                float[] weights = barycentric(x, y,
+                        vertices[v1 * 2], vertices[v1 * 2 + 1],
+                        vertices[v2 * 2], vertices[v2 * 2 + 1],
+                        vertices[v3 * 2], vertices[v3 * 2 + 1]);
+                if (weights != null && weights[0] >= -.015f && weights[1] >= -.015f
+                        && weights[2] >= -.015f) {
+                    hits.add(new AhogeHit(drawable, drawableId, renderOrder,
+                            v1, v2, v3, weights[0], weights[1], weights[2],
+                            x, y, false));
+                }
+                for (int vertex : new int[]{v1, v2, v3}) {
+                    float dx = vertices[vertex * 2] - x;
+                    float dy = vertices[vertex * 2 + 1] - y;
+                    float distanceSquared = dx * dx + dy * dy;
+                    if (distanceSquared < nearestDistanceSquared) {
+                        nearestDistanceSquared = distanceSquared;
+                        nearest = new AhogeHit(drawable, drawableId, renderOrder,
+                                vertex, vertex, vertex, 1.0f, 0.0f, 0.0f,
+                                vertices[vertex * 2], vertices[vertex * 2 + 1], true);
+                    }
                 }
             }
         }
-        ahogeReferenceAnchorX = Float.isFinite(minX) ? (minX + maxX) * .5f : 0.0f;
-        ahogeReferenceAnchorY = Float.isFinite(minY) ? minY : 0.0f;
-        captureAhogeRootPoints();
-        appendAppearanceDetail("呆毛参考网格 · 旧后处理自身发根候选 "
-                + ahogeRootPoints.size() + "点 · 原生直通时不使用这些点");
+        hits.sort((a, b) -> Integer.compare(b.renderOrder, a.renderOrder));
+        if (hits.isEmpty() && nearest != null
+                && nearestDistanceSquared <= tolerance * tolerance) {
+            hits.add(nearest);
+        }
+        return hits;
     }
 
-    private void captureAhogeRootPoints() {
-        ahogeRootPoints.clear();
-        List<AhogeRootCandidate> candidates = new ArrayList<>();
-        for (Map.Entry<Integer, float[]> entry : ahogeReferenceVertices.entrySet()) {
-            float[] vertices = entry.getValue();
-            for (int vertex = 0; vertex * 2 + 1 < vertices.length; vertex++) {
-                int offset = vertex * 2;
-                float dx = vertices[offset] - ahogeReferenceAnchorX;
-                float dy = vertices[offset + 1] - ahogeReferenceAnchorY;
-                candidates.add(new AhogeRootCandidate(entry.getKey(), vertex,
-                        vertices[offset], vertices[offset + 1], dx * dx + dy * dy));
+    private AhogeHit[] chooseAnchorPair(List<AhogeHit> roots, List<AhogeHit> directions) {
+        for (AhogeHit root : roots) {
+            for (AhogeHit direction : directions) {
+                if (root.drawableIndex != direction.drawableIndex) continue;
+                if (anchorDistance(root, direction) > 1e-4f) {
+                    return new AhogeHit[]{root, direction};
+                }
             }
         }
-        candidates.sort(Comparator.comparingDouble(value -> value.distanceSquared));
-        for (AhogeRootCandidate candidate : candidates) {
-            ahogeRootPoints.add(new AhogeRootPoint(candidate.drawableIndex,
-                    candidate.vertexIndex, candidate.referenceX, candidate.referenceY));
-            if (ahogeRootPoints.size() >= 12) break;
+        for (AhogeHit root : roots) {
+            for (AhogeHit direction : directions) {
+                if (anchorDistance(root, direction) > 1e-4f) {
+                    return new AhogeHit[]{root, direction};
+                }
+            }
+        }
+        return null;
+    }
+
+    private float anchorDistance(AhogeHit first, AhogeHit second) {
+        float[] a = first.toAnchorPoint().currentPoint(model);
+        float[] b = second.toAnchorPoint().currentPoint(model);
+        if (a == null || b == null) return 0.0f;
+        return (float) Math.hypot(a[0] - b[0], a[1] - b[1]);
+    }
+
+    private String buildAhogeAnchorJson() {
+        try {
+            JSONObject object = new JSONObject();
+            object.put("schema", "sen-ahoge-anchor");
+            object.put("schemaVersion", 2);
+            object.put("coordinateSystem", "Cubism model-local barycentric triangle coordinates");
+            object.put("screenPixelsPersisted", false);
+            object.put("root", ahogeRootAnchor == null ? JSONObject.NULL
+                    : ahogeRootAnchor.toJson(model));
+            object.put("direction", ahogeDirectionAnchor == null ? JSONObject.NULL
+                    : ahogeDirectionAnchor.toJson(model));
+            object.put("rootCandidates", hitsToJson(lastRootHits));
+            object.put("directionCandidates", hitsToJson(lastDirectionHits));
+            return object.toString();
+        } catch (JSONException error) {
+            return "{}";
         }
     }
 
-    private SimilarityTransform estimateAhogeRootTransform() {
-        if (ahogeRootPoints.isEmpty()) return null;
-        double referenceCenterX = 0.0;
-        double referenceCenterY = 0.0;
-        double currentCenterX = 0.0;
-        double currentCenterY = 0.0;
-        int count = 0;
-        for (AhogeRootPoint point : ahogeRootPoints) {
-            if (!isDrawableVisible(point.drawableIndex)) continue;
-            float[] vertices = model.getDrawableVertices(point.drawableIndex);
-            int offset = point.vertexIndex * 2;
-            if (offset < 0 || offset + 1 >= vertices.length) continue;
-            referenceCenterX += point.referenceX;
-            referenceCenterY += point.referenceY;
-            currentCenterX += vertices[offset];
-            currentCenterY += vertices[offset + 1];
-            count++;
-        }
-        if (count == 0) return null;
-        referenceCenterX /= count;
-        referenceCenterY /= count;
-        currentCenterX /= count;
-        currentCenterY /= count;
-        double denominator = 0.0;
-        double dot = 0.0;
-        double cross = 0.0;
-        for (AhogeRootPoint point : ahogeRootPoints) {
-            if (!isDrawableVisible(point.drawableIndex)) continue;
-            float[] vertices = model.getDrawableVertices(point.drawableIndex);
-            int offset = point.vertexIndex * 2;
-            if (offset < 0 || offset + 1 >= vertices.length) continue;
-            double rx = point.referenceX - referenceCenterX;
-            double ry = point.referenceY - referenceCenterY;
-            double cx = vertices[offset] - currentCenterX;
-            double cy = vertices[offset + 1] - currentCenterY;
-            denominator += rx * rx + ry * ry;
-            dot += rx * cx + ry * cy;
-            cross += rx * cy - ry * cx;
-        }
-        if (denominator < 1e-8) {
-            return new SimilarityTransform((float) referenceCenterX, (float) referenceCenterY,
-                    (float) currentCenterX, (float) currentCenterY, 1.0f, 0.0f);
-        }
-        double rotationLength = Math.hypot(dot, cross);
-        double rotationA = rotationLength < 1e-8 ? 1.0 : dot / rotationLength;
-        double rotationB = rotationLength < 1e-8 ? 0.0 : cross / rotationLength;
-        return new SimilarityTransform((float) referenceCenterX, (float) referenceCenterY,
-                (float) currentCenterX, (float) currentCenterY,
-                (float) rotationA, (float) rotationB);
+    private JSONArray hitsToJson(List<AhogeHit> hits) throws JSONException {
+        JSONArray result = new JSONArray();
+        for (AhogeHit hit : hits) result.put(hit.toJson(model));
+        return result;
     }
 
-    private void applyAhogeHairRig(Set<Integer> candidates) {
-        SimilarityTransform rawRootTransform = estimateAhogeRootTransform();
-        if (rawRootTransform == null) return;
+    private float modelXOf(AhogeAnchorPoint point) {
+        float[] value = point == null ? null : point.currentPoint(model);
+        return value == null ? Float.NaN : value[0];
+    }
 
-        float rootFollow = renderOptions.ahogeRootFollowPercent / 100.0f;
-        float rootRotation = renderOptions.ahogeRootRotationPercent / 100.0f;
-        float localMotion = renderOptions.ahogeLocalMotionPercent / 100.0f;
-        float rawRootAngle = (float) Math.atan2(rawRootTransform.b, rawRootTransform.a);
-        float adjustedRootAngle = rawRootAngle * rootRotation;
-        float adjustedRootCos = (float) Math.cos(adjustedRootAngle);
-        float adjustedRootSin = (float) Math.sin(adjustedRootAngle);
-        SimilarityTransform adjustedRootTransform = new SimilarityTransform(
-                rawRootTransform.referenceCenterX, rawRootTransform.referenceCenterY,
-                rawRootTransform.referenceCenterX
-                        + (rawRootTransform.currentCenterX
-                        - rawRootTransform.referenceCenterX) * rootFollow,
-                rawRootTransform.referenceCenterY
-                        + (rawRootTransform.currentCenterY
-                        - rawRootTransform.referenceCenterY) * rootFollow,
-                adjustedRootCos, adjustedRootSin);
+    private float modelYOf(AhogeAnchorPoint point) {
+        float[] value = point == null ? null : point.currentPoint(model);
+        return value == null ? Float.NaN : value[1];
+    }
 
-        float scale = renderOptions.ahogeScalePercent / 100.0f;
-        float widthScale = renderOptions.ahogeWidthPercent / 100.0f;
+    private static boolean validVertex(float[] vertices, int index) {
+        return index >= 0 && index * 2 + 1 < vertices.length;
+    }
+
+    private static float[] barycentric(float px, float py,
+                                       float ax, float ay, float bx, float by,
+                                       float cx, float cy) {
+        float denominator = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if (Math.abs(denominator) < 1e-10f) return null;
+        float w1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denominator;
+        float w2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denominator;
+        return new float[]{w1, w2, 1.0f - w1 - w2};
+    }
+
+    private void applyAnchoredAhogeTransform(Set<Integer> candidates) {
+        float[] root = ahogeRootAnchor.currentPoint(model);
+        float[] direction = ahogeDirectionAnchor.currentPoint(model);
+        if (root == null || direction == null) return;
+        float axisX = direction[0] - root[0];
+        float axisY = direction[1] - root[1];
+        float axisLength = (float) Math.hypot(axisX, axisY);
+        if (axisLength < 1e-5f) return;
+        axisX /= axisLength;
+        axisY /= axisLength;
+        float perpendicularX = -axisY;
+        float perpendicularY = axisX;
+        float overall = renderOptions.ahogeScalePercent / 100.0f;
+        float lengthScale = overall * renderOptions.ahogeLengthPercent / 100.0f;
+        float widthScale = overall * renderOptions.ahogeWidthPercent / 100.0f;
         double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
         float cos = (float) Math.cos(radians);
         float sin = (float) Math.sin(radians);
-        float offsetX = getCanvasWidth() * renderOptions.ahogeOffsetX / 1000.0f;
-        float offsetY = getCanvasHeight() * renderOptions.ahogeOffsetY / 1000.0f;
-        float currentAnchorX = adjustedRootTransform.mapX(
-                ahogeReferenceAnchorX, ahogeReferenceAnchorY);
-        float currentAnchorY = adjustedRootTransform.mapY(
-                ahogeReferenceAnchorX, ahogeReferenceAnchorY);
         for (int index : candidates) {
             if (!isDrawableVisible(index)) continue;
-            float[] current = model.getDrawableVertices(index);
-            float[] reference = ahogeReferenceVertices.get(index);
-            if (reference == null || reference.length != current.length) continue;
-            for (int i = 0; i + 1 < current.length; i += 2) {
-                // Separate the native result into three independently testable pieces:
-                // root translation, root rotation and residual/local flex.  Inverting the raw
-                // root transform before blending local flex prevents a reduced root setting
-                // from leaking back in through the current vertex coordinates.
-                float rawDx = current[i] - rawRootTransform.currentCenterX;
-                float rawDy = current[i + 1] - rawRootTransform.currentCenterY;
-                float nativeLocalX = rawRootTransform.referenceCenterX
-                        + rawRootTransform.a * rawDx + rawRootTransform.b * rawDy;
-                float nativeLocalY = rawRootTransform.referenceCenterY
-                        - rawRootTransform.b * rawDx + rawRootTransform.a * rawDy;
-                float blendedLocalX = reference[i]
-                        + (nativeLocalX - reference[i]) * localMotion;
-                float blendedLocalY = reference[i + 1]
-                        + (nativeLocalY - reference[i + 1]) * localMotion;
-                float tunedX = adjustedRootTransform.mapX(blendedLocalX, blendedLocalY);
-                float tunedY = adjustedRootTransform.mapY(blendedLocalX, blendedLocalY);
-                float dx = (tunedX - currentAnchorX) * scale * widthScale;
-                float dy = (tunedY - currentAnchorY) * scale;
-                current[i] = currentAnchorX + dx * cos - dy * sin + offsetX;
-                current[i + 1] = currentAnchorY + dx * sin + dy * cos + offsetY;
+            float[] vertices = model.getDrawableVertices(index);
+            for (int i = 0; i + 1 < vertices.length; i += 2) {
+                float dx = vertices[i] - root[0];
+                float dy = vertices[i + 1] - root[1];
+                float along = (dx * axisX + dy * axisY) * lengthScale;
+                float across = (dx * perpendicularX + dy * perpendicularY) * widthScale;
+                float scaledX = axisX * along + perpendicularX * across;
+                float scaledY = axisY * along + perpendicularY * across;
+                vertices[i] = root[0] + scaledX * cos - scaledY * sin;
+                vertices[i + 1] = root[1] + scaledX * sin + scaledY * cos;
             }
         }
     }
@@ -874,66 +994,163 @@ final class SenLive2DModel extends CubismUserModel {
         return Math.min(64, Math.max(2, (groups + 31) / 32));
     }
 
-    private static final class AhogeRootCandidate {
-        final int drawableIndex;
-        final int vertexIndex;
-        final float referenceX;
-        final float referenceY;
-        final float distanceSquared;
+    static final class AhogeCaptureResult {
+        final boolean success;
+        final boolean complete;
+        final String message;
+        final String anchorJson;
 
-        AhogeRootCandidate(int drawableIndex, int vertexIndex,
-                             float referenceX, float referenceY, float distanceSquared) {
-            this.drawableIndex = drawableIndex;
-            this.vertexIndex = vertexIndex;
-            this.referenceX = referenceX;
-            this.referenceY = referenceY;
-            this.distanceSquared = distanceSquared;
+        private AhogeCaptureResult(boolean success, boolean complete,
+                                   String message, String anchorJson) {
+            this.success = success;
+            this.complete = complete;
+            this.message = message;
+            this.anchorJson = anchorJson == null ? "" : anchorJson;
+        }
+
+        static AhogeCaptureResult error(String message) {
+            return new AhogeCaptureResult(false, false, message, "");
+        }
+
+        static AhogeCaptureResult rootAccepted(String message) {
+            return new AhogeCaptureResult(true, false, message, "");
+        }
+
+        static AhogeCaptureResult complete(String message, String json) {
+            return new AhogeCaptureResult(true, true, message, json);
         }
     }
 
-    private static final class AhogeRootPoint {
+    private static final class AhogeHit {
         final int drawableIndex;
-        final int vertexIndex;
-        final float referenceX;
-        final float referenceY;
+        final String drawableId;
+        final int renderOrder;
+        final int vertex1;
+        final int vertex2;
+        final int vertex3;
+        final float weight1;
+        final float weight2;
+        final float weight3;
+        final float capturedX;
+        final float capturedY;
+        final boolean nearestVertexFallback;
 
-        AhogeRootPoint(int drawableIndex, int vertexIndex, float referenceX, float referenceY) {
+        AhogeHit(int drawableIndex, String drawableId, int renderOrder,
+                 int vertex1, int vertex2, int vertex3,
+                 float weight1, float weight2, float weight3,
+                 float capturedX, float capturedY, boolean nearestVertexFallback) {
             this.drawableIndex = drawableIndex;
-            this.vertexIndex = vertexIndex;
-            this.referenceX = referenceX;
-            this.referenceY = referenceY;
+            this.drawableId = drawableId;
+            this.renderOrder = renderOrder;
+            this.vertex1 = vertex1;
+            this.vertex2 = vertex2;
+            this.vertex3 = vertex3;
+            this.weight1 = weight1;
+            this.weight2 = weight2;
+            this.weight3 = weight3;
+            this.capturedX = capturedX;
+            this.capturedY = capturedY;
+            this.nearestVertexFallback = nearestVertexFallback;
+        }
+
+        AhogeAnchorPoint toAnchorPoint() {
+            return new AhogeAnchorPoint(drawableIndex, drawableId,
+                    vertex1, vertex2, vertex3, weight1, weight2, weight3,
+                    capturedX, capturedY);
+        }
+
+        JSONObject toJson(com.live2d.sdk.cubism.framework.model.CubismModel model)
+                throws JSONException {
+            JSONObject result = toAnchorPoint().toJson(model);
+            result.put("renderOrder", renderOrder);
+            result.put("nearestVertexFallback", nearestVertexFallback);
+            return result;
         }
     }
 
-    private static final class SimilarityTransform {
-        final float referenceCenterX;
-        final float referenceCenterY;
-        final float currentCenterX;
-        final float currentCenterY;
-        final float a;
-        final float b;
+    private static final class AhogeAnchorPoint {
+        final int drawableIndex;
+        final String drawableId;
+        final int vertex1;
+        final int vertex2;
+        final int vertex3;
+        final float weight1;
+        final float weight2;
+        final float weight3;
+        final float capturedX;
+        final float capturedY;
 
-        SimilarityTransform(float referenceCenterX, float referenceCenterY,
-                            float currentCenterX, float currentCenterY,
-                            float a, float b) {
-            this.referenceCenterX = referenceCenterX;
-            this.referenceCenterY = referenceCenterY;
-            this.currentCenterX = currentCenterX;
-            this.currentCenterY = currentCenterY;
-            this.a = a;
-            this.b = b;
+        AhogeAnchorPoint(int drawableIndex, String drawableId,
+                         int vertex1, int vertex2, int vertex3,
+                         float weight1, float weight2, float weight3,
+                         float capturedX, float capturedY) {
+            this.drawableIndex = drawableIndex;
+            this.drawableId = drawableId;
+            this.vertex1 = vertex1;
+            this.vertex2 = vertex2;
+            this.vertex3 = vertex3;
+            this.weight1 = weight1;
+            this.weight2 = weight2;
+            this.weight3 = weight3;
+            this.capturedX = capturedX;
+            this.capturedY = capturedY;
         }
 
-        float mapX(float x, float y) {
-            float dx = x - referenceCenterX;
-            float dy = y - referenceCenterY;
-            return currentCenterX + a * dx - b * dy;
+        float[] currentPoint(com.live2d.sdk.cubism.framework.model.CubismModel model) {
+            if (drawableIndex < 0 || drawableIndex >= model.getDrawableCount()) return null;
+            float[] vertices = model.getDrawableVertices(drawableIndex);
+            if (!validVertex(vertices, vertex1) || !validVertex(vertices, vertex2)
+                    || !validVertex(vertices, vertex3)) return null;
+            return new float[]{
+                    vertices[vertex1 * 2] * weight1
+                            + vertices[vertex2 * 2] * weight2
+                            + vertices[vertex3 * 2] * weight3,
+                    vertices[vertex1 * 2 + 1] * weight1
+                            + vertices[vertex2 * 2 + 1] * weight2
+                            + vertices[vertex3 * 2 + 1] * weight3
+            };
         }
 
-        float mapY(float x, float y) {
-            float dx = x - referenceCenterX;
-            float dy = y - referenceCenterY;
-            return currentCenterY + b * dx + a * dy;
+        JSONObject toJson(com.live2d.sdk.cubism.framework.model.CubismModel model)
+                throws JSONException {
+            float[] current = currentPoint(model);
+            return new JSONObject()
+                    .put("drawableId", drawableId)
+                    .put("drawableIndexDiagnosticOnly", drawableIndex)
+                    .put("triangleVertexIds", new JSONArray()
+                            .put(vertex1).put(vertex2).put(vertex3))
+                    .put("barycentricWeights", new JSONArray()
+                            .put(weight1).put(weight2).put(weight3))
+                    .put("capturedModelPoint", new JSONArray()
+                            .put(capturedX).put(capturedY))
+                    .put("currentModelPoint", current == null ? JSONObject.NULL
+                            : new JSONArray().put(current[0]).put(current[1]));
+        }
+
+        static AhogeAnchorPoint fromJson(JSONObject object,
+                                         com.live2d.sdk.cubism.framework.model.CubismModel model)
+                throws JSONException {
+            if (object == null) return null;
+            String drawableId = object.optString("drawableId", "");
+            int drawableIndex = -1;
+            for (int i = 0; i < model.getDrawableCount(); i++) {
+                if (drawableId.equals(model.getDrawableId(i).getString())) {
+                    drawableIndex = i;
+                    break;
+                }
+            }
+            JSONArray vertices = object.optJSONArray("triangleVertexIds");
+            JSONArray weights = object.optJSONArray("barycentricWeights");
+            JSONArray captured = object.optJSONArray("capturedModelPoint");
+            if (drawableIndex < 0 || vertices == null || vertices.length() != 3
+                    || weights == null || weights.length() != 3) return null;
+            AhogeAnchorPoint result = new AhogeAnchorPoint(drawableIndex, drawableId,
+                    vertices.getInt(0), vertices.getInt(1), vertices.getInt(2),
+                    (float) weights.getDouble(0), (float) weights.getDouble(1),
+                    (float) weights.getDouble(2),
+                    captured == null ? Float.NaN : (float) captured.optDouble(0, Double.NaN),
+                    captured == null ? Float.NaN : (float) captured.optDouble(1, Double.NaN));
+            return result.currentPoint(model) == null ? null : result;
         }
     }
 

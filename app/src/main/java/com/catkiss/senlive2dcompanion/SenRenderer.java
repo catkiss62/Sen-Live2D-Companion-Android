@@ -22,6 +22,11 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         void onStatus(String status);
         void onReady(String detail);
         void onAhogeDiagnostic(String detail);
+        void onAhogeAnchorProjection(float rootScreenX, float rootScreenY,
+                                     float directionScreenX, float directionScreenY,
+                                     boolean valid);
+        void onAhogeAnchorCaptured(SenLive2DModel.AhogeCaptureResult result);
+        void onAhogeDiagnosticExport(String modelJson);
         void onError(Throwable error);
     }
 
@@ -133,13 +138,15 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     void setCustomization(boolean earEnabled, float earAngleDegrees, float earVerticalOffset,
-                          float ahogeScalePercent, float ahogeWidthPercent,
+                          float ahogeScalePercent, float ahogeLengthPercent,
+                          float ahogeWidthPercent,
                           float ahogeRotationDegrees,
                           float ahogeOffsetX, float ahogeOffsetY,
                           boolean tailMirrored) {
         if (model != null) {
             model.setCustomization(earEnabled, earAngleDegrees, earVerticalOffset,
-                    ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
+                    ahogeScalePercent, ahogeLengthPercent, ahogeWidthPercent,
+                    ahogeRotationDegrees,
                     ahogeOffsetX, ahogeOffsetY, tailMirrored);
         }
     }
@@ -154,6 +161,31 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void setAhogeNativePassthrough(boolean enabled) {
         if (model != null) model.setAhogeNativePassthrough(enabled);
+    }
+
+    void captureAhogeAnchor(float normalizedScreenX, float normalizedScreenY,
+                            boolean rootPoint) {
+        if (model == null || surfaceWidth <= 0 || surfaceHeight <= 0) {
+            listener.onAhogeAnchorCaptured(
+                    SenLive2DModel.AhogeCaptureResult.error("模型尚未加载"));
+            return;
+        }
+        float clipX = normalizedScreenX * 2.0f - 1.0f;
+        float clipY = 1.0f - normalizedScreenY * 2.0f;
+        float modelX = interactionMvp.invertTransformX(clipX);
+        float modelY = interactionMvp.invertTransformY(clipY);
+        float pixelsToClip = 2.0f / Math.max(1, Math.min(surfaceWidth, surfaceHeight));
+        float matrixScale = Math.max(1e-6f, Math.min(
+                Math.abs(interactionMvp.getScaleX()), Math.abs(interactionMvp.getScaleY())));
+        float tolerance = 18.0f * pixelsToClip / matrixScale;
+        listener.onAhogeAnchorCaptured(
+                model.captureAhogeAnchor(modelX, modelY, tolerance, rootPoint));
+    }
+
+    void requestAhogeDiagnosticExport() {
+        listener.onAhogeDiagnosticExport(model == null
+                ? "{\"error\":\"model not loaded\"}"
+                : model.buildAhogeDiagnosticJson());
     }
 
     @Override
@@ -212,10 +244,6 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
         try {
             model.update(delta);
-            if (now - lastAhogeDiagnosticNanos >= 500_000_000L) {
-                lastAhogeDiagnosticNanos = now;
-                listener.onAhogeDiagnostic(model.getAhogeDiagnostic());
-            }
             projection.loadIdentity();
             float aspectRatio = (float) surfaceWidth / (float) surfaceHeight;
             float displayRatio = (float) surfaceHeight / (float) surfaceWidth;
@@ -230,6 +258,11 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             projection.scaleRelative(stageScale, stageScale);
             projection.translateRelative(stageTranslateX, stageTranslateY);
             updateInteractionBounds();
+            if (now - lastAhogeDiagnosticNanos >= 500_000_000L) {
+                lastAhogeDiagnosticNanos = now;
+                listener.onAhogeDiagnostic(model.getAhogeDiagnostic());
+                updateAhogeAnchorProjection();
+            }
             model.draw(projection);
         } catch (Throwable error) {
             listener.onError(error);
@@ -249,6 +282,19 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         modelBoundsBottom = Math.min(y1, y2);
         modelBoundsValid = modelBoundsRight - modelBoundsLeft > 1e-5f
                 && modelBoundsTop - modelBoundsBottom > 1e-5f;
+    }
+
+    private void updateAhogeAnchorProjection() {
+        float[] points = model.getAhogeAnchorModelPoints();
+        if (points == null) {
+            listener.onAhogeAnchorProjection(0.0f, 0.0f, 0.0f, 0.0f, false);
+            return;
+        }
+        float rootX = (interactionMvp.transformX(points[0]) + 1.0f) * .5f;
+        float rootY = (1.0f - interactionMvp.transformY(points[1])) * .5f;
+        float directionX = (interactionMvp.transformX(points[2]) + 1.0f) * .5f;
+        float directionY = (1.0f - interactionMvp.transformY(points[3])) * .5f;
+        listener.onAhogeAnchorProjection(rootX, rootY, directionX, directionY, true);
     }
 
     void release() {
