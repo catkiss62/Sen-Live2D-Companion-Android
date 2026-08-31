@@ -214,9 +214,9 @@ final class SenLive2DModel extends CubismUserModel {
         if (model == null) return "ParamAngleZ3：模型未加载";
         int index = findParameterIndex("ParamAngleZ3");
         float hairZ = index < 0 ? Float.NaN : model.getParameterValue(index);
-        float[] root = ahogeRootAnchor == null ? null : ahogeRootAnchor.currentPoint(model);
-        float[] direction = ahogeDirectionAnchor == null
-                ? null : ahogeDirectionAnchor.currentPoint(model);
+        float[] points = getAhogeAnchorModelPoints();
+        float[] root = points == null ? null : new float[]{points[0], points[1]};
+        float[] direction = points == null ? null : new float[]{points[2], points[3]};
         String anchor = root == null || direction == null
                 ? "固定点：未采集"
                 : String.format(java.util.Locale.ROOT,
@@ -224,14 +224,15 @@ final class SenLive2DModel extends CubismUserModel {
                 root[0], root[1], direction[0], direction[1],
                 ahogeRootAnchor.drawableId);
         return String.format(java.util.Locale.ROOT,
-                "Hair Z：%s · 模式：%s\n%s\n形状：整体%.0f%% / 长度%.0f%% / 宽度%.0f%% / 角度%+.0f°",
+                "Hair Z：%s · 模式：%s\n%s\n形状：整体%.0f%% / 长度%.0f%% / 宽度%.0f%% / 角度%+.0f° / 模型X%+.3f",
                 Float.isFinite(hairZ) ? String.format(java.util.Locale.ROOT, "%+.4f", hairZ)
                         : "不存在",
                 renderOptions.ahogeNativePassthrough ? "原生直通"
                         : (hasCompleteAhogeAnchor() ? "固定根部调整" : "无固定点→原生保护"),
                 anchor,
                 renderOptions.ahogeScalePercent, renderOptions.ahogeLengthPercent,
-                renderOptions.ahogeWidthPercent, renderOptions.ahogeRotationDegrees);
+                renderOptions.ahogeWidthPercent, renderOptions.ahogeRotationDegrees,
+                renderOptions.ahogeOffsetX);
     }
 
     boolean hasCompleteAhogeAnchor() {
@@ -243,6 +244,26 @@ final class SenLive2DModel extends CubismUserModel {
         float[] root = ahogeRootAnchor.currentPoint(model);
         float[] direction = ahogeDirectionAnchor.currentPoint(model);
         if (root == null || direction == null) return null;
+        if (!renderOptions.ahogeNativePassthrough) {
+            float axisX = direction[0] - root[0];
+            float axisY = direction[1] - root[1];
+            float axisLength = (float) Math.hypot(axisX, axisY);
+            if (axisLength < 1e-5f) return null;
+            axisX /= axisLength;
+            axisY /= axisLength;
+            float lengthScale = renderOptions.ahogeScalePercent / 100.0f
+                    * renderOptions.ahogeLengthPercent / 100.0f;
+            double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
+            float alongX = axisX * axisLength * lengthScale;
+            float alongY = axisY * axisLength * lengthScale;
+            float cos = (float) Math.cos(radians);
+            float sin = (float) Math.sin(radians);
+            float targetRootX = root[0] + renderOptions.ahogeOffsetX;
+            float targetRootY = root[1] + renderOptions.ahogeOffsetY;
+            return new float[]{targetRootX, targetRootY,
+                    targetRootX + alongX * cos - alongY * sin,
+                    targetRootY + alongX * sin + alongY * cos};
+        }
         return new float[]{root[0], root[1], direction[0], direction[1]};
     }
 
@@ -303,8 +324,8 @@ final class SenLive2DModel extends CubismUserModel {
                     .put("lengthPercent", renderOptions.ahogeLengthPercent)
                     .put("widthPercent", renderOptions.ahogeWidthPercent)
                     .put("rotationDegrees", renderOptions.ahogeRotationDegrees)
-                    .put("translationX", 0)
-                    .put("translationY", 0)
+                    .put("translationX", renderOptions.ahogeOffsetX)
+                    .put("translationY", renderOptions.ahogeOffsetY)
                     .put("nativePassthrough", renderOptions.ahogeNativePassthrough));
             return result.toString(2);
         } catch (JSONException error) {
@@ -825,6 +846,8 @@ final class SenLive2DModel extends CubismUserModel {
         double radians = Math.toRadians(renderOptions.ahogeRotationDegrees);
         float cos = (float) Math.cos(radians);
         float sin = (float) Math.sin(radians);
+        float targetRootX = root[0] + renderOptions.ahogeOffsetX;
+        float targetRootY = root[1] + renderOptions.ahogeOffsetY;
         for (int index : candidates) {
             if (!isDrawableVisible(index)) continue;
             float[] vertices = model.getDrawableVertices(index);
@@ -835,8 +858,8 @@ final class SenLive2DModel extends CubismUserModel {
                 float across = (dx * perpendicularX + dy * perpendicularY) * widthScale;
                 float scaledX = axisX * along + perpendicularX * across;
                 float scaledY = axisY * along + perpendicularY * across;
-                vertices[i] = root[0] + scaledX * cos - scaledY * sin;
-                vertices[i + 1] = root[1] + scaledX * sin + scaledY * cos;
+                vertices[i] = targetRootX + scaledX * cos - scaledY * sin;
+                vertices[i + 1] = targetRootY + scaledX * sin + scaledY * cos;
             }
         }
     }

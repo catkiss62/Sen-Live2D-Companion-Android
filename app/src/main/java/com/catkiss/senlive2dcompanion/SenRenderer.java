@@ -163,6 +163,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         if (model != null) model.setAhogeNativePassthrough(enabled);
     }
 
+    void setAhogeAnchorJson(String anchorJson) {
+        if (model != null) model.setAhogeAnchorJson(anchorJson);
+    }
+
     void captureAhogeAnchor(float normalizedScreenX, float normalizedScreenY,
                             boolean rootPoint) {
         if (model == null || surfaceWidth <= 0 || surfaceHeight <= 0) {

@@ -49,7 +49,8 @@ import java.util.zip.ZipInputStream;
 
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
-    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 4;
+    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 5;
+    private static final int AHOGE_ANCHOR_PRESET_VERSION = 1;
     private static final int AHOGE_MOTION_PRESET_VERSION = 1;
     private static final int EAR_CONFIRMED_PRESET_VERSION = 1;
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
@@ -57,8 +58,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private static final float CONFIRMED_AHOGE_LENGTH = 100.0f;
     private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
     private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
-    private static final float CONFIRMED_AHOGE_X = 0.0f;
+    private static final float CONFIRMED_AHOGE_X = -0.006f;
     private static final float CONFIRMED_AHOGE_Y = 0.0f;
+    private static final String CONFIRMED_AHOGE_ANCHOR_JSON =
+            "{\"schema\":\"sen-ahoge-anchor\",\"schemaVersion\":2,"
+                    + "\"coordinateSystem\":\"Cubism model-local barycentric triangle coordinates\","
+                    + "\"screenPixelsPersisted\":false,"
+                    + "\"root\":{\"drawableId\":\"ArtMesh151\","
+                    + "\"triangleVertexIds\":[8,8,8],\"barycentricWeights\":[1,0,0],"
+                    + "\"capturedModelPoint\":[-0.007617833,2.1282744]},"
+                    + "\"direction\":{\"drawableId\":\"ArtMesh151\","
+                    + "\"triangleVertexIds\":[21,5,22],"
+                    + "\"barycentricWeights\":[0.65576994,0.30497047,0.039259583],"
+                    + "\"capturedModelPoint\":[-0.04180951,2.1795814]},"
+                    + "\"rootCandidates\":[],\"directionCandidates\":[]}";
     private static final float DEFAULT_AHOGE_ROOT_FOLLOW = 50.0f;
     private static final float DEFAULT_AHOGE_ROOT_ROTATION = 50.0f;
     private static final float DEFAULT_AHOGE_LOCAL_MOTION = 50.0f;
@@ -224,8 +237,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "ahoge_width_percent", CONFIRMED_AHOGE_WIDTH));
         ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f,
                 prefs.getFloat("ahoge_rotation_degrees", CONFIRMED_AHOGE_ROTATION)));
-        ahogeOffsetX = 0.0f;
-        ahogeOffsetY = 0.0f;
+        if (prefs.getInt("ahoge_anchor_preset_version", 0)
+                < AHOGE_ANCHOR_PRESET_VERSION) {
+            prefs.edit()
+                    .putInt("ahoge_anchor_preset_version", AHOGE_ANCHOR_PRESET_VERSION)
+                    .putString("ahoge_anchor_json", CONFIRMED_AHOGE_ANCHOR_JSON)
+                    .putBoolean("ahoge_native_passthrough", false)
+                    .apply();
+        }
+        ahogeOffsetX = CONFIRMED_AHOGE_X;
+        ahogeOffsetY = CONFIRMED_AHOGE_Y;
         ahogeAnchorJson = prefs.getString("ahoge_anchor_json", "");
         if (prefs.getInt("ahoge_motion_preset_version", 0)
                 < AHOGE_MOTION_PRESET_VERSION) {
@@ -315,7 +336,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.8 · 呆毛模型锚点采集与固定根部调整版");
+        statusText.setText("v0.4.9 · Sen呆毛固定锚点与模型局部微调版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -538,7 +559,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(ahogeHeading);
 
         TextView ahogeNote = adjustmentStatusText();
-        ahogeNote.setText("先放大/移动模型，再依次点击发根和朝尖端的方向点。App会保存网格三角形与重心权重；缩放和拖动只影响屏幕显示，不进入固定参数。调整模式保留原生物理，并只围绕发根旋转和缩放。");
+        ahogeNote.setText("已固化实机确认的Sen网格锚点与形状参数；缩放和拖动只影响屏幕显示。需要诊断时仍可放大模型后重新采集，失败不会覆盖当前固定锚点。");
         panel.addView(ahogeNote);
 
         ahogeDiagnosticStatus = adjustmentStatusText();
@@ -551,7 +572,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
         LinearLayout ahogeCaptureRow = new LinearLayout(this);
         ahogeCaptureRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button ahogeCaptureButton = panelButton("采集发根+方向点");
+        Button ahogeCaptureButton = panelButton("可选：重新采集发根+方向点");
         ahogeCaptureButton.setOnClickListener(v -> beginAhogeAnchorCalibration());
         ahogeCaptureRow.addView(ahogeCaptureButton, weightedButtonParams());
         ahogeMarkerButton = panelButton("固定点标记：显示");
@@ -911,14 +932,23 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         ahogeLengthPercent = CONFIRMED_AHOGE_LENGTH;
         ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
         ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
-        ahogeOffsetX = 0.0f;
-        ahogeOffsetY = 0.0f;
+        ahogeOffsetX = CONFIRMED_AHOGE_X;
+        ahogeOffsetY = CONFIRMED_AHOGE_Y;
+        ahogeAnchorJson = CONFIRMED_AHOGE_ANCHOR_JSON;
+        ahogeNativePassthrough = false;
+        prefs.edit()
+                .putString("ahoge_anchor_json", ahogeAnchorJson)
+                .putBoolean("ahoge_native_passthrough", false)
+                .apply();
         if (ahogeScaleSeekBar != null) ahogeScaleSeekBar.setProgress(16);
         if (ahogeLengthSeekBar != null) ahogeLengthSeekBar.setProgress(60);
         if (ahogeWidthSeekBar != null) ahogeWidthSeekBar.setProgress(43);
         if (ahogeRotationSeekBar != null) ahogeRotationSeekBar.setProgress(41);
+        if (glSurfaceView != null && renderer != null) {
+            glSurfaceView.queueEvent(() -> renderer.setAhogeAnchorJson(ahogeAnchorJson));
+        }
         persistAndApplyCustomization(true);
-        toastLong("呆毛形状已恢复：整体56 / 长度100 / 宽度83 / 角度-49；根部不移动");
+        toastLong("已恢复Sen固化呆毛：整体56 / 长度100 / 宽度83 / 角度-49 / 模型X-0.006");
     }
 
     private void resetAhogeMotionTuning() {
@@ -1020,8 +1050,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         ahogeLengthPercent = clampShapePercent(ahogeLengthPercent);
         ahogeWidthPercent = clampShapePercent(ahogeWidthPercent);
         ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f, ahogeRotationDegrees));
-        ahogeOffsetX = 0.0f;
-        ahogeOffsetY = 0.0f;
+        ahogeOffsetX = CONFIRMED_AHOGE_X;
+        ahogeOffsetY = CONFIRMED_AHOGE_Y;
         tailMirrored = true;
         if (persist) {
             prefs.edit()
@@ -1029,8 +1059,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     .putFloat("ahoge_length_percent", ahogeLengthPercent)
                     .putFloat("ahoge_width_percent", ahogeWidthPercent)
                     .putFloat("ahoge_rotation_degrees", ahogeRotationDegrees)
-                    .putFloat("ahoge_offset_x", 0.0f)
-                    .putFloat("ahoge_offset_y", 0.0f)
+                    .putFloat("ahoge_offset_x", ahogeOffsetX)
+                    .putFloat("ahoge_offset_y", ahogeOffsetY)
                     .putBoolean("tail_mirrored", true)
                     .apply();
         }
@@ -1074,7 +1104,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     ? "呆毛原生直通：开启（App顶点后处理=0）"
                     : (ahogeAnchorJson.isEmpty()
                     ? "固定根部调整：等待采集（当前原生保护）"
-                    : "固定根部调整：开启（无X/Y平移）"));
+                    : String.format(java.util.Locale.ROOT,
+                    "固定根部调整：开启（模型X%+.3f/Y%+.3f）",
+                    ahogeOffsetX, ahogeOffsetY)));
         }
         if (ahogeScaleStatus != null) {
             ahogeScaleStatus.setText(String.format(java.util.Locale.ROOT,
@@ -1628,9 +1660,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 earSpeedPercent, earAmplitudePercent)
                 + " · 服装：" + selectedOutfit.displayName
                 + String.format(java.util.Locale.ROOT,
-                " · 呆毛：整体%.0f%%/长度%.0f%%/宽度%.0f%%/%+.0f°/X0/Y0",
+                " · 呆毛：整体%.0f%%/长度%.0f%%/宽度%.0f%%/%+.0f°/模型X%+.3f/Y%+.3f",
                 ahogeScalePercent, ahogeLengthPercent, ahogeWidthPercent,
-                ahogeRotationDegrees)
+                ahogeRotationDegrees, ahogeOffsetX, ahogeOffsetY)
                 + " · 呆毛固定点：" + (ahogeAnchorJson.isEmpty() ? "未采集" : "已采集")
                 + " · 呆毛模式：" + (ahogeNativePassthrough ? "原生直通"
                 : (ahogeAnchorJson.isEmpty() ? "原生保护" : "固定根部调整"))
@@ -1688,7 +1720,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         runOnUiThread(() -> {
             ahogeAnchorCaptureBusy = false;
             if (result == null || !result.success) {
-                toastLong(result == null ? "固定点采集失败" : result.message);
+                String message = result == null ? "固定点采集失败" : result.message;
+                if (!ahogeAnchorJson.isEmpty()) {
+                    ahogeAnchorCalibrationStep = 0;
+                    ahogeNativePassthrough = false;
+                    prefs.edit().putBoolean("ahoge_native_passthrough", false).apply();
+                    updateCustomizationControls();
+                    glSurfaceView.queueEvent(() -> renderer.setAhogeNativePassthrough(false));
+                    message += "；已恢复当前固化锚点，本次失败未覆盖参数";
+                }
+                toastLong(message);
                 return;
             }
             if (!result.complete) {
@@ -1715,7 +1756,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         runOnUiThread(() -> {
             try {
                 JSONObject result = new JSONObject(modelJson == null ? "{}" : modelJson);
-                result.put("appVersion", "0.4.8-ahoge-model-anchor-export-test");
+                result.put("appVersion", "0.4.9-ahoge-fixed-anchor-nudge-test");
                 result.put("capturedAtUnixMs", System.currentTimeMillis());
                 result.put("stageTransformDiagnosticOnly", new JSONObject()
                         .put("scale", stageScale)
