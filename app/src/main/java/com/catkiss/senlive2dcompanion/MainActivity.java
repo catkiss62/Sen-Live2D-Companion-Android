@@ -49,8 +49,8 @@ import java.util.zip.ZipInputStream;
 
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
-    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 5;
-    private static final int AHOGE_ANCHOR_PRESET_VERSION = 1;
+    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 6;
+    private static final int AHOGE_ANCHOR_PRESET_VERSION = 2;
     private static final int AHOGE_MOTION_PRESET_VERSION = 1;
     private static final int EAR_CONFIRMED_PRESET_VERSION = 1;
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
@@ -150,7 +150,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private Button ahogeMarkerButton;
     private View ahogeRootMarker;
     private View ahogeDirectionMarker;
-    private boolean ahogeMarkersEnabled = true;
+    private boolean ahogeMarkersEnabled = false;
     private int ahogeAnchorCalibrationStep;
     private boolean ahogeAnchorCaptureBusy;
     private String ahogeAnchorJson = "";
@@ -229,14 +229,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     .putBoolean("tail_mirrored", true)
                     .apply();
         }
-        ahogeScalePercent = clampShapePercent(prefs.getFloat(
-                "ahoge_scale_percent", CONFIRMED_AHOGE_HEIGHT));
-        ahogeLengthPercent = clampShapePercent(prefs.getFloat(
-                "ahoge_length_percent", CONFIRMED_AHOGE_LENGTH));
-        ahogeWidthPercent = clampShapePercent(prefs.getFloat(
-                "ahoge_width_percent", CONFIRMED_AHOGE_WIDTH));
-        ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f,
-                prefs.getFloat("ahoge_rotation_degrees", CONFIRMED_AHOGE_ROTATION)));
+        ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
+        ahogeLengthPercent = CONFIRMED_AHOGE_LENGTH;
+        ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
+        ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
         if (prefs.getInt("ahoge_anchor_preset_version", 0)
                 < AHOGE_ANCHOR_PRESET_VERSION) {
             prefs.edit()
@@ -247,7 +243,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         ahogeOffsetX = CONFIRMED_AHOGE_X;
         ahogeOffsetY = CONFIRMED_AHOGE_Y;
-        ahogeAnchorJson = prefs.getString("ahoge_anchor_json", "");
+        ahogeAnchorJson = CONFIRMED_AHOGE_ANCHOR_JSON;
         if (prefs.getInt("ahoge_motion_preset_version", 0)
                 < AHOGE_MOTION_PRESET_VERSION) {
             prefs.edit()
@@ -263,7 +259,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "ahoge_root_rotation_percent", DEFAULT_AHOGE_ROOT_ROTATION));
         ahogeLocalMotionPercent = clampPercent(prefs.getFloat(
                 "ahoge_local_motion_percent", DEFAULT_AHOGE_LOCAL_MOTION));
-        ahogeNativePassthrough = prefs.getBoolean("ahoge_native_passthrough", false);
+        ahogeNativePassthrough = false;
         tailMirrored = true;
         prefs.edit().putBoolean("tail_mirrored", true)
                 .remove("ahoge_root_drawable_id").remove("ahoge_root_vertex_index")
@@ -336,7 +332,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.4.9 · Sen呆毛固定锚点与模型局部微调版");
+        statusText.setText("v0.5.0 · 呆毛正式固化与摸头校正版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -358,10 +354,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         installStageAdjustmentGestures();
         stage.addView(glSurfaceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        ahogeRootMarker = anchorMarker(Color.rgb(34, 222, 220));
-        ahogeDirectionMarker = anchorMarker(Color.rgb(255, 184, 77));
-        stage.addView(ahogeRootMarker, new FrameLayout.LayoutParams(dp(14), dp(14)));
-        stage.addView(ahogeDirectionMarker, new FrameLayout.LayoutParams(dp(12), dp(12)));
         page.addView(stage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f));
 
@@ -550,85 +542,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         earTwitchButton.setOnClickListener(v -> glSurfaceView.queueEvent(
                 () -> renderer.triggerEarTwitch()));
         panel.addView(earTwitchButton);
-
-        TextView ahogeHeading = new TextView(this);
-        ahogeHeading.setText("长呆毛（模型锚点固定根部；不保存屏幕坐标）");
-        ahogeHeading.setTextColor(Color.rgb(238, 207, 255));
-        ahogeHeading.setTextSize(11);
-        ahogeHeading.setPadding(dp(3), dp(5), 0, 0);
-        panel.addView(ahogeHeading);
-
-        TextView ahogeNote = adjustmentStatusText();
-        ahogeNote.setText("已固化实机确认的Sen网格锚点与形状参数；缩放和拖动只影响屏幕显示。需要诊断时仍可放大模型后重新采集，失败不会覆盖当前固定锚点。");
-        panel.addView(ahogeNote);
-
-        ahogeDiagnosticStatus = adjustmentStatusText();
-        ahogeDiagnosticStatus.setText("ParamAngleZ3 (Hair Z)：等待模型加载");
-        panel.addView(ahogeDiagnosticStatus);
-
-        ahogeNativePassthroughButton = panelButton("");
-        ahogeNativePassthroughButton.setOnClickListener(v -> toggleAhogeNativePassthrough());
-        panel.addView(ahogeNativePassthroughButton);
-
-        LinearLayout ahogeCaptureRow = new LinearLayout(this);
-        ahogeCaptureRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button ahogeCaptureButton = panelButton("可选：重新采集发根+方向点");
-        ahogeCaptureButton.setOnClickListener(v -> beginAhogeAnchorCalibration());
-        ahogeCaptureRow.addView(ahogeCaptureButton, weightedButtonParams());
-        ahogeMarkerButton = panelButton("固定点标记：显示");
-        ahogeMarkerButton.setOnClickListener(v -> toggleAhogeMarkers());
-        ahogeCaptureRow.addView(ahogeMarkerButton, weightedButtonParams());
-        panel.addView(ahogeCaptureRow);
-
-        ahogeScaleStatus = adjustmentStatusText();
-        panel.addView(ahogeScaleStatus);
-        ahogeScaleSeekBar = shapeSeekBar(ahogeScalePercent,
-                value -> ahogeScalePercent = value);
-        panel.addView(ahogeScaleSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeLengthStatus = adjustmentStatusText();
-        panel.addView(ahogeLengthStatus);
-        ahogeLengthSeekBar = shapeSeekBar(ahogeLengthPercent,
-                value -> ahogeLengthPercent = value);
-        panel.addView(ahogeLengthSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeWidthStatus = adjustmentStatusText();
-        panel.addView(ahogeWidthStatus);
-        ahogeWidthSeekBar = shapeSeekBar(ahogeWidthPercent,
-                value -> ahogeWidthPercent = value);
-        panel.addView(ahogeWidthSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        ahogeRotationStatus = adjustmentStatusText();
-        panel.addView(ahogeRotationStatus);
-        ahogeRotationSeekBar = new SeekBar(this);
-        ahogeRotationSeekBar.setMax(180);
-        ahogeRotationSeekBar.setProgress(Math.round(ahogeRotationDegrees) + 90);
-        ahogeRotationSeekBar.setOnSeekBarChangeListener(
-                new SeekBar.OnSeekBarChangeListener() {
-                    @Override public void onProgressChanged(
-                            SeekBar seekBar, int progress, boolean fromUser) {
-                        if (!fromUser) return;
-                        ahogeRotationDegrees = progress - 90.0f;
-                        persistAndApplyCustomization(false);
-                    }
-                    @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-                    @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                        persistAndApplyCustomization(true);
-                    }
-                });
-        panel.addView(ahogeRotationSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        Button ahogeResetButton = panelButton("还原固定点形状初值 56/100/83/-49");
-        ahogeResetButton.setOnClickListener(v -> resetAhogeTransform());
-        panel.addView(ahogeResetButton);
-
-        Button diagnosticExportButton = panelButton("导出呆毛+摸头诊断 JSON");
-        diagnosticExportButton.setOnClickListener(v -> requestDiagnosticExport());
-        panel.addView(diagnosticExportButton);
 
         TextView tailHeading = new TextView(this);
         tailHeading.setText("尾巴：固定右侧（中心线镜像；身体中心不变）");
@@ -1756,7 +1669,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         runOnUiThread(() -> {
             try {
                 JSONObject result = new JSONObject(modelJson == null ? "{}" : modelJson);
-                result.put("appVersion", "0.4.9-ahoge-fixed-anchor-nudge-test");
+                result.put("appVersion", "0.5.0-ahoge-finalized-headpat-calibration");
                 result.put("capturedAtUnixMs", System.currentTimeMillis());
                 result.put("stageTransformDiagnosticOnly", new JSONObject()
                         .put("scale", stageScale)
