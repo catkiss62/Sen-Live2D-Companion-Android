@@ -21,6 +21,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     interface Listener {
         void onStatus(String status);
         void onReady(String detail);
+        void onAhogeDiagnostic(String detail);
         void onError(Throwable error);
     }
 
@@ -40,6 +41,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private boolean frameworkReady;
     private boolean contextRecreated;
     private long lastFrameNanos;
+    private long lastAhogeDiagnosticNanos;
     private volatile float stageScale = 1.0f;
     private volatile float stageTranslateX;
     private volatile float stageTranslateY;
@@ -150,6 +152,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         }
     }
 
+    void setAhogeNativePassthrough(boolean enabled) {
+        if (model != null) model.setAhogeNativePassthrough(enabled);
+    }
+
     @Override
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
         try {
@@ -206,6 +212,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
         try {
             model.update(delta);
+            if (now - lastAhogeDiagnosticNanos >= 500_000_000L) {
+                lastAhogeDiagnosticNanos = now;
+                listener.onAhogeDiagnostic(model.getAhogeDiagnostic());
+            }
             projection.loadIdentity();
             float aspectRatio = (float) surfaceWidth / (float) surfaceHeight;
             float displayRatio = (float) surfaceHeight / (float) surfaceWidth;
@@ -265,6 +275,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         try {
             releaseCurrentModel();
             lastFrameNanos = 0L;
+            lastAhogeDiagnosticNanos = 0L;
             listener.onStatus("原生渲染：准备加载 Sen 2K 模型…");
             SenLive2DModel next = new SenLive2DModel();
             model = next;

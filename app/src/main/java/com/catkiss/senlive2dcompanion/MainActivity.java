@@ -100,6 +100,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float ahogeRootFollowPercent;
     private float ahogeRootRotationPercent;
     private float ahogeLocalMotionPercent;
+    private boolean ahogeNativePassthrough;
     private boolean tailMirrored;
     private boolean adjustmentEnabled;
     private float stageScale = 1.0f;
@@ -119,6 +120,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SeekBar ahogeRootRotationSeekBar;
     private TextView ahogeLocalMotionStatus;
     private SeekBar ahogeLocalMotionSeekBar;
+    private TextView ahogeDiagnosticStatus;
+    private Button ahogeNativePassthroughButton;
     private Button autoIdleButton;
     private Button touchFollowButton;
     private boolean autoIdleEnabled;
@@ -208,6 +211,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "ahoge_root_rotation_percent", DEFAULT_AHOGE_ROOT_ROTATION));
         ahogeLocalMotionPercent = clampPercent(prefs.getFloat(
                 "ahoge_local_motion_percent", DEFAULT_AHOGE_LOCAL_MOTION));
+        ahogeNativePassthrough = prefs.getBoolean("ahoge_native_passthrough", false);
         tailMirrored = true;
         prefs.edit().putBoolean("tail_mirrored", true)
                 .remove("ahoge_root_drawable_id").remove("ahoge_root_vertex_index")
@@ -498,8 +502,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(ahogeHeading);
 
         TextView ahogeNote = adjustmentStatusText();
-        ahogeNote.setText("位置、大小和角度固定。下面三项只缩放呆毛原生运动贡献，不寻找或绑定外部头发、兔耳、尾巴网格；全部0%可测试完全固定，全部100%等价于v0.4.5。");
+        ahogeNote.setText("“原生直通”会完全跳过App呆毛顶点后处理（也不套用56/83/-49/-16/+70），用于判断模型自身根部是否稳定；关闭后才使用下面三项旧路线作为对照。");
         panel.addView(ahogeNote);
+
+        ahogeDiagnosticStatus = adjustmentStatusText();
+        ahogeDiagnosticStatus.setText("ParamAngleZ3 (Hair Z)：等待模型加载");
+        panel.addView(ahogeDiagnosticStatus);
+
+        ahogeNativePassthroughButton = panelButton("");
+        ahogeNativePassthroughButton.setOnClickListener(v -> toggleAhogeNativePassthrough());
+        panel.addView(ahogeNativePassthroughButton);
 
         ahogeRootFollowStatus = adjustmentStatusText();
         panel.addView(ahogeRootFollowStatus);
@@ -910,6 +922,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         updateSummary();
     }
 
+    private void toggleAhogeNativePassthrough() {
+        ahogeNativePassthrough = !ahogeNativePassthrough;
+        prefs.edit().putBoolean("ahoge_native_passthrough", ahogeNativePassthrough).apply();
+        updateCustomizationControls();
+        if (glSurfaceView != null && renderer != null) {
+            glSurfaceView.queueEvent(() ->
+                    renderer.setAhogeNativePassthrough(ahogeNativePassthrough));
+        }
+        updateSummary();
+        toastLong(ahogeNativePassthrough
+                ? "已开启原生直通：App不再修改任何呆毛顶点"
+                : "已关闭原生直通：恢复确认外观与三项运动后处理");
+    }
+
     private void persistAndApplyCustomization() {
         ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
         ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
@@ -963,6 +989,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             ahogeLocalMotionStatus.setText(String.format(java.util.Locale.ROOT,
                     "呆毛局部柔性/抖动：%.0f%%（0%%=刚性形状，100%%=原生幅度）",
                     ahogeLocalMotionPercent));
+        }
+        if (ahogeNativePassthroughButton != null) {
+            ahogeNativePassthroughButton.setText(ahogeNativePassthrough
+                    ? "呆毛原生直通：开启（App顶点后处理=0）"
+                    : "呆毛原生直通：关闭（当前使用App后处理）");
+        }
+        if (ahogeRootFollowSeekBar != null) {
+            ahogeRootFollowSeekBar.setEnabled(!ahogeNativePassthrough);
+        }
+        if (ahogeRootRotationSeekBar != null) {
+            ahogeRootRotationSeekBar.setEnabled(!ahogeNativePassthrough);
+        }
+        if (ahogeLocalMotionSeekBar != null) {
+            ahogeLocalMotionSeekBar.setEnabled(!ahogeNativePassthrough);
         }
         if (autoIdleButton != null) {
             autoIdleButton.setText(autoIdleEnabled
@@ -1310,6 +1350,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 ahogeOffsetX, ahogeOffsetY,
                 ahogeRootFollowPercent, ahogeRootRotationPercent,
                 ahogeLocalMotionPercent,
+                ahogeNativePassthrough,
                 true, autoIdleEnabled);
         rendererDetail = "";
         updateSummary();
@@ -1490,6 +1531,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 " · 呆毛运动：位移%.0f%%/旋转%.0f%%/柔性%.0f%%",
                 ahogeRootFollowPercent, ahogeRootRotationPercent,
                 ahogeLocalMotionPercent)
+                + " · 呆毛模式：" + (ahogeNativePassthrough ? "原生直通" : "App后处理")
                 + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")
@@ -1519,6 +1561,15 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             toastLong(freezeVtsSnapshot
                     ? maskMode.displayName() + " 动态底座已加载：可测试情绪、动作、耳鳍与尾巴"
                     : "Sen 原始状态已加载，可用于对照");
+        });
+    }
+
+    @Override
+    public void onAhogeDiagnostic(String detail) {
+        runOnUiThread(() -> {
+            if (ahogeDiagnosticStatus != null) {
+                ahogeDiagnosticStatus.setText(detail == null ? "ParamAngleZ3：无读数" : detail);
+            }
         });
     }
 

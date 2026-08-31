@@ -6,13 +6,16 @@ not inspect, patch, or redistribute VTube Studio itself.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import queue
+import struct
 import statistics
 import threading
 import time
 import uuid
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import END, LEFT, BOTH, DISABLED, NORMAL, StringVar, Text, Tk, filedialog, messagebox
@@ -21,7 +24,7 @@ from tkinter import ttk
 import websocket
 
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 API_NAME = "VTubeStudioPublicAPI"
 API_VERSION = "1.0"
 DEFAULT_URL = "ws://localhost:8001"
@@ -44,6 +47,7 @@ class VTSClient:
     def __init__(self, url: str):
         self.url = url
         self.socket: websocket.WebSocket | None = None
+        self.pending_events: list[dict] = []
 
     def connect(self) -> None:
         self.close()
@@ -77,6 +81,8 @@ class VTSClient:
         while True:
             reply = json.loads(self.socket.recv())
             if reply.get("requestID") != request_id:
+                if str(reply.get("messageType", "")).endswith("Event"):
+                    self.pending_events.append(reply)
                 continue
             if reply.get("messageType") == "APIError":
                 details = reply.get("data") or {}
@@ -85,6 +91,28 @@ class VTSClient:
                     f"{details.get('message', '未知错误')}"
                 )
             return reply.get("data") or {}
+
+    def wait_for_event(self, event_name: str, timeout_seconds: float = 120.0) -> dict:
+        if self.socket is None:
+            raise VTSAPIError("尚未连接 VTube Studio")
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            for index, event in enumerate(self.pending_events):
+                if event.get("messageType") == event_name:
+                    return self.pending_events.pop(index).get("data") or {}
+            remaining = deadline - time.monotonic()
+            self.socket.settimeout(max(0.1, min(1.0, remaining)))
+            try:
+                message = json.loads(self.socket.recv())
+            except websocket.WebSocketTimeoutException:
+                continue
+            if message.get("messageType") == event_name:
+                self.socket.settimeout(35)
+                return message.get("data") or {}
+            if str(message.get("messageType", "")).endswith("Event"):
+                self.pending_events.append(message)
+        self.socket.settimeout(35)
+        raise VTSAPIError("等待VTube Studio模型点击超时，请重新开始采集")
 
     def authenticate(self) -> None:
         path = config_path()
@@ -154,6 +182,75 @@ def median_parameters(samples: list[list[dict]]) -> list[dict]:
     return result
 
 
+def clean_art_mesh_hit(hit: dict) -> dict:
+    info = hit.get("hitInfo") or {}
+    return {
+        "artMeshOrder": int(hit.get("artMeshOrder", 0)),
+        "isMasked": bool(hit.get("isMasked", False)),
+        "hitInfo": {
+            "modelID": str(info.get("modelID", "")),
+            "artMeshID": str(info.get("artMeshID", "")),
+            "angle": float(info.get("angle", 0.0)),
+            "size": float(info.get("size", 1.0)),
+            "vertexID1": int(info.get("vertexID1", -1)),
+            "vertexID2": int(info.get("vertexID2", -1)),
+            "vertexID3": int(info.get("vertexID3", -1)),
+            "vertexWeight1": float(info.get("vertexWeight1", 0.0)),
+            "vertexWeight2": float(info.get("vertexWeight2", 0.0)),
+            "vertexWeight3": float(info.get("vertexWeight3", 0.0)),
+        },
+    }
+
+
+def choose_ahoge_hit(hits: list[dict]) -> dict | None:
+    if not hits:
+        return None
+    preferred = ("artmesh140_skinning2", "artmesh140_skinning")
+    for preferred_id in preferred:
+        for hit in hits:
+            mesh_id = str((hit.get("hitInfo") or {}).get("artMeshID", "")).lower()
+            if mesh_id == preferred_id:
+                return hit
+    return min(hits, key=lambda value: int(value.get("artMeshOrder", 0)))
+
+
+def ordered_ahoge_hits(hits: list[dict]) -> list[dict]:
+    suggested = choose_ahoge_hit(hits)
+    ordered = sorted(hits, key=lambda value: int(value.get("artMeshOrder", 0)))
+    if suggested is None:
+        return ordered
+    return [suggested] + [hit for hit in ordered if hit is not suggested]
+
+
+def marker_png_base64() -> str:
+    """Build a disposable 64px cyan target marker using only the standard library."""
+    size = 64
+    rows = []
+    center = (size - 1) / 2.0
+    for y in range(size):
+        row = bytearray([0])
+        for x in range(size):
+            distance = ((x - center) ** 2 + (y - center) ** 2) ** 0.5
+            ring = 20.0 <= distance <= 27.0
+            cross = abs(x - center) <= 2.0 or abs(y - center) <= 2.0
+            if ring or cross:
+                row.extend((0, 255, 255, 235))
+            else:
+                row.extend((0, 0, 0, 0))
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw, 9))
+           + chunk(b"IEND", b""))
+    return base64.b64encode(png).decode("ascii")
+
+
 class CaptureApp:
     def __init__(self, root: Tk):
         self.root = root
@@ -168,6 +265,8 @@ class CaptureApp:
         self.model: dict = {}
         self.snapshots: list[dict] = []
         self.stats: dict = {}
+        self.ahoge_anchor: dict = {}
+        self.ahoge_verify_index = 0
 
         self.url_var = StringVar(value=DEFAULT_URL)
         self.name_var = StringVar(value="正常待机")
@@ -223,6 +322,31 @@ class CaptureApp:
             wraplength=760,
         ).pack(anchor="w", pady=(5, 0))
 
+        anchor = ttk.LabelFrame(outer, text="3. 呆毛根部精确采集", padding=10)
+        anchor.pack(fill="x", pady=(0, 10))
+        ttk.Label(
+            anchor,
+            text=(
+                "点击采集后回到VTube Studio：先左键点长呆毛与头皮相接的根部，"
+                "再点根部旁边的一处头皮作为方向参考。工具会保存所有重叠ArtMesh的三角形与重心权重。"
+            ),
+            wraplength=760,
+        ).pack(anchor="w")
+        anchor_row = ttk.Frame(anchor)
+        anchor_row.pack(fill="x", pady=(8, 0))
+        self.anchor_button = ttk.Button(
+            anchor_row, text="采集根部+方向点", command=self.capture_ahoge_anchor,
+            state=DISABLED)
+        self.anchor_button.pack(side=LEFT)
+        self.verify_anchor_button = ttk.Button(
+            anchor_row, text="在VTS验证下一个候选", command=self.verify_ahoge_anchor,
+            state=DISABLED)
+        self.verify_anchor_button.pack(side=LEFT, padx=8)
+        self.save_anchor_button = ttk.Button(
+            anchor_row, text="保存呆毛锚点包", command=self.save_ahoge_anchor,
+            state=DISABLED)
+        self.save_anchor_button.pack(side=LEFT)
+
         log_box = ttk.LabelFrame(outer, text="采集记录", padding=8)
         log_box.pack(fill=BOTH, expand=True)
         self.log = Text(log_box, wrap="word", height=18, font=("Consolas", 10))
@@ -237,6 +361,10 @@ class CaptureApp:
         self.name_entry.configure(state=state)
         self.capture_button.configure(state=NORMAL if self.connected and not busy else DISABLED)
         self.save_button.configure(state=NORMAL if self.snapshots and not busy else DISABLED)
+        self.anchor_button.configure(state=NORMAL if self.connected and not busy else DISABLED)
+        anchor_state = NORMAL if self.ahoge_anchor and not busy else DISABLED
+        self.verify_anchor_button.configure(state=anchor_state)
+        self.save_anchor_button.configure(state=anchor_state)
 
     def _log(self, text: str) -> None:
         self.log.insert(END, f"[{time.strftime('%H:%M:%S')}] {text}\n")
@@ -286,6 +414,26 @@ class CaptureApp:
                         f"{sum(1 for e in snapshot.get('expressions', []) if e.get('active'))}。"
                     )
                     self.status_var.set(f"已采集 {len(self.snapshots)} 个状态")
+                    self._set_busy(False)
+                elif isinstance(value, tuple) and value and value[0] == "ahoge_anchor":
+                    self.ahoge_anchor = value[1]
+                    self.ahoge_verify_index = 0
+                    root_hits = self.ahoge_anchor["points"][0]["artMeshHits"]
+                    direction_hits = self.ahoge_anchor["points"][1]["artMeshHits"]
+                    chosen = self.ahoge_anchor.get("suggestedRootHit") or {}
+                    chosen_id = (chosen.get("hitInfo") or {}).get("artMeshID", "无")
+                    self._log(
+                        f"呆毛锚点已采集：根部命中{len(root_hits)}层，方向点命中"
+                        f"{len(direction_hits)}层；建议验证 {chosen_id}。"
+                    )
+                    self.status_var.set("呆毛根部锚点已采集")
+                    self._set_busy(False)
+                elif isinstance(value, tuple) and value and value[0] == "ahoge_verified":
+                    self._log(
+                        f"候选 {value[2]}/{value[3]}：临时青色标记已钉到 {value[1]}。"
+                        "请移动头部观察；正确就直接保存锚点包，错误则继续验证下一个候选。"
+                    )
+                    self.status_var.set("已放置根部验证标记")
                     self._set_busy(False)
         except queue.Empty:
             pass
@@ -353,6 +501,157 @@ class CaptureApp:
             "physics": physics,
         }
         return "captured", snapshot
+
+    def capture_ahoge_anchor(self) -> None:
+        self._log("等待VTS点击：第1次点呆毛根部，第2次点旁边头皮方向点（均用左键）。")
+        self.status_var.set("请回到VTS依次点击两个点")
+        self._worker(self._capture_ahoge_anchor_impl)
+
+    def _capture_ahoge_anchor_impl(self):
+        if self.client is None:
+            raise VTSAPIError("尚未连接 VTube Studio")
+        model = self.client.request("CurrentModelRequest")
+        if not model.get("modelLoaded"):
+            raise VTSAPIError("VTube Studio 当前没有载入模型")
+        self.client.pending_events = [
+            event for event in self.client.pending_events
+            if event.get("messageType") != "ModelClickedEvent"
+        ]
+        self.client.request(
+            "EventSubscriptionRequest",
+            {"eventName": "ModelClickedEvent", "subscribe": True,
+             "config": {"onlyClicksOnModel": True}},
+        )
+        points = []
+        labels = ("root", "direction")
+        try:
+            while len(points) < 2:
+                event = self.client.wait_for_event("ModelClickedEvent", 120.0)
+                if event.get("mouseButtonID") != 0 or not event.get("modelWasClicked"):
+                    continue
+                hits = [clean_art_mesh_hit(hit) for hit in (event.get("artMeshHits") or [])]
+                if not hits:
+                    continue
+                points.append({
+                    "role": labels[len(points)],
+                    "capturedAt": utc_now(),
+                    "clickPosition": event.get("clickPosition") or {},
+                    "windowSize": event.get("windowSize") or {},
+                    "artMeshHits": hits,
+                })
+        finally:
+            self._optional_request(
+                "EventSubscriptionRequest",
+                {"eventName": "ModelClickedEvent", "subscribe": False, "config": {}},
+            )
+        suggested = choose_ahoge_hit(points[0]["artMeshHits"])
+        payload = {
+            "schema": "sen-ahoge-anchor",
+            "schemaVersion": 1,
+            "toolVersion": TOOL_VERSION,
+            "createdAt": utc_now(),
+            "source": "VTube Studio Public API ModelClickedEvent",
+            "model": {
+                "modelID": model.get("modelID", ""),
+                "modelName": model.get("modelName", ""),
+                "modelLoadTime": model.get("modelLoadTime", 0),
+            },
+            "points": points,
+            "suggestedRootHit": suggested,
+        }
+        return "ahoge_anchor", payload
+
+    def verify_ahoge_anchor(self) -> None:
+        if not self.ahoge_anchor:
+            return
+        self._log("正在放置下一个青色根部候选标记；首次使用若VTS弹窗，请允许临时图片权限。")
+        self._worker(self._verify_ahoge_anchor_impl)
+
+    def _verify_ahoge_anchor_impl(self):
+        if self.client is None:
+            raise VTSAPIError("尚未连接 VTube Studio")
+        hits = ordered_ahoge_hits(self.ahoge_anchor["points"][0]["artMeshHits"])
+        if not hits:
+            raise VTSAPIError("根部点击没有可验证的ArtMesh")
+        candidate_index = self.ahoge_verify_index % len(hits)
+        hit = hits[candidate_index]
+        info = hit.get("hitInfo") or {}
+        if not info.get("artMeshID"):
+            raise VTSAPIError("根部点击没有可验证的ArtMesh")
+        permission = self.client.request(
+            "PermissionRequest", {"requestedPermission": "LoadCustomImagesAsItems"})
+        granted = any(
+            item.get("name") == "LoadCustomImagesAsItems" and item.get("granted")
+            for item in permission.get("permissions", [])
+        )
+        if not granted:
+            raise VTSAPIError("未获得加载临时验证标记的权限")
+        self._optional_request("ItemUnloadRequest", {
+            "unloadAllInScene": False,
+            "unloadAllLoadedByThisPlugin": True,
+            "allowUnloadingItemsLoadedByUserOrOtherPlugins": False,
+        })
+        loaded = self.client.request("ItemLoadRequest", {
+            "fileName": "sen-anchor-marker.png",
+            "positionX": 0.0,
+            "positionY": 0.0,
+            "size": 0.05,
+            "rotation": 0.0,
+            "fadeTime": 0.15,
+            "order": 100,
+            "failIfOrderTaken": False,
+            "smoothing": 0.0,
+            "censored": False,
+            "flipped": False,
+            "locked": True,
+            "unloadWhenPluginDisconnects": True,
+            "customDataBase64": marker_png_base64(),
+            "customDataAskUserFirst": False,
+            "customDataSkipAskingUserIfWhitelisted": True,
+            "customDataAskTimer": -1,
+        })
+        instance_id = loaded.get("instanceID", "")
+        if not instance_id:
+            raise VTSAPIError("VTS没有返回临时标记实例ID")
+        pin_info = {
+            "modelID": info.get("modelID", ""),
+            "artMeshID": info.get("artMeshID", ""),
+            "angle": 0.0,
+            "size": 0.05,
+        }
+        for name in (
+                "vertexID1", "vertexID2", "vertexID3",
+                "vertexWeight1", "vertexWeight2", "vertexWeight3"):
+            pin_info[name] = info.get(name)
+        self.client.request("ItemPinRequest", {
+            "pin": True,
+            "itemInstanceID": instance_id,
+            "angleRelativeTo": "RelativeToWorld",
+            "sizeRelativeTo": "RelativeToWorld",
+            "vertexPinType": "Provided",
+            "pinInfo": pin_info,
+        })
+        self.ahoge_anchor["selectedRootHit"] = hit
+        self.ahoge_anchor["selectedRootHitReason"] = "last successfully pinned candidate"
+        self.ahoge_verify_index = candidate_index + 1
+        return ("ahoge_verified", info.get("artMeshID", ""),
+                candidate_index + 1, len(hits))
+
+    def save_ahoge_anchor(self) -> None:
+        if not self.ahoge_anchor:
+            return
+        path = filedialog.asksaveasfilename(
+            title="保存 Sen 呆毛锚点包",
+            defaultextension=".json",
+            initialfile="Sen.ahoge-anchor.json",
+            filetypes=[("Sen 呆毛锚点包", "*.json"), ("全部文件", "*.*")],
+        )
+        if not path:
+            return
+        Path(path).write_text(
+            json.dumps(self.ahoge_anchor, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._log(f"呆毛锚点包已保存：{path}")
+        messagebox.showinfo("保存成功", "请把 Sen.ahoge-anchor.json 发给我。")
 
     def save(self) -> None:
         if not self.snapshots:

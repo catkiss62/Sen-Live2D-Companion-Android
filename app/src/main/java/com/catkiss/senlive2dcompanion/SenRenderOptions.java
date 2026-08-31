@@ -14,6 +14,7 @@ final class SenRenderOptions {
     final float ahogeRootFollowPercent;
     final float ahogeRootRotationPercent;
     final float ahogeLocalMotionPercent;
+    final boolean ahogeNativePassthrough;
     final boolean tailMirrored;
     final boolean autoIdleEnabled;
 
@@ -25,6 +26,7 @@ final class SenRenderOptions {
                      float ahogeOffsetX, float ahogeOffsetY,
                      float ahogeRootFollowPercent, float ahogeRootRotationPercent,
                      float ahogeLocalMotionPercent,
+                     boolean ahogeNativePassthrough,
                      boolean tailMirrored, boolean autoIdleEnabled) {
         this.maskMode = maskMode == null ? SenMaskMode.HIGH_PRECISION : maskMode;
         this.highPrecisionMaskSize = normalizeMaskSize(highPrecisionMaskSize);
@@ -42,6 +44,7 @@ final class SenRenderOptions {
         this.ahogeRootFollowPercent = clampPercent(ahogeRootFollowPercent);
         this.ahogeRootRotationPercent = clampPercent(ahogeRootRotationPercent);
         this.ahogeLocalMotionPercent = clampPercent(ahogeLocalMotionPercent);
+        this.ahogeNativePassthrough = ahogeNativePassthrough;
         this.tailMirrored = tailMirrored;
         this.autoIdleEnabled = autoIdleEnabled;
     }
@@ -57,6 +60,7 @@ final class SenRenderOptions {
                 ahogeScale, ahogeWidth, ahogeRotation, ahogeX, ahogeY,
                 ahogeRootFollowPercent, ahogeRootRotationPercent,
                 ahogeLocalMotionPercent,
+                ahogeNativePassthrough,
                 mirrorTail, autoIdleEnabled);
     }
 
@@ -68,6 +72,17 @@ final class SenRenderOptions {
                 ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
                 ahogeOffsetX, ahogeOffsetY,
                 rootFollowPercent, rootRotationPercent, localMotionPercent,
+                ahogeNativePassthrough,
+                tailMirrored, autoIdleEnabled);
+    }
+
+    SenRenderOptions withAhogeNativePassthrough(boolean enabled) {
+        return new SenRenderOptions(maskMode, highPrecisionMaskSize,
+                earAngleOverrideEnabled, earAngleDegrees, earVerticalOffset,
+                ahogeScalePercent, ahogeWidthPercent, ahogeRotationDegrees,
+                ahogeOffsetX, ahogeOffsetY,
+                ahogeRootFollowPercent, ahogeRootRotationPercent,
+                ahogeLocalMotionPercent, enabled,
                 tailMirrored, autoIdleEnabled);
     }
 

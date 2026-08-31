@@ -74,7 +74,7 @@ final class SenLive2DModel extends CubismUserModel {
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
             100.0f, 100.0f, 0.0f, 0.0f, 0.0f,
-            50.0f, 50.0f, 50.0f, false, false);
+            50.0f, 50.0f, 50.0f, false, false, false);
 
     void load(File modelFile, int width, int height, NativeTextureManager textures,
               SenRenderer.Listener listener, List<String> startupExpressions,
@@ -190,6 +190,28 @@ final class SenLive2DModel extends CubismUserModel {
         model.loadParameters();
         model.update();
         applyRuntimeGeometry();
+    }
+
+    void setAhogeNativePassthrough(boolean enabled) {
+        renderOptions = renderOptions.withAhogeNativePassthrough(enabled);
+        if (model == null) return;
+        model.loadParameters();
+        model.update();
+        applyRuntimeGeometry();
+    }
+
+    String getAhogeDiagnostic() {
+        if (model == null) return "ParamAngleZ3：模型未加载";
+        int index = findParameterIndex("ParamAngleZ3");
+        if (index < 0) {
+            return "ParamAngleZ3：模型中不存在 · 模式："
+                    + (renderOptions.ahogeNativePassthrough ? "原生直通" : "App后处理");
+        }
+        return String.format(java.util.Locale.ROOT,
+                "ParamAngleZ3 (Hair Z)：%+.4f · 范围[%+.2f, %+.2f] · 模式：%s",
+                model.getParameterValue(index),
+                model.getParameterMinimumValue(index), model.getParameterMaximumValue(index),
+                renderOptions.ahogeNativePassthrough ? "原生直通" : "App后处理");
     }
 
     void draw(CubismMatrix44 matrix) {
@@ -527,11 +549,18 @@ final class SenLive2DModel extends CubismUserModel {
             appendAppearanceDetail("耳鳍人工网格 0（已撤销）"
                     + " · 呆毛子网格 " + ahogeDrawables.size()
                     + "/可见 " + countVisible(ahogeDrawables)
+                    + " · 呆毛模式 "
+                    + (renderOptions.ahogeNativePassthrough ? "原生直通" : "App后处理")
                     + " · 尾巴子网格 " + tailDrawables.size()
                     + "/可见 " + countVisible(tailDrawables));
             geometryDiagnosticsAdded = true;
         }
-        applyAhogeHairRig(ahogeDrawables);
+        // Diagnostic hard bypass: keep the exact vertices produced by Cubism Core/model.update().
+        // This intentionally skips the confirmed static transform as well as all App-side root
+        // estimation, so an on-device comparison can isolate the authored moc3/physics chain.
+        if (!renderOptions.ahogeNativePassthrough) {
+            applyAhogeHairRig(ahogeDrawables);
+        }
         applyTailMirror(tailDrawables);
     }
 
@@ -554,8 +583,8 @@ final class SenLive2DModel extends CubismUserModel {
         ahogeReferenceAnchorX = Float.isFinite(minX) ? (minX + maxX) * .5f : 0.0f;
         ahogeReferenceAnchorY = Float.isFinite(minY) ? minY : 0.0f;
         captureAhogeRootPoints();
-        appendAppearanceDetail("呆毛原生物理后变换 · 自身发根 "
-                + ahogeRootPoints.size() + "点 · 无外部头发/兔耳/尾巴支撑");
+        appendAppearanceDetail("呆毛参考网格 · 旧后处理自身发根候选 "
+                + ahogeRootPoints.size() + "点 · 原生直通时不使用这些点");
     }
 
     private void captureAhogeRootPoints() {
