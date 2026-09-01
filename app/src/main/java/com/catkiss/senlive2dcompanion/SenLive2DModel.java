@@ -36,6 +36,9 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
+    // CDI names both of these external model parts “衬衫”. Unlike the maid/bunny
+    // layers, the white shirt is selected by Shirt=1 and lives in these two parts.
+    private static final String[] WHITE_SHIRT_PART_IDS = {"Part204", "Part83"};
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
@@ -75,6 +78,7 @@ final class SenLive2DModel extends CubismUserModel {
     private float referenceDrawableRight = 1.0f;
     private float referenceDrawableTop = 1.0f;
     private float referenceDrawableBottom = -1.0f;
+    private int[] whiteShirtPartIndices = new int[0];
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -110,6 +114,7 @@ final class SenLive2DModel extends CubismUserModel {
 
         hasVtsBaseProfile = frozenProfile != null;
         outfitPreset = requestedOutfit == null ? SenOutfitPresets.MAID : requestedOutfit;
+        resolveWhiteShirtParts();
         renderOptions = requestedOptions == null ? renderOptions : requestedOptions;
         performance.setAutoIdle(renderOptions.autoIdleEnabled);
         // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
@@ -125,6 +130,7 @@ final class SenLive2DModel extends CubismUserModel {
         if (hasVtsBaseProfile) {
             applyFrozenProfile(frozenProfile, listener);
             applyOutfitParameters(outfitPreset, listener);
+            applyOutfitPartGuard(outfitPreset);
         }
         resolveArmPhysicsParameters();
         resolveRabbitEarPhysicsParameters();
@@ -402,6 +408,7 @@ final class SenLive2DModel extends CubismUserModel {
         outfitPreset = preset;
         model.loadParameters();
         applyOutfitParameters(preset, null);
+        applyOutfitPartGuard(preset);
         model.saveParameters();
         applyVtsArtMeshColors(preset.appearance, null);
         model.update();
@@ -444,7 +451,10 @@ final class SenLive2DModel extends CubismUserModel {
             String name = setting.getExpressionName(i);
             CubismExpressionMotion motion = loadExpression(
                     NativeFileLoader.readFile(child(setting.getExpressionFileName(i))));
-            if (motion != null) expressions.put(name, motion);
+            if (motion != null) {
+                removeOutfitParameters(motion);
+                expressions.put(name, motion);
+            }
             listener.onStatus("原生渲染：正在读取表情 " + (i + 1) + "/" + count + "…");
         }
         updateScheduler.addUpdatableList(new CubismExpressionUpdater(expressionManager));
@@ -456,12 +466,25 @@ final class SenLive2DModel extends CubismUserModel {
             @Override public void onLateUpdate(
                     com.live2d.sdk.cubism.framework.model.CubismModel ignored,
                     float deltaTimeSeconds) {
-                // Some purchased ZIP expressions contain clothing selectors. Expressions still
-                // control face/body/props, but the explicitly selected built-in outfit must win
-                // before physics and pose consume this frame, preventing a one-frame shirt loss.
+                // ZIP expressions are sanitized when loaded, and this is a second invariant at
+                // the final expression boundary. Clothing never participates in cross-fades;
+                // face/body/prop parameters still do.
                 applyOutfitParameters(outfitPreset, null);
+                applyOutfitPartGuard(outfitPreset);
             }
         });
+    }
+
+    private static void removeOutfitParameters(CubismExpressionMotion motion) {
+        List<CubismExpressionMotion.ExpressionParameter> parameters =
+                motion.getExpressionParameters();
+        for (int i = parameters.size() - 1; i >= 0; i--) {
+            CubismExpressionMotion.ExpressionParameter parameter = parameters.get(i);
+            if (parameter.parameterId != null
+                    && SenOutfitPresets.controlsParameter(parameter.parameterId.getString())) {
+                parameters.remove(i);
+            }
+        }
     }
 
     private void loadPhysicsAndPose(SenRenderer.Listener listener) throws IOException {
@@ -546,6 +569,26 @@ final class SenLive2DModel extends CubismUserModel {
             appendAppearanceDetail("服装“" + preset.displayName + "”参数 " + applied + "项"
                     + (missing == 0 ? "" : " · 缺失 " + missing + "项"));
         }
+    }
+
+    private void applyOutfitPartGuard(SenOutfitPresets.Preset preset) {
+        if (preset != SenOutfitPresets.WHITE_SHIRT) return;
+        for (int partIndex : whiteShirtPartIndices) model.setPartOpacity(partIndex, 1.0f);
+    }
+
+    private void resolveWhiteShirtParts() {
+        int count = 0;
+        int[] candidates = new int[WHITE_SHIRT_PART_IDS.length];
+        for (int partIndex = 0; partIndex < model.getPartCount(); partIndex++) {
+            String partId = model.getPartId(partIndex).getString();
+            for (String shirtPartId : WHITE_SHIRT_PART_IDS) {
+                if (shirtPartId.equals(partId)) {
+                    candidates[count++] = partIndex;
+                    break;
+                }
+            }
+        }
+        whiteShirtPartIndices = Arrays.copyOf(candidates, count);
     }
 
     private void resolveRabbitEarPhysicsParameters() {
