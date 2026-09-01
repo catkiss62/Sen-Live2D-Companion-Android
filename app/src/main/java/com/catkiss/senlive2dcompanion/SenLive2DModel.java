@@ -37,15 +37,7 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
-    private static final String[] WHITE_SHIRT_BASE_DRAWABLE_IDS = {
-            "ArtMesh1321", "ArtMesh1322", "ArtMesh1323", "ArtMesh1521", "ArtMesh1522"
-    };
-    private static final String[] WHITE_SHIRT_KEYBOARD_DRAWABLE_IDS = {
-            "ArtMesh1391", "ArtMesh1397", "ArtMesh1405", "ArtMesh1557", "ArtMesh1559"
-    };
-    private static final String[] WHITE_SHIRT_CONTROLLER_DRAWABLE_IDS = {
-            "ArtMesh1423", "ArtMesh1424", "ArtMesh1425", "ArtMesh1586", "ArtMesh1587"
-    };
+    private static final String[] WHITE_SHIRT_PART_IDS = {"Part83", "Part204"};
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
@@ -86,15 +78,15 @@ final class SenLive2DModel extends CubismUserModel {
     private float referenceDrawableRight = 1.0f;
     private float referenceDrawableTop = 1.0f;
     private float referenceDrawableBottom = -1.0f;
-    private int[] whiteShirtBaseDrawables = new int[0];
-    private int[] whiteShirtKeyboardDrawables = new int[0];
-    private int[] whiteShirtControllerDrawables = new int[0];
+    private int[] whiteShirtDrawables = new int[0];
+    private float[] whiteShirtBaseOpacities = new float[0];
+    private float[] whiteShirtKeyboardOpacities = new float[0];
+    private float[] whiteShirtControllerOpacities = new float[0];
     private String transientExpressionName = "";
     private float transientExpressionRemaining;
     private float transientExpressionDuration = 1.0f;
     private float transientExpressionFadeOut = 0.05f;
     private String activeExpressionName = "";
-    private String activeNativeMotion = "";
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -198,6 +190,9 @@ final class SenLive2DModel extends CubismUserModel {
             }
         }
         updateScheduler.onLateUpdate(model, deltaSeconds);
+        // Outfit selection is an App-owned preset. Expressions, native motions and program
+        // actions may animate pose parameters, but they must never alter the selected clothes.
+        if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
         model.update();
         applyRuntimeGeometry();
     }
@@ -408,12 +403,7 @@ final class SenLive2DModel extends CubismUserModel {
     void playNativeMotion(String name) {
         CubismMotion motion = nativeMotions.get(name);
         if (motion == null) return;
-        if ("daiji".equals(name) && name.equals(activeNativeMotion)) {
-            stopNativeMotion();
-            return;
-        }
         motionManager.startMotionPriority(motion, 3);
-        activeNativeMotion = name;
     }
 
     void stopNativeMotion() {
@@ -422,7 +412,6 @@ final class SenLive2DModel extends CubismUserModel {
                 entry.setFadeOut(entry.getMotion().getFadeOutTime());
             }
         }
-        activeNativeMotion = "";
     }
 
     void selectEmotion(String name) {
@@ -552,8 +541,7 @@ final class SenLive2DModel extends CubismUserModel {
             String baseName = file.getName();
             boolean keyboard = file.getParentFile() != null
                     && "keyboard".equalsIgnoreCase(file.getParentFile().getName());
-            boolean preview = "daiji.motion3.json".equalsIgnoreCase(baseName);
-            if (!keyboard && !preview) continue;
+            if (!keyboard) continue;
             CubismMotion motion = loadMotion(NativeFileLoader.readFile(file));
             if (motion == null) continue;
             SenVtsHotkeySettings.Rule rule = hotkeys.forFile(baseName);
@@ -561,8 +549,8 @@ final class SenLive2DModel extends CubismUserModel {
                 motion.setFadeInTime(rule.fadeSeconds);
                 motion.setFadeOutTime(rule.fadeSeconds);
             }
-            String key = preview ? "daiji"
-                    : "keyboard/" + baseName.replaceFirst("(?i)\\.motion3\\.json$", "");
+            String key = "keyboard/"
+                    + baseName.replaceFirst("(?i)\\.motion3\\.json$", "");
             nativeMotions.put(key, motion);
             loaded++;
         }
@@ -817,22 +805,70 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     private void resolveWhiteShirtDrawables() {
-        whiteShirtBaseDrawables = resolveDrawableIds(WHITE_SHIRT_BASE_DRAWABLE_IDS);
-        whiteShirtKeyboardDrawables = resolveDrawableIds(WHITE_SHIRT_KEYBOARD_DRAWABLE_IDS);
-        whiteShirtControllerDrawables = resolveDrawableIds(WHITE_SHIRT_CONTROLLER_DRAWABLE_IDS);
-        appendAppearanceDetail("白衬衫网格衔接 " + whiteShirtBaseDrawables.length + "/"
-                + whiteShirtKeyboardDrawables.length + "/"
-                + whiteShirtControllerDrawables.length);
+        Set<Integer> candidates = collectChildDrawables(WHITE_SHIRT_PART_IDS);
+        if (candidates.isEmpty()) {
+            appendAppearanceDetail("白衬衫网格自动采样 0");
+            return;
+        }
+
+        float[] originalParameters = new float[model.getParameterCount()];
+        captureParameterValues(originalParameters);
+        int keyboardIndex = findParameterIndex("ParamKeyboardmouse");
+        int controllerIndex = findParameterIndex("Paramhandle");
+
+        applyOutfitParameters(SenOutfitPresets.WHITE_SHIRT, null);
+        setParameterByIndex(keyboardIndex, 0.0f);
+        setParameterByIndex(controllerIndex, 0.0f);
+        model.update();
+        float[] base = captureDrawableOpacities(candidates);
+
+        setParameterByIndex(keyboardIndex, 1.0f);
+        model.update();
+        float[] keyboard = captureDrawableOpacities(candidates);
+
+        setParameterByIndex(keyboardIndex, 0.0f);
+        setParameterByIndex(controllerIndex, 1.0f);
+        model.update();
+        float[] controller = captureDrawableOpacities(candidates);
+
+        restoreParameterValues(originalParameters);
+        model.update();
+
+        int used = 0;
+        for (int i = 0; i < base.length; i++) {
+            if (Math.max(base[i], Math.max(keyboard[i], controller[i])) > 0.001f) used++;
+        }
+        whiteShirtDrawables = new int[used];
+        whiteShirtBaseOpacities = new float[used];
+        whiteShirtKeyboardOpacities = new float[used];
+        whiteShirtControllerOpacities = new float[used];
+        int output = 0;
+        int input = 0;
+        for (int drawable : candidates) {
+            if (Math.max(base[input], Math.max(keyboard[input], controller[input])) > 0.001f) {
+                whiteShirtDrawables[output] = drawable;
+                whiteShirtBaseOpacities[output] = base[input];
+                whiteShirtKeyboardOpacities[output] = keyboard[input];
+                whiteShirtControllerOpacities[output] = controller[input];
+                output++;
+            }
+            input++;
+        }
+        appendAppearanceDetail("白衬衫网格自动采样 " + used + "/" + candidates.size());
     }
 
-    private int[] resolveDrawableIds(String[] ids) {
-        int[] result = new int[ids.length];
-        int count = 0;
-        for (String id : ids) {
-            int index = model.getDrawableIndex(CubismFramework.getIdManager().getId(id));
-            if (index >= 0) result[count++] = index;
+    private float[] captureDrawableOpacities(Set<Integer> drawables) {
+        float[] result = new float[drawables.size()];
+        int i = 0;
+        for (int drawable : drawables) {
+            result[i++] = clamp01(model.getDrawableOpacity(drawable));
         }
-        return Arrays.copyOf(result, count);
+        return result;
+    }
+
+    private void setParameterByIndex(int index, float value) {
+        if (index < 0) return;
+        model.getModel().getParameterViews()[index].setValue(value);
     }
 
     private void applyWhiteShirtDrawableCrossfade() {
@@ -850,14 +886,12 @@ final class SenLive2DModel extends CubismUserModel {
             sum = 1.0f;
         }
         float base = 1.0f - sum;
-        setDrawableOpacity(renderer, whiteShirtBaseDrawables, base);
-        setDrawableOpacity(renderer, whiteShirtKeyboardDrawables, keyboard);
-        setDrawableOpacity(renderer, whiteShirtControllerDrawables, controller);
-    }
-
-    private void setDrawableOpacity(CubismRendererAndroid renderer, int[] drawables,
-                                    float opacity) {
-        for (int drawable : drawables) renderer.setDrawableOpacityOverride(drawable, opacity);
+        for (int i = 0; i < whiteShirtDrawables.length; i++) {
+            float opacity = whiteShirtBaseOpacities[i] * base
+                    + whiteShirtKeyboardOpacities[i] * keyboard
+                    + whiteShirtControllerOpacities[i] * controller;
+            renderer.setDrawableOpacityOverride(whiteShirtDrawables[i], clamp01(opacity));
+        }
     }
 
     private float parameterValue(String id) {

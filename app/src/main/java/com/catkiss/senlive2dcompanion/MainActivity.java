@@ -1463,15 +1463,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             }
             expressionArea.addView(row);
         }
-        if (hasNativeIdlePreview()) {
-            Button preview = panelButton("原生特效循环预览\ndaiji");
-            preview.setContentDescription("daiji.motion3.json");
-            preview.setTextSize(10);
-            preview.setOnClickListener(v -> glSurfaceView.queueEvent(
-                    () -> renderer.playNativeMotion("daiji")));
-            expressionArea.addView(preview, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
-        }
     }
 
     @Override
@@ -1509,13 +1500,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             case KeyEvent.KEYCODE_SPACE: return "SPANCE"; // Original package filename.
             default: return null;
         }
-    }
-
-    private boolean hasNativeIdlePreview() {
-        String relative = prefs == null ? "" : prefs.getString("model_path", "");
-        File modelFile = new File(modelRoot, relative);
-        File parent = modelFile.getParentFile();
-        return parent != null && new File(parent, "daiji.motion3.json").isFile();
     }
 
     private void updateSummary() {
