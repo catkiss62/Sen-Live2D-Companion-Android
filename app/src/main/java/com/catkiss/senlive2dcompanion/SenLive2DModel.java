@@ -41,6 +41,8 @@ final class SenLive2DModel extends CubismUserModel {
     };
     private static final float EAR_HIDDEN_EYE_DRIVE = -1.05f;
     private static final float EAR_HIDDEN_NINE_AXIS_DRIVE = -6.0f;
+    // Cubism order: expression 300 -> outfit guard 301 -> physics 600 -> pose 800.
+    private static final int OUTFIT_GUARD_UPDATE_ORDER = 301;
     private static final String[] ARM_PHYSICS_OUTPUT_IDS = {
             "ParamBodyShoulder", "ParamBodyShoulder2", "ParamBodyShoulder3",
             "ParamBodyShoulder4", "larmrotate", "larmrotate2", "larmrotate3",
@@ -113,6 +115,7 @@ final class SenLive2DModel extends CubismUserModel {
         // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
         // native physics are loaded in both modes so body motion, ears and tail can stay alive.
         loadExpressions(listener);
+        registerOutfitGuard();
         loadPhysicsAndPose(listener);
 
         Map<String, Float> layout = new HashMap<>();
@@ -445,6 +448,20 @@ final class SenLive2DModel extends CubismUserModel {
             listener.onStatus("原生渲染：正在读取表情 " + (i + 1) + "/" + count + "…");
         }
         updateScheduler.addUpdatableList(new CubismExpressionUpdater(expressionManager));
+    }
+
+    private void registerOutfitGuard() {
+        if (!hasVtsBaseProfile) return;
+        updateScheduler.addUpdatableList(new ACubismUpdater(OUTFIT_GUARD_UPDATE_ORDER) {
+            @Override public void onLateUpdate(
+                    com.live2d.sdk.cubism.framework.model.CubismModel ignored,
+                    float deltaTimeSeconds) {
+                // Some purchased ZIP expressions contain clothing selectors. Expressions still
+                // control face/body/props, but the explicitly selected built-in outfit must win
+                // before physics and pose consume this frame, preventing a one-frame shirt loss.
+                applyOutfitParameters(outfitPreset, null);
+            }
+        });
     }
 
     private void loadPhysicsAndPose(SenRenderer.Listener listener) throws IOException {

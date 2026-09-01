@@ -54,9 +54,15 @@ final class SenPerformanceEngine {
             "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
             "head_pat", "head_pat_confused"));
 
-    // Keep every program motion manually testable until the owner has reviewed and removed
-    // buttons one by one. Autonomous-idle membership must never implicitly hide an action.
-    static final List<String> MANUAL_TEST_ACTIONS = ACTIONS;
+    // These seven routes have been confirmed as autonomous-idle responsibilities, so they stay
+    // in ACTIONS/MOTIONS but no longer occupy manual test buttons:
+    // 环顾 look_around、待机歪头 head_tilt_idle、叹气下沉 sigh_sink；
+    // 柔风摆动 wind_sway_soft（持续底层）；明显风摆 wind_sway_medium、
+    // 展示级大摆 wind_sway_showcase、视频式环绕 showcase_orbit（低频展示池）。
+    private static final List<String> AUTO_IDLE_ONLY_ACTIONS = Arrays.asList(
+            "look_around", "head_tilt_idle", "sigh_sink", "wind_sway_soft",
+            "wind_sway_medium", "wind_sway_showcase", "showcase_orbit");
+    static final List<String> MANUAL_TEST_ACTIONS = createManualTestActions();
 
     private static final Map<String, Motion> MOTIONS = createMotions();
 
@@ -64,8 +70,10 @@ final class SenPerformanceEngine {
         validateMotionLibrary();
     }
 
-    // Only routes actually assigned to autonomous idle lose their manual test button. Other
-    // program actions remain user-testable. Duplicate entries are intentional weights.
+    // 常规自主待机池：环顾、待机歪头和叹气下沉保留在这里；重复项是随机权重。
+    // 柔风摆动不在本池抽取，因为 update() 会在自主待机期间持续叠加它。
+    // 明显风摆 / 视频式环绕 / 展示级大摆由 update() 的低频展示池按
+    // 55% / 31% / 14% 抽取，首次28～60秒，随后48～100秒。
     private static final List<String> ROUTINE_IDLE_ACTIONS = Arrays.asList(
             "head_tilt_idle", "head_tilt_idle", "side_look", "weight_shift",
             "gentle_lean", "slow_blink", "look_around", "look_around",
@@ -744,12 +752,24 @@ final class SenPerformanceEngine {
         return new Motion(duration, tracks);
     }
 
+    private static List<String> createManualTestActions() {
+        List<String> result = new ArrayList<>();
+        for (String action : ACTIONS) {
+            if (!AUTO_IDLE_ONLY_ACTIONS.contains(action)) result.add(action);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
     private static void validateMotionLibrary() {
         if (!MOTIONS.keySet().equals(new LinkedHashSet<>(ACTIONS))) {
             throw new IllegalStateException("Program action list and motion library differ");
         }
         if (!ACTIONS.containsAll(MANUAL_TEST_ACTIONS)) {
             throw new IllegalStateException("Manual test action is missing from motion library");
+        }
+        if (!ACTIONS.containsAll(AUTO_IDLE_ONLY_ACTIONS)
+                || MANUAL_TEST_ACTIONS.size() + AUTO_IDLE_ONLY_ACTIONS.size() != ACTIONS.size()) {
+            throw new IllegalStateException("Autonomous-idle/manual action partition is invalid");
         }
         for (Map.Entry<String, Motion> entry : MOTIONS.entrySet()) {
             Motion motion = entry.getValue();
