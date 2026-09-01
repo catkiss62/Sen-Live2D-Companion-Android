@@ -40,8 +40,8 @@ jobs:
 
       - name: Apply Sen low-memory texture filter patch
         run: |
-          git -C Framework apply --check ../patches/cubism-java-no-mipmap.patch
-          git -C Framework apply ../patches/cubism-java-no-mipmap.patch
+          git -C Framework apply --unidiff-zero --check ../patches/cubism-java-no-mipmap.patch
+          git -C Framework apply --unidiff-zero ../patches/cubism-java-no-mipmap.patch
 
       - name: Build debug APK
         id: android_build

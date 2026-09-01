@@ -10,7 +10,8 @@ import com.live2d.sdk.cubism.framework.model.CubismUserModel;
 import com.live2d.sdk.cubism.framework.motion.ACubismMotion;
 import com.live2d.sdk.cubism.framework.motion.ACubismUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotion;
-import com.live2d.sdk.cubism.framework.motion.CubismExpressionUpdater;
+import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotionManager;
+import com.live2d.sdk.cubism.framework.motion.CubismMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismMotionQueueEntry;
 import com.live2d.sdk.cubism.framework.motion.CubismPoseUpdater;
 import com.live2d.sdk.cubism.framework.physics.CubismPhysics;
@@ -36,6 +37,15 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
+    private static final String[] WHITE_SHIRT_BASE_DRAWABLE_IDS = {
+            "ArtMesh1321", "ArtMesh1322", "ArtMesh1323", "ArtMesh1521", "ArtMesh1522"
+    };
+    private static final String[] WHITE_SHIRT_KEYBOARD_DRAWABLE_IDS = {
+            "ArtMesh1391", "ArtMesh1397", "ArtMesh1405", "ArtMesh1557", "ArtMesh1559"
+    };
+    private static final String[] WHITE_SHIRT_CONTROLLER_DRAWABLE_IDS = {
+            "ArtMesh1423", "ArtMesh1424", "ArtMesh1425", "ArtMesh1586", "ArtMesh1587"
+    };
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
@@ -49,6 +59,9 @@ final class SenLive2DModel extends CubismUserModel {
             "rarmrotate5", "larmrotate17", "larmrotate18"
     };
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
+    private final Map<String, CubismMotion> nativeMotions = new HashMap<>();
+    private final CubismExpressionMotionManager transientExpressionManager =
+            new CubismExpressionMotionManager();
     private final SenPerformanceEngine performance = new SenPerformanceEngine();
     private ICubismModelSetting setting;
     private File homeDirectory;
@@ -73,6 +86,15 @@ final class SenLive2DModel extends CubismUserModel {
     private float referenceDrawableRight = 1.0f;
     private float referenceDrawableTop = 1.0f;
     private float referenceDrawableBottom = -1.0f;
+    private int[] whiteShirtBaseDrawables = new int[0];
+    private int[] whiteShirtKeyboardDrawables = new int[0];
+    private int[] whiteShirtControllerDrawables = new int[0];
+    private String transientExpressionName = "";
+    private float transientExpressionRemaining;
+    private float transientExpressionDuration = 1.0f;
+    private float transientExpressionFadeOut = 0.05f;
+    private String activeExpressionName = "";
+    private String activeNativeMotion = "";
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -110,9 +132,11 @@ final class SenLive2DModel extends CubismUserModel {
         outfitPreset = requestedOutfit == null ? SenOutfitPresets.MAID : requestedOutfit;
         renderOptions = requestedOptions == null ? renderOptions : requestedOptions;
         performance.setAutoIdle(renderOptions.autoIdleEnabled);
+        SenVtsHotkeySettings vtsHotkeys = SenVtsHotkeySettings.load(homeDirectory);
         // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
         // native physics are loaded in both modes so body motion, ears and tail can stay alive.
-        loadExpressions(listener);
+        loadExpressions(listener, vtsHotkeys);
+        loadNativeMotions(listener, vtsHotkeys);
         loadPhysicsAndPose(listener);
 
         Map<String, Float> layout = new HashMap<>();
@@ -132,6 +156,7 @@ final class SenLive2DModel extends CubismUserModel {
         updateScheduler.sortUpdatableList();
         model.update();
         captureReferenceDrawableBounds();
+        resolveWhiteShirtDrawables();
         restoreAhogeAnchors(renderOptions.ahogeAnchorJson);
         applyRuntimeGeometry();
         appendAppearanceDetail("动态底座：VTS→情绪/动作→原生物理→运行时几何");
@@ -165,6 +190,13 @@ final class SenLive2DModel extends CubismUserModel {
         pendingEarPhysicsDrive = performance.getEarPhysicsDrive();
         pendingEarPhysicsMix = performance.getEarPhysicsMix();
         pendingEarPhysicsActive = performance.isEarPhysicsActive();
+        if (transientExpressionRemaining > 0.0f) {
+            transientExpressionRemaining = Math.max(0.0f,
+                    transientExpressionRemaining - deltaSeconds);
+            if (transientExpressionRemaining == 0.0f) {
+                fadeOutManager(transientExpressionManager, transientExpressionFadeOut);
+            }
+        }
         updateScheduler.onLateUpdate(model, deltaSeconds);
         model.update();
         applyRuntimeGeometry();
@@ -354,8 +386,43 @@ final class SenLive2DModel extends CubismUserModel {
     float getReferenceDrawableBottom() { return referenceDrawableBottom; }
 
     void setExpression(String name) {
+        if (name != null && name.equals(transientExpressionName)) {
+            ACubismMotion transientMotion = expressions.get(name);
+            if (transientMotion != null) {
+                transientExpressionManager.startMotionPriority(transientMotion, 3);
+                transientExpressionRemaining = transientExpressionDuration;
+            }
+            return;
+        }
         ACubismMotion motion = expressions.get(name);
-        if (motion != null) expressionManager.startMotionPriority(motion, 3);
+        if (motion == null) return;
+        if (name.equals(activeExpressionName)) {
+            fadeOutManager(expressionManager, motion.getFadeOutTime());
+            activeExpressionName = "";
+            return;
+        }
+        expressionManager.startMotionPriority(motion, 3);
+        activeExpressionName = name;
+    }
+
+    void playNativeMotion(String name) {
+        CubismMotion motion = nativeMotions.get(name);
+        if (motion == null) return;
+        if ("daiji".equals(name) && name.equals(activeNativeMotion)) {
+            stopNativeMotion();
+            return;
+        }
+        motionManager.startMotionPriority(motion, 3);
+        activeNativeMotion = name;
+    }
+
+    void stopNativeMotion() {
+        for (CubismMotionQueueEntry entry : motionManager.getCubismMotionQueueEntries()) {
+            if (entry != null && !entry.isFinished()) {
+                entry.setFadeOut(entry.getMotion().getFadeOutTime());
+            }
+        }
+        activeNativeMotion = "";
     }
 
     void selectEmotion(String name) {
@@ -363,6 +430,7 @@ final class SenLive2DModel extends CubismUserModel {
         for (CubismMotionQueueEntry entry : expressionManager.getCubismMotionQueueEntries()) {
             if (entry != null && !entry.isFinished()) entry.setFadeOut(.42f);
         }
+        activeExpressionName = "";
         performance.selectEmotion(name);
     }
 
@@ -433,18 +501,80 @@ final class SenLive2DModel extends CubismUserModel {
         return appearanceDetail;
     }
 
-    private void loadExpressions(SenRenderer.Listener listener) throws IOException {
+    private void loadExpressions(SenRenderer.Listener listener,
+                                 SenVtsHotkeySettings hotkeys) throws IOException {
         int count = setting.getExpressionCount();
         if (count <= 0) return;
         listener.onStatus("原生渲染：正在读取表情 0/" + count + "…");
         for (int i = 0; i < count; i++) {
             String name = setting.getExpressionName(i);
+            String fileName = setting.getExpressionFileName(i);
             CubismExpressionMotion motion = loadExpression(
-                    NativeFileLoader.readFile(child(setting.getExpressionFileName(i))));
-            if (motion != null) expressions.put(name, motion);
+                    NativeFileLoader.readFile(child(fileName)));
+            if (motion != null) {
+                SenVtsHotkeySettings.Rule rule = hotkeys.forFile(fileName);
+                if (rule != null && rule.fadeSeconds >= 0.0f) {
+                    motion.setFadeInTime(rule.fadeSeconds);
+                    motion.setFadeOutTime(rule.fadeSeconds);
+                }
+                expressions.put(name, motion);
+                if (rule != null && rule.deactivateAfterSeconds) {
+                    transientExpressionName = name;
+                    transientExpressionDuration = Math.max(0.01f,
+                            rule.deactivateAfterSecondsAmount);
+                    transientExpressionFadeOut = Math.max(0.0f, rule.fadeSeconds);
+                }
+            }
             listener.onStatus("原生渲染：正在读取表情 " + (i + 1) + "/" + count + "…");
         }
-        updateScheduler.addUpdatableList(new CubismExpressionUpdater(expressionManager));
+        updateScheduler.addUpdatableList(new ACubismUpdater(300) {
+            @Override public void onLateUpdate(
+                    com.live2d.sdk.cubism.framework.model.CubismModel target,
+                    float deltaTimeSeconds) {
+                expressionManager.updateMotion(target, deltaTimeSeconds);
+            }
+        });
+        updateScheduler.addUpdatableList(new ACubismUpdater(310) {
+            @Override public void onLateUpdate(
+                    com.live2d.sdk.cubism.framework.model.CubismModel target,
+                    float deltaTimeSeconds) {
+                transientExpressionManager.updateMotion(target, deltaTimeSeconds);
+            }
+        });
+    }
+
+    private void loadNativeMotions(SenRenderer.Listener listener,
+                                   SenVtsHotkeySettings hotkeys) throws IOException {
+        List<File> files = new ArrayList<>();
+        collectFiles(homeDirectory, ".motion3.json", files);
+        int loaded = 0;
+        for (File file : files) {
+            String baseName = file.getName();
+            boolean keyboard = file.getParentFile() != null
+                    && "keyboard".equalsIgnoreCase(file.getParentFile().getName());
+            boolean preview = "daiji.motion3.json".equalsIgnoreCase(baseName);
+            if (!keyboard && !preview) continue;
+            CubismMotion motion = loadMotion(NativeFileLoader.readFile(file));
+            if (motion == null) continue;
+            SenVtsHotkeySettings.Rule rule = hotkeys.forFile(baseName);
+            if (rule != null && rule.fadeSeconds >= 0.0f) {
+                motion.setFadeInTime(rule.fadeSeconds);
+                motion.setFadeOutTime(rule.fadeSeconds);
+            }
+            String key = preview ? "daiji"
+                    : "keyboard/" + baseName.replaceFirst("(?i)\\.motion3\\.json$", "");
+            nativeMotions.put(key, motion);
+            loaded++;
+        }
+        if (loaded == 0) return;
+        listener.onStatus("原生渲染：已读取原包动作 " + loaded + " 个…");
+        updateScheduler.addUpdatableList(new ACubismUpdater(250) {
+            @Override public void onLateUpdate(
+                    com.live2d.sdk.cubism.framework.model.CubismModel target,
+                    float deltaTimeSeconds) {
+                motionManager.updateMotion(target, deltaTimeSeconds);
+            }
+        });
     }
 
     private void loadPhysicsAndPose(SenRenderer.Listener listener) throws IOException {
@@ -683,6 +813,80 @@ final class SenLive2DModel extends CubismUserModel {
             applyAnchoredAhogeTransform(ahogeDrawables);
         }
         applyTailMirror(tailDrawables);
+        applyWhiteShirtDrawableCrossfade();
+    }
+
+    private void resolveWhiteShirtDrawables() {
+        whiteShirtBaseDrawables = resolveDrawableIds(WHITE_SHIRT_BASE_DRAWABLE_IDS);
+        whiteShirtKeyboardDrawables = resolveDrawableIds(WHITE_SHIRT_KEYBOARD_DRAWABLE_IDS);
+        whiteShirtControllerDrawables = resolveDrawableIds(WHITE_SHIRT_CONTROLLER_DRAWABLE_IDS);
+        appendAppearanceDetail("白衬衫网格衔接 " + whiteShirtBaseDrawables.length + "/"
+                + whiteShirtKeyboardDrawables.length + "/"
+                + whiteShirtControllerDrawables.length);
+    }
+
+    private int[] resolveDrawableIds(String[] ids) {
+        int[] result = new int[ids.length];
+        int count = 0;
+        for (String id : ids) {
+            int index = model.getDrawableIndex(CubismFramework.getIdManager().getId(id));
+            if (index >= 0) result[count++] = index;
+        }
+        return Arrays.copyOf(result, count);
+    }
+
+    private void applyWhiteShirtDrawableCrossfade() {
+        CubismRendererAndroid renderer = getRenderer();
+        if (renderer == null) return;
+        renderer.clearDrawableOpacityOverrides();
+        if (outfitPreset != SenOutfitPresets.WHITE_SHIRT) return;
+
+        float keyboard = clamp01(parameterValue("ParamKeyboardmouse"));
+        float controller = clamp01(parameterValue("Paramhandle"));
+        float sum = keyboard + controller;
+        if (sum > 1.0f) {
+            keyboard /= sum;
+            controller /= sum;
+            sum = 1.0f;
+        }
+        float base = 1.0f - sum;
+        setDrawableOpacity(renderer, whiteShirtBaseDrawables, base);
+        setDrawableOpacity(renderer, whiteShirtKeyboardDrawables, keyboard);
+        setDrawableOpacity(renderer, whiteShirtControllerDrawables, controller);
+    }
+
+    private void setDrawableOpacity(CubismRendererAndroid renderer, int[] drawables,
+                                    float opacity) {
+        for (int drawable : drawables) renderer.setDrawableOpacityOverride(drawable, opacity);
+    }
+
+    private float parameterValue(String id) {
+        int index = findParameterIndex(id);
+        return index < 0 ? 0.0f : model.getParameterValue(index);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0.0f, Math.min(1.0f, value));
+    }
+
+    private static void fadeOutManager(
+            com.live2d.sdk.cubism.framework.motion.CubismMotionQueueManager manager,
+            float seconds) {
+        for (CubismMotionQueueEntry entry : manager.getCubismMotionQueueEntries()) {
+            if (entry != null && !entry.isFinished()) entry.setFadeOut(seconds);
+        }
+    }
+
+    private static void collectFiles(File directory, String suffix, List<File> destination) {
+        File[] children = directory == null ? null : directory.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isDirectory()) collectFiles(child, suffix, destination);
+            else if (child.getName().toLowerCase(java.util.Locale.ROOT)
+                    .endsWith(suffix.toLowerCase(java.util.Locale.ROOT))) {
+                destination.add(child);
+            }
+        }
     }
 
     private void restoreAhogeAnchors(String json) {

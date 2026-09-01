@@ -106,6 +106,14 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         if (model != null) model.playAction(name);
     }
 
+    void playNativeMotion(String name) {
+        if (model != null) model.playNativeMotion(name);
+    }
+
+    void stopNativeMotion() {
+        if (model != null) model.stopNativeMotion();
+    }
+
     void triggerEarTwitch() {
         if (model != null) model.triggerEarTwitch();
     }

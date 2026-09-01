@@ -8,6 +8,7 @@ import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
@@ -335,7 +336,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.3 · ZIP原生预设清理测试版");
+        statusText.setText("v0.5.4 · 原包预设与动作对齐测试版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -1462,6 +1463,59 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             }
             expressionArea.addView(row);
         }
+        if (hasNativeIdlePreview()) {
+            Button preview = panelButton("原生特效循环预览\ndaiji");
+            preview.setContentDescription("daiji.motion3.json");
+            preview.setTextSize(10);
+            preview.setOnClickListener(v -> glSurfaceView.queueEvent(
+                    () -> renderer.playNativeMotion("daiji")));
+            expressionArea.addView(preview, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        String nativeKey = nativeKeyboardMotionName(event.getKeyCode());
+        if (nativeKey != null && glSurfaceView != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                glSurfaceView.queueEvent(() -> renderer.playNativeMotion(
+                        "keyboard/" + nativeKey));
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                glSurfaceView.queueEvent(renderer::stopNativeMotion);
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private static String nativeKeyboardMotionName(int keyCode) {
+        if (keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z) {
+            return Character.toString((char) ('A' + keyCode - KeyEvent.KEYCODE_A));
+        }
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_ALT_LEFT:
+            case KeyEvent.KEYCODE_ALT_RIGHT: return "ALT";
+            case KeyEvent.KEYCODE_CTRL_LEFT:
+            case KeyEvent.KEYCODE_CTRL_RIGHT: return "CTRL";
+            case KeyEvent.KEYCODE_SHIFT_LEFT:
+            case KeyEvent.KEYCODE_SHIFT_RIGHT: return "SHIFT";
+            case KeyEvent.KEYCODE_META_LEFT:
+            case KeyEvent.KEYCODE_META_RIGHT: return "WIN";
+            case KeyEvent.KEYCODE_DPAD_LEFT: return "LEFT";
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return "RIGHT";
+            case KeyEvent.KEYCODE_DPAD_UP: return "UP";
+            case KeyEvent.KEYCODE_DPAD_DOWN: return "DOWN";
+            case KeyEvent.KEYCODE_ENTER: return "ENTER";
+            case KeyEvent.KEYCODE_SPACE: return "SPANCE"; // Original package filename.
+            default: return null;
+        }
+    }
+
+    private boolean hasNativeIdlePreview() {
+        String relative = prefs == null ? "" : prefs.getString("model_path", "");
+        File modelFile = new File(modelRoot, relative);
+        File parent = modelFile.getParentFile();
+        return parent != null && new File(parent, "daiji.motion3.json").isFile();
     }
 
     private void updateSummary() {
@@ -1575,7 +1629,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         runOnUiThread(() -> {
             try {
                 JSONObject result = new JSONObject(modelJson == null ? "{}" : modelJson);
-                result.put("appVersion", "0.5.1-idle-expression-outfit-guard");
+                result.put("appVersion", "0.5.4-native-preset-parity");
                 result.put("capturedAtUnixMs", System.currentTimeMillis());
                 result.put("stageTransformDiagnosticOnly", new JSONObject()
                         .put("scale", stageScale)
