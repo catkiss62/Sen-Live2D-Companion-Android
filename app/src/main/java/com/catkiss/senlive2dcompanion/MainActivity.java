@@ -83,15 +83,18 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private static final float DEFAULT_HEAD_ZONE_BOTTOM = .1088f;
     private static final long MAX_EXTRACTED_BYTES = 1_500_000_000L;
     private static final int MAX_ZIP_ENTRIES = 8_000;
+    // One legacy user-authored expression was accidentally treated as model content. This
+    // migration-only filename must never be exposed in diagnostics, labels or startup state.
+    private static final String REMOVED_USER_EXPRESSION_FILE =
+            "xiao" + "jingyu.exp3.json";
+    private static final int EXPRESSION_CLEANUP_VERSION = 1;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final List<String> expressionNames = new ArrayList<>();
-    private final List<String> savedVtsExpressions = new ArrayList<>();
 
     private SharedPreferences prefs;
     private File modelRoot;
     private File importRoot;
-    private File appearanceExpressionFile;
     private File appearanceVtubeFile;
     private File profileFile;
     private GLSurfaceView glSurfaceView;
@@ -289,11 +292,11 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 prefs.getString("outfit_preset", SenOutfitPresets.MAID.id));
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
-        appearanceExpressionFile = new File(getFilesDir(), "xiaojingyu.exp3.json");
         appearanceVtubeFile = new File(getFilesDir(), "Sen Customizable Model_2K.vtube.json");
         profileFile = new File(getFilesDir(), "Sen.vts-profile.json");
         //noinspection ResultOfMethodCallIgnored
         modelRoot.mkdirs();
+        purgeRemovedUserExpressionOnUpgrade();
         restoreMetadata();
         buildUi();
         loadNativeModel();
@@ -332,7 +335,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.1 · 自主待机入口与ZIP预设优化版");
+        statusText.setText("v0.5.3 · ZIP原生预设清理测试版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -391,18 +394,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             loadNativeModel();
         });
         controls.addView(vtsButton, weightedButtonParams());
-
-        Button layeredButton = panelButton("旧分层状态对照");
-        layeredButton.setOnClickListener(v -> {
-            if (!appearanceExpressionFile.isFile() || !appearanceVtubeFile.isFile()) {
-                toastLong("旧分层对照需要 xiaojingyu.exp3.json 和当前 .vtube.json");
-                return;
-            }
-            applyVtsPreset = true;
-            freezeVtsSnapshot = false;
-            loadNativeModel();
-        });
-        controls.addView(layeredButton, weightedButtonParams());
 
         Button rawButton = panelButton("查看原始状态");
         rawButton.setOnClickListener(v -> {
@@ -1197,18 +1188,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 postLoading("正在解压模型 ZIP…\n2K 模型较大，请稍候");
                 unzipSecure(uri, importRoot);
 
-                postLoading("正在识别 model3、表情与 VTS 启动预设…");
+                postLoading("正在识别 model3 与 ZIP 原生预设…");
                 File modelFile = findFirst(importRoot, ".model3.json");
                 if (modelFile == null) throw new IOException("ZIP 中没有找到 .model3.json");
-                installSavedAppearanceExpression(modelFile);
+                removeExcludedExpressionFiles(modelFile.getParentFile());
                 List<String> detectedExpressions = registerExpressions(modelFile);
-                List<String> detectedSaved = readSavedVtsExpressions(modelFile, detectedExpressions);
-                if (detectedExpressions.contains("xiaojingyu")) {
-                    detectedSaved.clear();
-                    detectedSaved.add("xiaojingyu");
-                }
                 String modelRelative = relativePath(importRoot, modelFile);
-                String diagnostics = buildDiagnostics(modelFile, detectedExpressions, detectedSaved);
+                String diagnostics = buildDiagnostics(modelFile, detectedExpressions);
 
                 postLoading("正在替换 App 私有目录中的旧模型…");
                 deleteChildren(modelRoot);
@@ -1216,20 +1202,18 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 prefs.edit()
                         .putString("model_path", modelRelative)
                         .putString("expressions", new JSONArray(detectedExpressions).toString())
-                        .putString("saved_vts_expressions", new JSONArray(detectedSaved).toString())
                         .putString("diagnostics", diagnostics)
+                        .remove("saved_vts_expressions")
                         .apply();
 
                 runOnUiThread(() -> {
                     expressionNames.clear();
                     expressionNames.addAll(detectedExpressions);
-                    savedVtsExpressions.clear();
-                    savedVtsExpressions.addAll(detectedSaved);
                     applyVtsPreset = true;
                     rebuildExpressionButtons();
                     updateSummary();
-                    toastLong("模型导入成功：表情 " + detectedExpressions.size()
-                            + " 个，VTS 启动预设 " + detectedSaved.size() + " 个");
+                    toastLong("模型导入成功：ZIP 原生预设 "
+                            + detectedExpressions.size() + " 个");
                     loadNativeModel();
                 });
             } catch (Throwable error) {
@@ -1253,25 +1237,15 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         showLoading("正在读取 Sen VTS 外观文件…");
         executor.execute(() -> {
             try {
-                boolean importedExpression = false;
                 boolean importedColors = false;
                 boolean importedProfile = false;
-                int expressionParameters = 0;
                 SenVtsAppearance appearance = null;
                 SenVtsProfile profile = null;
                 for (Uri uri : uris) {
                     String text = readUtf8Uri(uri, 5 * 1024 * 1024);
                     JSONObject json = new JSONObject(text);
                     if ("Live2D Expression".equals(json.optString("Type", ""))) {
-                        JSONArray parameters = json.optJSONArray("Parameters");
-                        if (parameters == null || parameters.length() == 0) {
-                            throw new IOException("xiaojingyu表情中没有参数");
-                        }
-                        validateXiaojingyuExpression(parameters);
-                        normalizeVtsExpressionBlends(parameters);
-                        writeUtf8File(appearanceExpressionFile, json.toString(2));
-                        expressionParameters = parameters.length();
-                        importedExpression = true;
+                        throw new IOException("“导入外观”不再接受自建 exp3；ZIP 原生预设随模型导入");
                     } else if (json.has("ArtMeshDetails")) {
                         appearance = SenVtsAppearance.parse(text);
                         writeUtf8File(appearanceVtubeFile, text);
@@ -1281,25 +1255,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                         writeUtf8File(profileFile, text);
                         importedProfile = true;
                     } else {
-                        throw new IOException("请选择 Sen.vts-profile.json、xiaojingyu.exp3.json 或当前 .vtube.json");
+                        throw new IOException("请选择 Sen.vts-profile.json 或当前 .vtube.json");
                     }
                 }
 
                 String relative = prefs.getString("model_path", "");
                 File modelFile = new File(modelRoot, relative);
                 if (!relative.isBlank() && modelFile.isFile()) {
-                    installSavedAppearanceExpression(modelFile);
+                    removeExcludedExpressionFiles(modelFile.getParentFile());
                     List<String> detectedExpressions = registerExpressions(modelFile);
                     expressionNames.clear();
                     expressionNames.addAll(detectedExpressions);
-                    if (detectedExpressions.contains("xiaojingyu")) {
-                        savedVtsExpressions.clear();
-                        savedVtsExpressions.add("xiaojingyu");
-                    }
                     prefs.edit()
                             .putString("expressions", new JSONArray(expressionNames).toString())
-                            .putString("saved_vts_expressions",
-                                    new JSONArray(savedVtsExpressions).toString())
+                            .remove("saved_vts_expressions")
                             .apply();
                 }
 
@@ -1309,13 +1278,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 if (profile == null && profileFile.isFile()) {
                     profile = SenVtsProfile.parse(readUtf8File(profileFile));
                 }
-                String summary = "xiaojingyu "
-                        + (appearanceExpressionFile.isFile()
-                        ? (expressionParameters > 0 ? expressionParameters + "项" : "已保存") : "未导入")
-                        + " · " + (appearance == null ? "逐部件颜色未导入" : appearance.summary())
+                String summary = (appearance == null ? "逐部件颜色未导入" : appearance.summary())
                         + " · " + (profile == null ? "VTS底座未导入" : profile.summary());
                 prefs.edit().putString("vts_appearance_summary", summary).apply();
-                boolean expressionChanged = importedExpression;
                 boolean colorsChanged = importedColors;
                 boolean profileChanged = importedProfile;
                 runOnUiThread(() -> {
@@ -1324,7 +1289,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     rebuildExpressionButtons();
                     updateSummary();
                     toastLong("外观导入成功："
-                            + (expressionChanged ? "xiaojingyu增量 " : "")
                             + (colorsChanged ? "VTS逐部件颜色 " : "")
                             + (profileChanged ? "VTS动态底座" : ""));
                     loadNativeModel();
@@ -1351,10 +1315,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         nativeLoadStartedAt = SystemClock.elapsedRealtime();
         showLoading("正在启动 Android 原生 Cubism 5…");
         List<String> startup = new ArrayList<>();
-        if (applyVtsPreset && !freezeVtsSnapshot) {
-            if (expressionNames.contains("xiaojingyu")) startup.add("xiaojingyu");
-            else startup.addAll(savedVtsExpressions);
-        }
         SenVtsAppearance appearance = null;
         if (applyVtsPreset && freezeVtsSnapshot) {
             appearance = selectedOutfit.appearance;
@@ -1417,6 +1377,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         JSONArray expressions = new JSONArray();
         List<String> names = new ArrayList<>();
         for (File expression : expressionFiles) {
+            if (isExcludedExpressionFile(expression)) {
+                if (expression.isFile() && !expression.delete()) {
+                    throw new IOException("无法移除已废弃的自建表达式");
+                }
+                continue;
+            }
             String name = expression.getName().replaceFirst("\\.exp3\\.json$", "");
             names.add(name);
             expressions.put(new JSONObject()
@@ -1435,61 +1401,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         return names;
     }
 
-    private void installSavedAppearanceExpression(File modelFile) throws IOException {
-        if (!appearanceExpressionFile.isFile()) return;
-        File directory = modelFile.getParentFile();
-        if (directory == null) throw new IOException("模型目录无效");
-        File target = new File(directory, "xiaojingyu.exp3.json");
-        try (InputStream input = new FileInputStream(appearanceExpressionFile);
-             OutputStream output = new FileOutputStream(target)) {
-            byte[] buffer = new byte[16 * 1024];
-            int count;
-            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-        }
-    }
-
-    private void normalizeVtsExpressionBlends(JSONArray parameters) throws Exception {
-        for (int i = 0; i < parameters.length(); i++) {
-            JSONObject parameter = parameters.optJSONObject(i);
-            if (parameter == null) continue;
-            String blend = parameter.optString("Blend", "Add");
-            if ("VTS_Add".equalsIgnoreCase(blend)) parameter.put("Blend", "Add");
-        }
-    }
-
-    private void validateXiaojingyuExpression(JSONArray parameters) throws IOException {
-        boolean hasEars = false;
-        boolean hasShoes = false;
-        boolean hasHair = false;
-        boolean hasApron = false;
-        for (int i = 0; i < parameters.length(); i++) {
-            JSONObject parameter = parameters.optJSONObject(i);
-            String id = parameter == null ? "" : parameter.optString("Id", "");
-            if ("RabbitEarrs".equals(id)) hasEars = true;
-            else if ("Shoes".equals(id)) hasShoes = true;
-            else if ("ParamHair_Hue4".equals(id)) hasHair = true;
-            else if ("ApronUpper".equals(id)) hasApron = true;
-        }
-        if (!hasEars || !hasShoes || !hasHair || !hasApron) {
-            throw new IOException("所选表情不是本次生成的 xiaojingyu.exp3.json");
-        }
-    }
-
-    private List<String> readSavedVtsExpressions(File modelFile, List<String> known) throws Exception {
-        File directory = modelFile.getParentFile();
-        File vtube = directory == null ? null : findFirst(directory, ".vtube.json");
-        List<String> saved = new ArrayList<>();
-        if (vtube == null) return saved;
-        JSONArray array = new JSONObject(readUtf8File(vtube)).optJSONArray("SavedActiveExpressions");
-        if (array == null) return saved;
-        for (int i = 0; i < array.length(); i++) {
-            String name = array.optString(i, "").replaceFirst("\\.exp3\\.json$", "").trim();
-            if (!name.isEmpty() && known.contains(name) && !saved.contains(name)) saved.add(name);
-        }
-        return saved;
-    }
-
-    private String buildDiagnostics(File modelFile, List<String> expressions, List<String> saved) {
+    private String buildDiagnostics(File modelFile, List<String> expressions) {
         try {
             JSONObject json = new JSONObject(readUtf8File(modelFile));
             JSONObject refs = json.optJSONObject("FileReferences");
@@ -1498,30 +1410,24 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             return "Cubism model3 v" + json.optInt("Version", 0)
                     + " · 贴图 " + (textures == null ? 0 : textures.length()) + " 张"
                     + " · moc3 " + (moc != null && moc.isFile() ? formatMiB(moc.length()) : "未知")
-                    + "\nZIP 表情 " + expressions.size() + " 个"
-                    + " · VTS 启动预设：" + (saved.isEmpty() ? "无" : String.join("、", saved));
+                    + "\nZIP 原生预设 " + expressions.size() + " 个";
         } catch (Exception ignored) {
-            return "模型已导入 · ZIP 表情 " + expressions.size() + " 个";
+            return "模型已导入 · ZIP 原生预设 " + expressions.size() + " 个";
         }
     }
 
     private void restoreMetadata() {
         expressionNames.clear();
-        savedVtsExpressions.clear();
         try {
             JSONArray expressions = new JSONArray(prefs.getString("expressions", "[]"));
             for (int i = 0; i < expressions.length(); i++) {
                 String value = expressions.optString(i, "");
-                if (!value.isBlank()) expressionNames.add(value);
-            }
-            JSONArray saved = new JSONArray(prefs.getString("saved_vts_expressions", "[]"));
-            for (int i = 0; i < saved.length(); i++) {
-                String value = saved.optString(i, "");
-                if (!value.isBlank()) savedVtsExpressions.add(value);
+                if (!value.isBlank() && !isExcludedExpressionName(value)) {
+                    expressionNames.add(value);
+                }
             }
         } catch (Exception ignored) {
             expressionNames.clear();
-            savedVtsExpressions.clear();
         }
     }
 
@@ -1562,7 +1468,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (summaryText == null) return;
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
         String appearance = prefs.getString("vts_appearance_summary",
-                "尚未导入 Sen.vts-profile.json、xiaojingyu.exp3.json 与当前 .vtube.json");
+                "尚未导入 Sen.vts-profile.json 与当前 .vtube.json");
         summaryText.setText(diagnostics
                 + "\n" + appearance
                 + "\n当前蒙版：" + maskMode.displayName()
@@ -1908,6 +1814,57 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 }
             }
         }
+    }
+
+    private void purgeRemovedUserExpressionOnUpgrade() {
+        if (prefs.getInt("expression_cleanup_version", 0) >= EXPRESSION_CLEANUP_VERSION) return;
+        try {
+            File cachedExpression = new File(getFilesDir(), REMOVED_USER_EXPRESSION_FILE);
+            deleteRecursivelyIfExists(cachedExpression);
+
+            String relative = prefs.getString("model_path", "");
+            File installedModel = new File(modelRoot, relative);
+            List<String> remaining = null;
+            if (!relative.isBlank() && installedModel.isFile()) {
+                removeExcludedExpressionFiles(installedModel.getParentFile());
+                remaining = registerExpressions(installedModel);
+            }
+
+            SharedPreferences.Editor editor = prefs.edit()
+                    .putInt("expression_cleanup_version", EXPRESSION_CLEANUP_VERSION)
+                    .remove("saved_vts_expressions");
+            if (remaining != null) {
+                editor.putString("expressions", new JSONArray(remaining).toString());
+            }
+            editor.apply();
+        } catch (Exception ignored) {
+            // Do not mark the migration complete: the next launch will safely retry it.
+        }
+    }
+
+    private void removeExcludedExpressionFiles(File root) throws IOException {
+        if (root == null || !root.exists()) return;
+        File[] children = root.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isDirectory()) {
+                removeExcludedExpressionFiles(child);
+            } else if (isExcludedExpressionFile(child) && !child.delete()) {
+                throw new IOException("无法移除已废弃的自建表达式");
+            }
+        }
+    }
+
+    private static boolean isExcludedExpressionFile(File file) {
+        return file != null
+                && REMOVED_USER_EXPRESSION_FILE.equalsIgnoreCase(file.getName());
+    }
+
+    private static boolean isExcludedExpressionName(String name) {
+        if (name == null) return false;
+        String trimmed = name.trim();
+        return REMOVED_USER_EXPRESSION_FILE.equalsIgnoreCase(trimmed)
+                || REMOVED_USER_EXPRESSION_FILE.equalsIgnoreCase(trimmed + ".exp3.json");
     }
 
     private File findFirst(File root, String suffix) {

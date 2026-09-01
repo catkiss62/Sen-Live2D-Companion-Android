@@ -96,6 +96,7 @@ final class SenExpressionLabels {
         put(values, "sleepy", "困倦");
         put(values, "sleep", "睡眠");
         put(values, "dizzy", "晕眩");
+        put(values, "dizzyeyes", "晕眩眼");
         put(values, "sweat", "流汗");
         put(values, "pout", "撅嘴");
         put(values, "smug", "得意");
@@ -106,12 +107,20 @@ final class SenExpressionLabels {
         put(values, "tongue", "吐舌");
         put(values, "tongueout", "吐舌");
         put(values, "stareyes", "星星眼");
+        put(values, "starryeyes", "星星眼");
         put(values, "spiraleyes", "蚊香眼");
         put(values, "glasses", "眼镜");
         put(values, "sunglasses", "墨镜");
         put(values, "mask", "口罩");
         put(values, "microphone", "麦克风");
         put(values, "mic", "麦克风");
+        put(values, "controller", "游戏手柄");
+        put(values, "keyboardmouse", "键盘与鼠标");
+        put(values, "loading", "加载中");
+        put(values, "sulking", "闹别扭");
+        put(values, "tearyeyes", "含泪眼");
+        put(values, "weepyeyes", "泪汪汪");
+        put(values, "press", "按压");
         put(values, "cat", "猫咪");
         put(values, "catears", "猫耳");
         put(values, "bunny", "兔女郎");

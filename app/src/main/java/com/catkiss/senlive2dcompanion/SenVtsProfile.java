@@ -5,10 +5,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /** Exact VTube Studio snapshot used only by the static renderer parity test. */
@@ -19,15 +17,13 @@ final class SenVtsProfile {
     final int expectedParameterCount;
     final String snapshotName;
     final Map<String, Float> parameters;
-    final List<String> activeExpressions;
 
     private SenVtsProfile(String modelName, int expectedParameterCount, String snapshotName,
-                          Map<String, Float> parameters, List<String> activeExpressions) {
+                          Map<String, Float> parameters) {
         this.modelName = modelName;
         this.expectedParameterCount = expectedParameterCount;
         this.snapshotName = snapshotName;
         this.parameters = Collections.unmodifiableMap(parameters);
-        this.activeExpressions = Collections.unmodifiableList(activeExpressions);
     }
 
     static SenVtsProfile parse(String text) throws IOException {
@@ -74,24 +70,12 @@ final class SenVtsProfile {
         }
         if (parameters.isEmpty()) throw new IOException("参数包中没有可用参数");
 
-        List<String> active = new ArrayList<>();
-        JSONArray expressions = snapshot.optJSONArray("expressions");
-        if (expressions != null) {
-            for (int i = 0; i < expressions.length(); i++) {
-                JSONObject expression = expressions.optJSONObject(i);
-                if (expression == null || !expression.optBoolean("active", false)) continue;
-                String file = expression.optString("file", "").trim();
-                if (!file.isEmpty() && !active.contains(file)) active.add(file);
-            }
-        }
         return new SenVtsProfile(modelName, expectedCount,
-                snapshot.optString("name", "未命名状态"), parameters, active);
+                snapshot.optString("name", "未命名状态"), parameters);
     }
 
     String summary() {
-        return "VTS冻结状态：" + snapshotName + " · " + parameters.size() + "项"
-                + (activeExpressions.isEmpty() ? ""
-                : " · 活动预设" + activeExpressions.size() + "个");
+        return "VTS冻结状态：" + snapshotName + " · " + parameters.size() + "项";
     }
 
     private static JSONObject chooseSnapshot(JSONArray snapshots) throws IOException {
@@ -101,25 +85,13 @@ final class SenVtsProfile {
             JSONObject candidate = snapshots.optJSONObject(i);
             if (candidate == null) continue;
             last = candidate;
-            if (containsActiveExpression(candidate, "xiaojingyu.exp3.json")) return candidate;
             String name = candidate.optString("name", "");
-            if (namedFallback == null && (name.contains("小鲸鱼") || name.contains("正常待机"))) {
+            if (namedFallback == null && name.contains("正常待机")) {
                 namedFallback = candidate;
             }
         }
         if (namedFallback != null) return namedFallback;
         if (last != null) return last;
         throw new IOException("参数包中没有有效采集状态");
-    }
-
-    private static boolean containsActiveExpression(JSONObject snapshot, String target) {
-        JSONArray expressions = snapshot.optJSONArray("expressions");
-        if (expressions == null) return false;
-        for (int i = 0; i < expressions.length(); i++) {
-            JSONObject expression = expressions.optJSONObject(i);
-            if (expression != null && expression.optBoolean("active", false)
-                    && target.equalsIgnoreCase(expression.optString("file", ""))) return true;
-        }
-        return false;
     }
 }

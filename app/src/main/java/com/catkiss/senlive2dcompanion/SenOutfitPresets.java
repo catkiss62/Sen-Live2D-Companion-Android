@@ -135,14 +135,6 @@ final class SenOutfitPresets {
         return MAID;
     }
 
-    static boolean controlsParameter(String parameterId) {
-        if (parameterId == null) return false;
-        for (Preset preset : ALL) {
-            if (preset.parameterOverrides.containsKey(parameterId)) return true;
-        }
-        return false;
-    }
-
     private static Map<String, Float> maidParameters() {
         Map<String, Float> values = new LinkedHashMap<>();
         clothing(values, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
