@@ -37,7 +37,7 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
-    private static final String[] WHITE_SHIRT_PART_IDS = {"Part83", "Part204"};
+    private static final float WHITE_SHIRT_POSE_FIRST_KEYFORM = 0.11f;
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
@@ -78,10 +78,6 @@ final class SenLive2DModel extends CubismUserModel {
     private float referenceDrawableRight = 1.0f;
     private float referenceDrawableTop = 1.0f;
     private float referenceDrawableBottom = -1.0f;
-    private int[] whiteShirtDrawables = new int[0];
-    private float[] whiteShirtBaseOpacities = new float[0];
-    private float[] whiteShirtKeyboardOpacities = new float[0];
-    private float[] whiteShirtControllerOpacities = new float[0];
     private String transientExpressionName = "";
     private float transientExpressionRemaining;
     private float transientExpressionDuration = 1.0f;
@@ -148,7 +144,6 @@ final class SenLive2DModel extends CubismUserModel {
         updateScheduler.sortUpdatableList();
         model.update();
         captureReferenceDrawableBounds();
-        resolveWhiteShirtDrawables();
         restoreAhogeAnchors(renderOptions.ahogeAnchorJson);
         applyRuntimeGeometry();
         appendAppearanceDetail("动态底座：VTS→情绪/动作→原生物理→运行时几何");
@@ -193,6 +188,7 @@ final class SenLive2DModel extends CubismUserModel {
         // Outfit selection is an App-owned preset. Expressions, native motions and program
         // actions may animate pose parameters, but they must never alter the selected clothes.
         if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
+        skipWhiteShirtPosePreKeyframes();
         model.update();
         applyRuntimeGeometry();
     }
@@ -801,106 +797,25 @@ final class SenLive2DModel extends CubismUserModel {
             applyAnchoredAhogeTransform(ahogeDrawables);
         }
         applyTailMirror(tailDrawables);
-        applyWhiteShirtDrawableCrossfade();
     }
 
-    private void resolveWhiteShirtDrawables() {
-        Set<Integer> candidates = collectChildDrawables(WHITE_SHIRT_PART_IDS);
-        if (candidates.isEmpty()) {
-            appendAppearanceDetail("白衬衫网格自动采样 0");
-            return;
-        }
-
-        float[] originalParameters = new float[model.getParameterCount()];
-        captureParameterValues(originalParameters);
-        int keyboardIndex = findParameterIndex("ParamKeyboardmouse");
-        int controllerIndex = findParameterIndex("Paramhandle");
-
-        applyOutfitParameters(SenOutfitPresets.WHITE_SHIRT, null);
-        setParameterByIndex(keyboardIndex, 0.0f);
-        setParameterByIndex(controllerIndex, 0.0f);
-        model.update();
-        float[] base = captureDrawableOpacities(candidates);
-
-        setParameterByIndex(keyboardIndex, 1.0f);
-        model.update();
-        float[] keyboard = captureDrawableOpacities(candidates);
-
-        setParameterByIndex(keyboardIndex, 0.0f);
-        setParameterByIndex(controllerIndex, 1.0f);
-        model.update();
-        float[] controller = captureDrawableOpacities(candidates);
-
-        restoreParameterValues(originalParameters);
-        model.update();
-
-        int used = 0;
-        for (int i = 0; i < base.length; i++) {
-            if (Math.max(base[i], Math.max(keyboard[i], controller[i])) > 0.001f) used++;
-        }
-        whiteShirtDrawables = new int[used];
-        whiteShirtBaseOpacities = new float[used];
-        whiteShirtKeyboardOpacities = new float[used];
-        whiteShirtControllerOpacities = new float[used];
-        int output = 0;
-        int input = 0;
-        for (int drawable : candidates) {
-            if (Math.max(base[input], Math.max(keyboard[input], controller[input])) > 0.001f) {
-                whiteShirtDrawables[output] = drawable;
-                whiteShirtBaseOpacities[output] = base[input];
-                whiteShirtKeyboardOpacities[output] = keyboard[input];
-                whiteShirtControllerOpacities[output] = controller[input];
-                output++;
-            }
-            input++;
-        }
-        appendAppearanceDetail("白衬衫网格自动采样 " + used + "/" + candidates.size());
-    }
-
-    private float[] captureDrawableOpacities(Set<Integer> drawables) {
-        float[] result = new float[drawables.size()];
-        int i = 0;
-        for (int drawable : drawables) {
-            result[i++] = clamp01(model.getDrawableOpacity(drawable));
-        }
-        return result;
-    }
-
-    private void setParameterByIndex(int index, float value) {
-        if (index < 0) return;
-        model.getModel().getParameterViews()[index].setValue(value);
-    }
-
-    private void applyWhiteShirtDrawableCrossfade() {
-        CubismRendererAndroid renderer = getRenderer();
-        if (renderer == null) return;
-        renderer.clearDrawableOpacityOverrides();
+    private void skipWhiteShirtPosePreKeyframes() {
         if (outfitPreset != SenOutfitPresets.WHITE_SHIRT) return;
-
-        float keyboard = clamp01(parameterValue("ParamKeyboardmouse"));
-        float controller = clamp01(parameterValue("Paramhandle"));
-        float sum = keyboard + controller;
-        if (sum > 1.0f) {
-            keyboard /= sum;
-            controller /= sum;
-            sum = 1.0f;
-        }
-        float base = 1.0f - sum;
-        for (int i = 0; i < whiteShirtDrawables.length; i++) {
-            float opacity = whiteShirtBaseOpacities[i] * base
-                    + whiteShirtKeyboardOpacities[i] * keyboard
-                    + whiteShirtControllerOpacities[i] * controller;
-            renderer.setDrawableOpacityOverride(whiteShirtDrawables[i], clamp01(opacity));
-        }
+        skipPosePreKeyframes("ParamKeyboardmouse");
+        skipPosePreKeyframes("Paramhandle");
     }
 
-    private float parameterValue(String id) {
+    private void skipPosePreKeyframes(String id) {
         int index = findParameterIndex(id);
-        return index < 0 ? 0.0f : model.getParameterValue(index);
-    }
-
-    private static float clamp01(float value) {
-        return Math.max(0.0f, Math.min(1.0f, value));
+        if (index < 0) return;
+        float value = model.getModel().getParameterViews()[index].getValue();
+        // The authored shirt pose does not have a valid action drawable before 0.11. VTS was
+        // captured at 14 FPS and naturally stepped over this interval; a 60 Hz renderer lands
+        // on 0.10 for one frame. Keep the native curve and timing after its first keyform, but
+        // hold the exact idle endpoint until that keyform exists.
+        if (value > 0.0f && value < WHITE_SHIRT_POSE_FIRST_KEYFORM) {
+            model.getModel().getParameterViews()[index].setValue(0.0f);
+        }
     }
 
     private static void fadeOutManager(
