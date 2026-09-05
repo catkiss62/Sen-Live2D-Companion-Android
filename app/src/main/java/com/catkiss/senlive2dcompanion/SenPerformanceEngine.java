@@ -22,6 +22,7 @@ final class SenPerformanceEngine {
     private static final float EMOTION_TRANSITION_SECONDS = .42f;
     private static final float ACTION_CROSSFADE_SECONDS = .24f;
     private static final float ACTION_PHYSICS_RELEASE_SECONDS = .55f;
+    private static final float HEAD_PAT_HOLD_TIME_SECONDS = .68f;
     // Mimeng closes and opens in about .20 s. Sen's eye-open baseline clips sooner when an
     // additive close value is used, so the same numeric timing looks noticeably sharper here.
     // Keep the close brisk, add a tiny closed hold, and let the eyes reopen more gently.
@@ -84,6 +85,7 @@ final class SenPerformanceEngine {
     private String action;
     private final List<String> recentIdleActions = new ArrayList<>();
     private float actionTime;
+    private boolean headPatHeld;
     private float elapsed;
     private float nextIdleAt = 8.0f;
     private float nextShowcaseAt = 30.0f;
@@ -122,12 +124,21 @@ final class SenPerformanceEngine {
         emotionTransitionTime = 0.0f;
     }
 
+    void clearEmotionForHeadPat() {
+        emotion = "normal";
+        emotionFromValues = new HashMap<>();
+        emotionCurrentValues = new HashMap<>();
+        emotionTargetValues = new HashMap<>();
+        emotionTransitionTime = EMOTION_TRANSITION_SECONDS;
+    }
+
     String getEmotion() {
         return emotion;
     }
 
     void playAction(String name) {
         if (!ACTIONS.contains(name)) return;
+        headPatHeld = false;
         actionTransitionFromValues = new HashMap<>(lastActionValues);
         actionTransitionTime = actionTransitionFromValues.isEmpty()
                 ? ACTION_CROSSFADE_SECONDS : 0.0f;
@@ -157,6 +168,13 @@ final class SenPerformanceEngine {
 
     void triggerHeadPat(boolean confused) {
         playAction(confused ? "head_pat_confused" : "head_pat");
+        // The easter egg is one complete authored action. Only the regular path pauses at its
+        // half-closed-eye pose while the finger remains on the head.
+        headPatHeld = !confused;
+    }
+
+    void releaseHeadPat() {
+        headPatHeld = false;
     }
 
     void setAutoIdle(boolean enabled) {
@@ -377,7 +395,11 @@ final class SenPerformanceEngine {
             lastActionValues.clear();
             return;
         }
-        actionTime += dt;
+        if ("head_pat".equals(action) && headPatHeld) {
+            actionTime = Math.min(HEAD_PAT_HOLD_TIME_SECONDS, actionTime + dt);
+        } else {
+            actionTime += dt;
+        }
         float actionDuration = duration(action);
         Map<String, Float> target = collectActionValues(
                 action, Math.min(actionTime, actionDuration));
@@ -445,14 +467,14 @@ final class SenPerformanceEngine {
     private void applyEmotion(String name, ParameterWriter writer) {
         switch (name) {
             case "happy":
-                smile(writer, 0.72f, 0.16f);
+                smile(writer, 0.55f, 0.14f);
                 writer.add("ParamBrowLY", 0.08f); writer.add("ParamBrowRY", 0.08f); break;
             case "excited":
-                smile(writer, 0.88f, 0.38f); writer.add("Param10", 0.95f);
+                smile(writer, 0.88f, 0.38f); writer.add("Param10", 1.00f);
                 writer.add("ParamEyeBallY", 0.16f); writer.add("ParamJawOpen", 0.18f);
                 writer.add("ParamBrowLY", 0.18f); writer.add("ParamBrowRY", 0.18f); break;
             case "affection":
-                smile(writer, 0.62f, 0.13f); writer.add("Hearteyes1", 0.95f);
+                smile(writer, 0.45f, 0.10f); writer.add("Hearteyes1", 0.95f);
                 writer.add("Param13", 0.68f); writer.add("ParamAngleZ", -2.5f); break;
             case "shy":
                 smile(writer, 0.24f, 0.02f); writer.add("Param13", 0.92f);
@@ -460,7 +482,8 @@ final class SenPerformanceEngine {
                 writer.add("ParamEyeBallY", -0.26f); writer.add("ParamEyeLOpen", -0.14f);
                 writer.add("ParamEyeROpen", -0.14f); writer.add("ParamAngleZ", -4.0f); break;
             case "flustered":
-                writer.add("Param13", 0.82f); writer.add("Param15", 0.35f);
+                writer.add("Param13", 0.82f); writer.add("Param15", 1.00f);
+                writer.add("ParamMouthForm", -0.46f);
                 writer.add("ParamMouthOpenY", 0.32f); writer.add("ParamMouthFunnel", 0.28f);
                 writer.add("ParamBrowLY", 0.32f); writer.add("ParamBrowRY", 0.32f);
                 writer.add("ParamAngleZ", 4.0f); break;
@@ -474,19 +497,20 @@ final class SenPerformanceEngine {
                 writer.add("ParamMouthShrug", 0.42f); writer.add("ParamBrowLY", 0.45f);
                 writer.add("ParamBrowRY", 0.45f); writer.add("ParamEyeBallY", -0.12f); break;
             case "confused":
-                writer.add("Param28", 0.78f); writer.add("ParamEyeLOpen", -0.20f);
+                writer.add("ParamEyeLOpen", -0.20f);
                 writer.add("ParamEyeROpen", 0.08f); writer.add("ParamEyeBallX", 0.26f);
                 writer.add("ParamBrowLY", -0.28f); writer.add("ParamBrowRY", 0.48f);
                 writer.add("ParamMouthX", 0.42f); writer.add("ParamMouthOpenY", 0.06f);
                 writer.add("ParamAngleZ", -9.0f); break;
             case "helpless":
-                writer.add("Param31", 0.60f); writer.add("ParamMouthForm", -0.48f);
+                writer.add("ParamMouthForm", -0.48f);
                 writer.add("ParamMouthShrug", 0.65f); writer.add("ParamEyeLOpen", -0.18f);
                 writer.add("ParamEyeROpen", -0.18f); writer.add("ParamAngleZ", -6.0f); break;
             case "afraid":
-                writer.add("Param15", 0.96f); writer.add("ParamEyeLOpen", 0.38f);
+                writer.add("Param15", 1.00f); writer.add("ParamEyeLOpen", 0.38f);
                 writer.add("ParamEyeROpen", 0.38f); writer.add("ParamMouthOpenY", 0.60f);
                 writer.add("ParamJawOpen", 0.42f); writer.add("ParamMouthFunnel", 0.18f);
+                writer.add("ParamMouthForm", -0.72f);
                 writer.add("ParamBrowLY", 0.44f); writer.add("ParamBrowRY", 0.44f); break;
             case "angry":
                 writer.add("Param11", 0.84f); writer.add("CheekPuff", 0.46f);
@@ -494,7 +518,7 @@ final class SenPerformanceEngine {
                 writer.add("ParamBrowRY", -0.48f); writer.add("ParamEyeLOpen", -0.22f);
                 writer.add("ParamEyeROpen", -0.22f); writer.add("ParamAngleZ", 3.0f); break;
             case "sad":
-                writer.add("Parammicrophone2", 0.88f); writer.add("ParamMouthForm", -0.72f);
+                writer.add("Param31", 1.00f); writer.add("ParamMouthForm", -0.72f);
                 writer.add("ParamMouthShrug", 0.50f); writer.add("ParamBrowLY", 0.52f);
                 writer.add("ParamBrowRY", 0.52f); writer.add("ParamEyeBallY", -0.22f);
                 writer.add("ParamMouthOpenY", 0.04f); break;
@@ -506,7 +530,9 @@ final class SenPerformanceEngine {
             case "serious":
                 writer.add("ParamMouthForm", -0.24f); writer.add("MouthPressLip", 0.82f);
                 writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f);
-                writer.add("ParamBrowLY", -0.22f); writer.add("ParamBrowRY", -0.22f); break;
+                writer.add("ParamBrowLY", -0.22f); writer.add("ParamBrowRY", -0.22f);
+                writer.add("ParamBrowLForm2", -0.88f);
+                writer.add("ParamBrowRForm2", -0.88f); break;
             case "surprised":
                 writer.add("Param15", 0.76f); writer.add("ParamEyeLOpen", 0.48f);
                 writer.add("ParamEyeROpen", 0.48f); writer.add("ParamMouthOpenY", 0.72f);
@@ -717,16 +743,16 @@ final class SenPerformanceEngine {
                 face("ParamEyeRSmile", 0,0, .28f,.45f, .68f,.92f, 1.08f,.80f, 1.42f,.35f, 1.75f,0),
                 face("Param13", 0,0, .28f,.20f, .68f,.82f, 1.08f,.68f, 1.42f,.25f, 1.75f,0),
                 face("ParamMouthForm", 0,0, .28f,.20f, .68f,.48f, 1.08f,.40f, 1.42f,.18f, 1.75f,0)));
-        result.put("head_pat_confused", motion(1.80f,
-                head("ParamAngleX", 0,0, .30f,1.5f, .78f,3.2f, 1.28f,2.3f, 1.80f,0),
-                head("ParamAngleY", 0,0, .30f,1.0f, .78f,-1.0f, 1.28f,-.5f, 1.80f,0),
-                head("ParamAngleZ", 0,0, .30f,-2.0f, .78f,-7.0f, 1.28f,-5.2f, 1.80f,0),
-                face("ParamEyeBallX", 0,0, .30f,.12f, .78f,.28f, 1.28f,.20f, 1.80f,0),
-                face("ParamEyeLOpen", 0,0, .30f,-.08f, .78f,-.28f, 1.28f,-.20f, 1.80f,0),
-                face("ParamEyeROpen", 0,0, .30f,.08f, .78f,.15f, 1.28f,.10f, 1.80f,0),
-                face("ParamBrowLY", 0,0, .30f,-.12f, .78f,-.35f, 1.28f,-.24f, 1.80f,0),
-                face("ParamBrowRY", 0,0, .30f,.20f, .78f,.48f, 1.28f,.34f, 1.80f,0),
-                face("ParamMouthForm", 0,0, .30f,-.08f, .78f,-.25f, 1.28f,-.16f, 1.80f,0)));
+        result.put("head_pat_confused", motion(2.80f,
+                head("ParamAngleX", 0,0, .30f,1.5f, .78f,3.2f, 2.05f,3.2f, 2.80f,0),
+                head("ParamAngleY", 0,0, .30f,1.0f, .78f,-1.0f, 2.05f,-1.0f, 2.80f,0),
+                head("ParamAngleZ", 0,0, .30f,-2.0f, .78f,-7.0f, 2.05f,-7.0f, 2.80f,0),
+                face("ParamEyeBallX", 0,0, .30f,.12f, .78f,.28f, 2.05f,.28f, 2.80f,0),
+                face("ParamEyeLOpen", 0,0, .30f,-.08f, .78f,-.28f, 2.05f,-.28f, 2.80f,0),
+                face("ParamEyeROpen", 0,0, .30f,.08f, .78f,.15f, 2.05f,.15f, 2.80f,0),
+                face("ParamBrowLY", 0,0, .30f,-.12f, .78f,-.35f, 2.05f,-.35f, 2.80f,0),
+                face("ParamBrowRY", 0,0, .30f,.20f, .78f,.48f, 2.05f,.48f, 2.80f,0),
+                face("ParamMouthForm", 0,0, .30f,-.08f, .78f,-.25f, 2.05f,-.25f, 2.80f,0)));
         return Collections.unmodifiableMap(result);
     }
 

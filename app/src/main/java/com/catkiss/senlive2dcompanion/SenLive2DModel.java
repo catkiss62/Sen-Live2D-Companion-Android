@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,9 @@ final class SenLive2DModel extends CubismUserModel {
             "rarmrotate5", "larmrotate17", "larmrotate18"
     };
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
+    private final Map<String, CubismExpressionMotionManager> expressionManagers =
+            new LinkedHashMap<>();
+    private final Set<String> activeExpressionNames = new LinkedHashSet<>();
     private final Map<String, CubismMotion> nativeMotions = new HashMap<>();
     private final CubismExpressionMotionManager transientExpressionManager =
             new CubismExpressionMotionManager();
@@ -89,7 +93,7 @@ final class SenLive2DModel extends CubismUserModel {
     private float transientExpressionRemaining;
     private float transientExpressionDuration = 1.0f;
     private float transientExpressionFadeOut = 0.05f;
-    private String activeExpressionName = "";
+    private boolean glassesEnabled;
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(
             SenMaskMode.HIGH_PRECISION, 1024, false, 0.0f, 0.0f,
@@ -196,6 +200,7 @@ final class SenLive2DModel extends CubismUserModel {
         // Outfit selection is an App-owned preset. Expressions, native motions and program
         // actions may animate pose parameters, but they must never alter the selected clothes.
         if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
+        setParameter("Glasses", glassesEnabled ? 1.0f : 0.0f);
         skipWhiteShirtPosePreKeyframes();
         model.update();
         applyRuntimeGeometry();
@@ -385,6 +390,10 @@ final class SenLive2DModel extends CubismUserModel {
     float getReferenceDrawableBottom() { return referenceDrawableBottom; }
 
     void setExpression(String name) {
+        if ("glasses".equals(normalizeExpressionName(name))) {
+            glassesEnabled = !glassesEnabled;
+            return;
+        }
         if (name != null && name.equals(transientExpressionName)) {
             ACubismMotion transientMotion = expressions.get(name);
             if (transientMotion != null) {
@@ -395,13 +404,23 @@ final class SenLive2DModel extends CubismUserModel {
         }
         ACubismMotion motion = expressions.get(name);
         if (motion == null) return;
-        if (name.equals(activeExpressionName)) {
-            fadeOutManager(expressionManager, motion.getFadeOutTime());
-            activeExpressionName = "";
+        CubismExpressionMotionManager manager = expressionManagers.get(name);
+        if (manager == null) return;
+        if (activeExpressionNames.contains(name)) {
+            fadeOutManager(manager, motion.getFadeOutTime());
+            activeExpressionNames.remove(name);
             return;
         }
-        expressionManager.startMotionPriority(motion, 3);
-        activeExpressionName = name;
+        if (isExclusiveProp(name)) {
+            for (String activeName : new ArrayList<>(activeExpressionNames)) {
+                if (!isExclusiveProp(activeName)) continue;
+                CubismExpressionMotionManager activeManager = expressionManagers.get(activeName);
+                if (activeManager != null) activeManager.stopAllMotions();
+                activeExpressionNames.remove(activeName);
+            }
+        }
+        manager.startMotionPriority(motion, 3);
+        activeExpressionNames.add(name);
     }
 
     void playNativeMotion(String name) {
@@ -419,15 +438,15 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void selectEmotion(String name) {
-        // Let ZIP expressions fade out instead of vanishing on the same rendered frame.
-        for (CubismMotionQueueEntry entry : expressionManager.getCubismMotionQueueEntries()) {
-            if (entry != null && !entry.isFinished()) entry.setFadeOut(.42f);
-        }
-        activeExpressionName = "";
+        // Program emotions and authored ZIP switches are independent layers. Selecting one must
+        // not silently turn off props or another explicitly enabled ZIP effect.
         performance.selectEmotion(name);
     }
 
     void playAction(String name) {
+        if ("head_pat".equals(name) || "head_pat_confused".equals(name)) {
+            prepareForHeadPat();
+        }
         performance.playAction(name);
     }
 
@@ -452,7 +471,12 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void triggerHeadPat(boolean confused) {
+        prepareForHeadPat();
         performance.triggerHeadPat(confused);
+    }
+
+    void releaseHeadPat() {
+        performance.releaseHeadPat();
     }
 
     void setAutoIdle(boolean enabled) {
@@ -515,6 +539,7 @@ final class SenLive2DModel extends CubismUserModel {
                     motion.setFadeOutTime(rule.fadeSeconds);
                 }
                 expressions.put(name, motion);
+                expressionManagers.put(name, new CubismExpressionMotionManager());
                 if (rule != null && rule.deactivateAfterSeconds) {
                     transientExpressionName = name;
                     transientExpressionDuration = Math.max(0.01f,
@@ -528,7 +553,9 @@ final class SenLive2DModel extends CubismUserModel {
             @Override public void onLateUpdate(
                     com.live2d.sdk.cubism.framework.model.CubismModel target,
                     float deltaTimeSeconds) {
-                expressionManager.updateMotion(target, deltaTimeSeconds);
+                for (CubismExpressionMotionManager manager : expressionManagers.values()) {
+                    manager.updateMotion(target, deltaTimeSeconds);
+                }
             }
         });
         updateScheduler.addUpdatableList(new ACubismUpdater(310) {
@@ -849,6 +876,43 @@ final class SenLive2DModel extends CubismUserModel {
         for (CubismMotionQueueEntry entry : manager.getCubismMotionQueueEntries()) {
             if (entry != null && !entry.isFinished()) entry.setFadeOut(seconds);
         }
+    }
+
+    private void clearExpressionsForHeadPat() {
+        for (String name : new ArrayList<>(activeExpressionNames)) {
+            if (isHeadPatRetainedExpression(name)) continue;
+            CubismExpressionMotionManager manager = expressionManagers.get(name);
+            if (manager != null) manager.stopAllMotions();
+            activeExpressionNames.remove(name);
+        }
+        transientExpressionManager.stopAllMotions();
+        transientExpressionRemaining = 0.0f;
+    }
+
+    private void prepareForHeadPat() {
+        clearExpressionsForHeadPat();
+        performance.clearEmotionForHeadPat();
+    }
+
+    private static boolean isHeadPatRetainedExpression(String name) {
+        String normalized = normalizeExpressionName(name);
+        return "controller".equals(normalized)
+                || "keyboardmouse".equals(normalized)
+                || "microphone".equals(normalized)
+                || "glasses".equals(normalized)
+                || "loading".equals(normalized);
+    }
+
+    private static boolean isExclusiveProp(String name) {
+        String normalized = normalizeExpressionName(name);
+        return "controller".equals(normalized)
+                || "keyboardmouse".equals(normalized)
+                || "microphone".equals(normalized);
+    }
+
+    private static String normalizeExpressionName(String name) {
+        if (name == null) return "";
+        return name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "");
     }
 
     private static void collectFiles(File directory, String suffix, List<File> destination) {

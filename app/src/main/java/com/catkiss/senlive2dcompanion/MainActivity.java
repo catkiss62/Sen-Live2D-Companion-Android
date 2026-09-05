@@ -338,7 +338,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.7 · 系统语音口型与20语义表情测试版");
+        statusText.setText("v0.5.8 · 表情叠加与持续摸头测试版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -641,7 +641,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(actionNote);
 
         TextView expressionHeading = new TextView(this);
-        expressionHeading.setText("Sen ZIP 原生预设/道具（中文 / English；未知名称保留原文）");
+        expressionHeading.setText("Sen ZIP 原生预设/道具（中英双语独立开关；手柄/键鼠/麦克风三选一）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
         expressionHeading.setTextSize(12);
         expressionHeading.setPadding(0, dp(5), 0, dp(3));
@@ -796,6 +796,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
                 || action == MotionEvent.ACTION_POINTER_UP) {
             queueTouchTarget(view, false, x, y);
+            glSurfaceView.queueEvent(renderer::releaseHeadPat);
             interactionPointerId = -1;
             headPatCandidate = false;
             headPatTriggered = false;
@@ -1472,21 +1473,23 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void rebuildExpressionButtons() {
         if (expressionArea == null) return;
         expressionArea.removeAllViews();
-        if (expressionNames.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("导入模型后，这里会列出 ZIP 中的 .exp3.json 表情。");
-            empty.setTextColor(Color.rgb(177, 162, 194));
-            empty.setTextSize(11);
-            expressionArea.addView(empty);
-            return;
+        List<String> switches = new ArrayList<>(expressionNames);
+        boolean hasGlasses = false;
+        for (String name : switches) {
+            if ("glasses".equals(name.toLowerCase(java.util.Locale.ROOT)
+                    .replaceAll("[^a-z0-9]+", ""))) {
+                hasGlasses = true;
+                break;
+            }
         }
-        for (int start = 0; start < expressionNames.size(); start += 3) {
+        if (!hasGlasses) switches.add("Glasses");
+        for (int start = 0; start < switches.size(); start += 3) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             for (int column = 0; column < 3; column++) {
                 int index = start + column;
-                if (index < expressionNames.size()) {
-                    String name = expressionNames.get(index);
+                if (index < switches.size()) {
+                    String name = switches.get(index);
                     Button button = panelButton(SenExpressionLabels.displayName(name));
                     button.setContentDescription(name);
                     button.setTextSize(10);
@@ -2070,6 +2073,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     @Override
     protected void onPause() {
         if (systemTtsLipSync != null) systemTtsLipSync.stop();
+        if (glSurfaceView != null && renderer != null) {
+            glSurfaceView.queueEvent(renderer::releaseHeadPat);
+        }
         if (glSurfaceView != null) glSurfaceView.onPause();
         super.onPause();
     }

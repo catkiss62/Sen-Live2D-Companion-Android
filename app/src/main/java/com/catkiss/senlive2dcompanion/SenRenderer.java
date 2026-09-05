@@ -143,6 +143,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         if (model != null) model.triggerHeadPat(confused);
     }
 
+    void releaseHeadPat() {
+        if (model != null) model.releaseHeadPat();
+    }
+
     void setAutoIdle(boolean enabled) {
         if (model != null) model.setAutoIdle(enabled);
     }
