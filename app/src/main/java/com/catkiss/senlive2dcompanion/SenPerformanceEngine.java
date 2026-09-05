@@ -445,61 +445,91 @@ final class SenPerformanceEngine {
     private void applyEmotion(String name, ParameterWriter writer) {
         switch (name) {
             case "happy":
-                smile(writer, 0.55f, 0.14f); break;
+                smile(writer, 0.72f, 0.16f);
+                writer.add("ParamBrowLY", 0.08f); writer.add("ParamBrowRY", 0.08f); break;
             case "excited":
-                smile(writer, 0.75f, 0.30f); writer.add("ParamEyeBallY", 0.12f); break;
-            case "affection":
-                smile(writer, 0.45f, 0.10f); writer.add("Param13", 0.65f); break;
-            case "shy":
-                smile(writer, 0.18f, -0.05f); writer.add("Param13", 0.75f);
-                writer.add("ParamEyeBallY", -0.18f); break;
-            case "flustered":
-            case "tense":
-                writer.add("Param13", 0.55f); writer.add("ParamMouthForm", -0.28f);
+                smile(writer, 0.88f, 0.38f); writer.add("Param10", 0.95f);
+                writer.add("ParamEyeBallY", 0.16f); writer.add("ParamJawOpen", 0.18f);
                 writer.add("ParamBrowLY", 0.18f); writer.add("ParamBrowRY", 0.18f); break;
+            case "affection":
+                smile(writer, 0.62f, 0.13f); writer.add("Hearteyes1", 0.95f);
+                writer.add("Param13", 0.68f); writer.add("ParamAngleZ", -2.5f); break;
+            case "shy":
+                smile(writer, 0.24f, 0.02f); writer.add("Param13", 0.92f);
+                writer.add("MouthPressLip", 0.30f); writer.add("ParamMouthX", -0.14f);
+                writer.add("ParamEyeBallY", -0.26f); writer.add("ParamEyeLOpen", -0.14f);
+                writer.add("ParamEyeROpen", -0.14f); writer.add("ParamAngleZ", -4.0f); break;
+            case "flustered":
+                writer.add("Param13", 0.82f); writer.add("Param15", 0.35f);
+                writer.add("ParamMouthOpenY", 0.32f); writer.add("ParamMouthFunnel", 0.28f);
+                writer.add("ParamBrowLY", 0.32f); writer.add("ParamBrowRY", 0.32f);
+                writer.add("ParamAngleZ", 4.0f); break;
+            case "tense":
+                writer.add("ParamMouthForm", -0.28f); writer.add("MouthPressLip", 0.72f);
+                writer.add("ParamEyeLOpen", -0.20f); writer.add("ParamEyeROpen", -0.20f);
+                writer.add("ParamBrowLY", -0.30f); writer.add("ParamBrowRY", -0.30f);
+                writer.add("ParamAngleZ", -2.0f); break;
             case "worried":
-                writer.add("ParamMouthForm", -0.42f); writer.add("ParamBrowLY", 0.30f);
-                writer.add("ParamBrowRY", 0.30f); break;
+                writer.add("Parammicrophone2", 0.46f); writer.add("ParamMouthForm", -0.58f);
+                writer.add("ParamMouthShrug", 0.42f); writer.add("ParamBrowLY", 0.45f);
+                writer.add("ParamBrowRY", 0.45f); writer.add("ParamEyeBallY", -0.12f); break;
             case "confused":
-                writer.add("ParamEyeLOpen", -0.25f); writer.add("ParamEyeROpen", 0.05f);
-                writer.add("ParamEyeBallX", 0.25f); writer.add("ParamBrowLY", -0.25f);
-                writer.add("ParamBrowRY", 0.45f); writer.add("ParamMouthForm", -0.20f);
-                writer.add("ParamAngleZ", -7.0f); break;
+                writer.add("Param28", 0.78f); writer.add("ParamEyeLOpen", -0.20f);
+                writer.add("ParamEyeROpen", 0.08f); writer.add("ParamEyeBallX", 0.26f);
+                writer.add("ParamBrowLY", -0.28f); writer.add("ParamBrowRY", 0.48f);
+                writer.add("ParamMouthX", 0.42f); writer.add("ParamMouthOpenY", 0.06f);
+                writer.add("ParamAngleZ", -9.0f); break;
             case "helpless":
-                writer.add("ParamAngleZ", -5.0f); writer.add("ParamMouthForm", -0.35f);
-                writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f); break;
+                writer.add("Param31", 0.60f); writer.add("ParamMouthForm", -0.48f);
+                writer.add("ParamMouthShrug", 0.65f); writer.add("ParamEyeLOpen", -0.18f);
+                writer.add("ParamEyeROpen", -0.18f); writer.add("ParamAngleZ", -6.0f); break;
             case "afraid":
-                writer.add("ParamEyeLOpen", 0.30f); writer.add("ParamEyeROpen", 0.30f);
-                writer.add("ParamMouthOpenY", 0.18f); writer.add("ParamBrowLY", 0.35f);
-                writer.add("ParamBrowRY", 0.35f); break;
+                writer.add("Param15", 0.96f); writer.add("ParamEyeLOpen", 0.38f);
+                writer.add("ParamEyeROpen", 0.38f); writer.add("ParamMouthOpenY", 0.60f);
+                writer.add("ParamJawOpen", 0.42f); writer.add("ParamMouthFunnel", 0.18f);
+                writer.add("ParamBrowLY", 0.44f); writer.add("ParamBrowRY", 0.44f); break;
             case "angry":
-                writer.add("ParamMouthForm", -0.55f); writer.add("ParamBrowLY", -0.32f);
-                writer.add("ParamBrowRY", -0.32f); writer.add("ParamEyeLOpen", -0.12f);
-                writer.add("ParamEyeROpen", -0.12f); break;
+                writer.add("Param11", 0.84f); writer.add("CheekPuff", 0.46f);
+                writer.add("ParamMouthForm", -0.72f); writer.add("ParamBrowLY", -0.48f);
+                writer.add("ParamBrowRY", -0.48f); writer.add("ParamEyeLOpen", -0.22f);
+                writer.add("ParamEyeROpen", -0.22f); writer.add("ParamAngleZ", 3.0f); break;
             case "sad":
-                writer.add("ParamMouthForm", -0.58f); writer.add("ParamBrowLY", 0.36f);
-                writer.add("ParamBrowRY", 0.36f); writer.add("ParamEyeBallY", -0.16f); break;
+                writer.add("Parammicrophone2", 0.88f); writer.add("ParamMouthForm", -0.72f);
+                writer.add("ParamMouthShrug", 0.50f); writer.add("ParamBrowLY", 0.52f);
+                writer.add("ParamBrowRY", 0.52f); writer.add("ParamEyeBallY", -0.22f);
+                writer.add("ParamMouthOpenY", 0.04f); break;
             case "disgust":
-                writer.add("ParamMouthForm", -0.62f); writer.add("ParamAngleZ", -4.0f);
-                writer.add("ParamEyeLOpen", -0.24f); writer.add("ParamEyeROpen", -0.10f); break;
-            case "serious":
-                writer.add("ParamMouthForm", -0.20f); writer.add("ParamEyeLOpen", -0.13f);
-                writer.add("ParamEyeROpen", -0.13f); break;
-            case "surprised":
-                writer.add("ParamEyeLOpen", 0.42f); writer.add("ParamEyeROpen", 0.42f);
-                writer.add("ParamMouthOpenY", 0.38f); break;
-            case "confident":
-                smile(writer, 0.35f, 0.05f); writer.add("ParamAngleY", 4.0f);
-                writer.add("ParamAngleZ", -3.0f); break;
-            case "playful":
-                smile(writer, 0.62f, 0.12f); writer.add("ParamEyeLOpen", -0.46f);
-                writer.add("ParamAngleZ", 7.0f); break;
-            case "ashamed":
-                writer.add("Param13", 0.82f); writer.add("ParamEyeBallY", -0.25f);
-                writer.add("ParamMouthForm", -0.18f); break;
-            case "calm":
-                smile(writer, 0.12f, 0.0f); writer.add("ParamEyeLOpen", -0.14f);
+                writer.add("ParamMouthForm", -0.62f); writer.add("ParamMouthX", -0.74f);
+                writer.add("ParamMouthShrug", 0.72f); writer.add("MouthPuckerWiden", -0.42f);
+                writer.add("ParamAngleZ", -5.0f); writer.add("ParamEyeLOpen", -0.28f);
                 writer.add("ParamEyeROpen", -0.14f); break;
+            case "serious":
+                writer.add("ParamMouthForm", -0.24f); writer.add("MouthPressLip", 0.82f);
+                writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f);
+                writer.add("ParamBrowLY", -0.22f); writer.add("ParamBrowRY", -0.22f); break;
+            case "surprised":
+                writer.add("Param15", 0.76f); writer.add("ParamEyeLOpen", 0.48f);
+                writer.add("ParamEyeROpen", 0.48f); writer.add("ParamMouthOpenY", 0.72f);
+                writer.add("ParamJawOpen", 0.58f); writer.add("ParamBrowLY", 0.35f);
+                writer.add("ParamBrowRY", 0.35f); break;
+            case "confident":
+                smile(writer, 0.50f, 0.06f); writer.add("ParamMouthX", 0.42f);
+                writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f);
+                writer.add("ParamAngleY", 5.0f); writer.add("ParamAngleZ", -4.0f); break;
+            case "playful":
+                smile(writer, 0.72f, 0.30f); writer.add("ParamTongueOut", 0.84f);
+                writer.add("ParamMouthX", 0.34f); writer.add("ParamEyeLOpen", -0.58f);
+                writer.add("ParamAngleZ", 8.0f); break;
+            case "ashamed":
+                writer.add("Param13", 0.98f); writer.add("MouthPressLip", 0.48f);
+                writer.add("ParamMouthX", -0.18f); writer.add("ParamEyeBallY", -0.32f);
+                writer.add("ParamEyeLOpen", -0.14f); writer.add("ParamEyeROpen", -0.14f);
+                writer.add("ParamBrowLY", 0.22f); writer.add("ParamBrowRY", 0.22f);
+                writer.add("ParamAngleZ", -5.0f); break;
+            case "calm":
+                smile(writer, 0.18f, 0.0f); writer.add("ParamEyeLOpen", -0.24f);
+                writer.add("ParamEyeROpen", -0.24f); writer.add("ParamBrowLY", 0.04f);
+                writer.add("ParamBrowRY", 0.04f); break;
             default:
                 break;
         }

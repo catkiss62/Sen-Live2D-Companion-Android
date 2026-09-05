@@ -179,6 +179,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float headZoneFirstY = Float.NaN;
     private final float[] headZonePoint = new float[2];
     private TextView headZoneStatus;
+    private TextView ttsLipSyncStatus;
+    private SenSystemTtsLipSync systemTtsLipSync;
     private SenOutfitPresets.Preset selectedOutfit;
     private long nativeLoadStartedAt;
     private String rendererDetail = "";
@@ -336,7 +338,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.4 · 原包预设与动作对齐测试版");
+        statusText.setText("v0.5.7 · 系统语音口型与20语义表情测试版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -589,7 +591,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(autoIdleButton);
 
         TextView emotionHeading = new TextView(this);
-        emotionHeading.setText("AI伴侣情绪（20个语义入口；紧张/慌张允许共享视觉）");
+        emotionHeading.setText("AI伴侣情绪（20个语义入口；本轮启用原生眼效和完整嘴型）");
         emotionHeading.setTextColor(Color.rgb(238, 207, 255));
         emotionHeading.setTextSize(12);
         emotionHeading.setPadding(0, dp(7), 0, dp(3));
@@ -601,6 +603,22 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "惊讶", "自信", "调皮", "羞愧", "平静"
         };
         addPerformanceGrid(panel, SenPerformanceEngine.EMOTIONS, emotionLabels, true);
+
+        TextView ttsHeading = new TextView(this);
+        ttsHeading.setText("系统语音口型测试（4句循环；实际PCM音量优先）");
+        ttsHeading.setTextColor(Color.rgb(238, 207, 255));
+        ttsHeading.setTextSize(12);
+        ttsHeading.setPadding(0, dp(7), 0, dp(3));
+        panel.addView(ttsHeading);
+
+        Button ttsButton = panelButton("播放下一句系统语音");
+        ttsButton.setOnClickListener(v -> {
+            if (systemTtsLipSync != null) systemTtsLipSync.speakNext();
+        });
+        panel.addView(ttsButton);
+        ttsLipSyncStatus = adjustmentStatusText();
+        ttsLipSyncStatus.setText("系统TTS等待初始化…");
+        panel.addView(ttsLipSyncStatus);
 
         TextView actionHeading = new TextView(this);
         actionHeading.setText("程序动作手动测试（19项；7项已转入自主待机）");
@@ -641,8 +659,27 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         root.addView(loadingOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        initializeSystemTtsLipSync();
         updateCustomizationControls();
         updateSummary();
+    }
+
+    private void initializeSystemTtsLipSync() {
+        systemTtsLipSync = new SenSystemTtsLipSync(this,
+                new SenSystemTtsLipSync.Listener() {
+                    @Override public void onStatus(String status) {
+                        runOnUiThread(() -> {
+                            if (ttsLipSyncStatus != null) ttsLipSyncStatus.setText(status);
+                        });
+                    }
+
+                    @Override public void onMouthValue(float value) {
+                        GLSurfaceView surface = glSurfaceView;
+                        SenRenderer activeRenderer = renderer;
+                        if (surface == null || activeRenderer == null) return;
+                        surface.queueEvent(() -> activeRenderer.setLipSyncValue(value));
+                    }
+                });
     }
 
     private void installStageAdjustmentGestures() {
@@ -2032,12 +2069,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
 
     @Override
     protected void onPause() {
+        if (systemTtsLipSync != null) systemTtsLipSync.stop();
         if (glSurfaceView != null) glSurfaceView.onPause();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        if (systemTtsLipSync != null) systemTtsLipSync.shutdown();
         executor.shutdownNow();
         super.onDestroy();
     }

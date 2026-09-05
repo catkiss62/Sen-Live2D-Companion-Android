@@ -53,6 +53,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private volatile boolean touchFollowEnabled = true;
     private volatile float earSpeedPercent = 135.0f;
     private volatile float earAmplitudePercent = 100.0f;
+    private volatile float lipSyncValue;
     private volatile float modelBoundsLeft;
     private volatile float modelBoundsRight;
     private volatile float modelBoundsTop;
@@ -100,6 +101,11 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void selectEmotion(String name) {
         if (model != null) model.selectEmotion(name);
+    }
+
+    void setLipSyncValue(float value) {
+        lipSyncValue = Math.max(0.0f, Math.min(1.0f, value));
+        if (model != null) model.setLipSyncValue(lipSyncValue);
     }
 
     void playAction(String name) {
@@ -342,6 +348,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
                     request.frozenProfile, request.options, request.outfitPreset);
             next.setTouchFollowEnabled(touchFollowEnabled);
             next.setEarTuning(earSpeedPercent, earAmplitudePercent);
+            next.setLipSyncValue(lipSyncValue);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();

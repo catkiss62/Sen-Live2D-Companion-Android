@@ -11,9 +11,11 @@ import com.live2d.sdk.cubism.framework.motion.ACubismMotion;
 import com.live2d.sdk.cubism.framework.motion.ACubismUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismExpressionMotionManager;
+import com.live2d.sdk.cubism.framework.motion.CubismLipSyncUpdater;
 import com.live2d.sdk.cubism.framework.motion.CubismMotion;
 import com.live2d.sdk.cubism.framework.motion.CubismMotionQueueEntry;
 import com.live2d.sdk.cubism.framework.motion.CubismPoseUpdater;
+import com.live2d.sdk.cubism.framework.motion.IParameterProvider;
 import com.live2d.sdk.cubism.framework.physics.CubismPhysics;
 import com.live2d.sdk.cubism.framework.rendering.android.CubismRendererAndroid;
 
@@ -25,6 +27,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -38,6 +41,9 @@ final class SenLive2DModel extends CubismUserModel {
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
     private static final float WHITE_SHIRT_POSE_FIRST_KEYFORM = 0.11f;
+    // Expressions and motions finish by order 310; mouth-driven physics starts at 600.
+    // Put lip sync in between so the model's authored MouthOpenY physics receives the voice.
+    private static final int LIP_SYNC_UPDATE_ORDER = 550;
     private static final String[] RABBIT_EAR_PHYSICS_OUTPUT_IDS = {
             "ParamL_angle", "ParamR_angle", "ParamR_angle2"
     };
@@ -54,6 +60,7 @@ final class SenLive2DModel extends CubismUserModel {
     private final Map<String, CubismMotion> nativeMotions = new HashMap<>();
     private final CubismExpressionMotionManager transientExpressionManager =
             new CubismExpressionMotionManager();
+    private volatile float lipSyncValue;
     private final SenPerformanceEngine performance = new SenPerformanceEngine();
     private ICubismModelSetting setting;
     private File homeDirectory;
@@ -125,6 +132,7 @@ final class SenLive2DModel extends CubismUserModel {
         // native physics are loaded in both modes so body motion, ears and tail can stay alive.
         loadExpressions(listener, vtsHotkeys);
         loadNativeMotions(listener, vtsHotkeys);
+        registerLipSyncUpdater();
         loadPhysicsAndPose(listener);
 
         Map<String, Float> layout = new HashMap<>();
@@ -431,6 +439,10 @@ final class SenLive2DModel extends CubismUserModel {
         performance.setEarTuning(speedPercent, amplitudePercent);
     }
 
+    void setLipSyncValue(float value) {
+        lipSyncValue = Math.max(0.0f, Math.min(1.0f, value));
+    }
+
     void setTouchFollowEnabled(boolean enabled) {
         performance.setTouchFollowEnabled(enabled);
     }
@@ -588,6 +600,19 @@ final class SenLive2DModel extends CubismUserModel {
             loadPose(NativeFileLoader.readFile(child(poseName)));
             if (pose != null) updateScheduler.addUpdatableList(new CubismPoseUpdater(pose));
         }
+    }
+
+    private void registerLipSyncUpdater() {
+        int index = findParameterIndex("ParamMouthOpenY");
+        if (index < 0) return;
+        IParameterProvider provider = new IParameterProvider() {
+            @Override public boolean update() { return true; }
+            @Override public boolean update(float deltaTimeSeconds) { return true; }
+            @Override public float getParameter() { return lipSyncValue; }
+        };
+        updateScheduler.addUpdatableList(new CubismLipSyncUpdater(
+                Collections.singletonList(model.getParameterId(index)),
+                provider, LIP_SYNC_UPDATE_ORDER));
     }
 
     private void applyVtsArtMeshColors(SenVtsAppearance appearance,
