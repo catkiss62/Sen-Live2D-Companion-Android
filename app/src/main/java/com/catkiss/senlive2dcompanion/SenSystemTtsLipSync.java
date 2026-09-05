@@ -27,6 +27,7 @@ final class SenSystemTtsLipSync {
 
     private static final long TICK_MS = 16L;
     private static final int ENVELOPE_HZ = 50;
+    private static final float MOUTH_AMPLITUDE_SCALE = 0.90f;
     private static final String[] TEST_LINES = {
             "你好呀，这是系统语音口型测试。现在说话的时候，嘴巴应该会跟着声音张开和闭合。",
             "今天看起来很有精神嘛，要不要一起找点有趣的事情做？",
@@ -191,9 +192,9 @@ final class SenSystemTtsLipSync {
         long elapsedMs = Math.max(0L, SystemClock.elapsedRealtime() - playbackStartMs);
         int frame = (int) (elapsedMs * ENVELOPE_HZ / 1000L);
         float rms = envelopeAt(frame);
-        float target = Float.isNaN(rms)
+        float target = MOUTH_AMPLITUDE_SCALE * (Float.isNaN(rms)
                 ? fallbackMouth(elapsedMs)
-                : normalizeRms(rms);
+                : normalizeRms(rms));
         float blend = target > smoothedMouth ? 0.48f : 0.22f;
         smoothedMouth += (target - smoothedMouth) * blend;
         listener.onMouthValue(smoothedMouth);

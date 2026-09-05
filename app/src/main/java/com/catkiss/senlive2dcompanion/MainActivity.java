@@ -339,7 +339,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.9 · 原生预设开关与语义修正版");
+        statusText.setText("v0.5.10 · 羞愧表情与TTS口型微调版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));

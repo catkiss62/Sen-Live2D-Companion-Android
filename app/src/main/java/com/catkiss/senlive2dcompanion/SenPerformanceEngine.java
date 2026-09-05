@@ -546,9 +546,11 @@ final class SenPerformanceEngine {
                 writer.add("ParamMouthX", 0.34f); writer.add("ParamEyeLOpen", -0.58f);
                 writer.add("ParamAngleZ", 8.0f); break;
             case "ashamed":
-                writer.add("Param13", 0.98f); writer.add("MouthPressLip", 0.48f);
-                writer.add("ParamMouthX", -0.18f); writer.add("ParamEyeBallY", -0.32f);
-                writer.add("ParamEyeLOpen", -0.14f); writer.add("ParamEyeROpen", -0.14f);
+                writer.add("Param13", 0.98f); writer.add("ParamMouthForm", -0.72f);
+                writer.add("ParamMouthShrug", 0.50f); writer.add("ParamMouthOpenY", 0.04f);
+                writer.add("ParamEyeBallY", -0.32f);
+                writer.add("ParamEyeLOpen", -0.85f); writer.add("ParamEyeROpen", -0.85f);
+                writer.add("ParamEyeLSmile", 0.92f); writer.add("ParamEyeRSmile", 0.92f);
                 writer.add("ParamBrowLY", 0.22f); writer.add("ParamBrowRY", 0.22f);
                 writer.add("ParamAngleZ", -5.0f); break;
             case "calm":
