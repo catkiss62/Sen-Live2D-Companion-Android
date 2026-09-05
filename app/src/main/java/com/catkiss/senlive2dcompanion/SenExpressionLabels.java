@@ -120,14 +120,12 @@ final class SenExpressionLabels {
         put(values, "sulking", "闹别扭");
         put(values, "tearyeyes", "含泪眼");
         put(values, "weepyeyes", "泪汪汪");
-        put(values, "press", "按压");
         put(values, "cat", "猫咪");
         put(values, "catears", "猫耳");
         put(values, "bunny", "兔女郎");
         put(values, "bunnyears", "兔耳");
         put(values, "halo", "光环");
         put(values, "horns", "角");
-        put(values, "watermark", "水印");
         return values;
     }
 

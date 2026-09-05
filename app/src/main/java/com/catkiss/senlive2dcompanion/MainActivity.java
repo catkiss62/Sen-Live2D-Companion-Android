@@ -88,7 +88,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     // migration-only filename must never be exposed in diagnostics, labels or startup state.
     private static final String REMOVED_USER_EXPRESSION_FILE =
             "xiao" + "jingyu.exp3.json";
-    private static final int EXPRESSION_CLEANUP_VERSION = 1;
+    private static final int EXPRESSION_CLEANUP_VERSION = 2;
+    private static final String RESET_NATIVE_PRESETS = "__reset_native_presets__";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final List<String> expressionNames = new ArrayList<>();
@@ -338,7 +339,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.8 · 表情叠加与持续摸头测试版");
+        statusText.setText("v0.5.9 · 原生预设开关与语义修正版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -641,7 +642,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(actionNote);
 
         TextView expressionHeading = new TextView(this);
-        expressionHeading.setText("Sen ZIP 原生预设/道具（中英双语独立开关；手柄/键鼠/麦克风三选一）");
+        expressionHeading.setText("Sen ZIP 原生预设/道具（再次点击关闭；手柄/键鼠/麦克风三选一）");
         expressionHeading.setTextColor(Color.rgb(238, 207, 255));
         expressionHeading.setTextSize(12);
         expressionHeading.setPadding(0, dp(5), 0, dp(3));
@@ -1418,7 +1419,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         for (File expression : expressionFiles) {
             if (isExcludedExpressionFile(expression)) {
                 if (expression.isFile() && !expression.delete()) {
-                    throw new IOException("无法移除已废弃的自建表达式");
+                    throw new IOException("无法移除已废弃的原生预设");
                 }
                 continue;
             }
@@ -1473,7 +1474,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void rebuildExpressionButtons() {
         if (expressionArea == null) return;
         expressionArea.removeAllViews();
-        List<String> switches = new ArrayList<>(expressionNames);
+        List<String> switches = new ArrayList<>();
+        switches.add(RESET_NATIVE_PRESETS);
+        switches.addAll(expressionNames);
         boolean hasGlasses = false;
         for (String name : switches) {
             if ("glasses".equals(name.toLowerCase(java.util.Locale.ROOT)
@@ -1490,11 +1493,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 int index = start + column;
                 if (index < switches.size()) {
                     String name = switches.get(index);
-                    Button button = panelButton(SenExpressionLabels.displayName(name));
-                    button.setContentDescription(name);
+                    boolean isReset = RESET_NATIVE_PRESETS.equals(name);
+                    Button button = panelButton(isReset
+                            ? "还原全部预设"
+                            : SenExpressionLabels.displayName(name));
+                    button.setContentDescription(isReset ? "还原全部预设" : name);
                     button.setTextSize(10);
                     button.setOnClickListener(v -> {
-                        glSurfaceView.queueEvent(() -> renderer.applyExpression(name));
+                        glSurfaceView.queueEvent(() -> {
+                            if (isReset) {
+                                renderer.resetNativePresets();
+                            } else {
+                                renderer.applyExpression(name);
+                            }
+                        });
                     });
                     row.addView(button, weightedButtonParams());
                 } else {
@@ -1928,21 +1940,28 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             if (child.isDirectory()) {
                 removeExcludedExpressionFiles(child);
             } else if (isExcludedExpressionFile(child) && !child.delete()) {
-                throw new IOException("无法移除已废弃的自建表达式");
+                throw new IOException("无法移除已废弃的原生预设");
             }
         }
     }
 
     private static boolean isExcludedExpressionFile(File file) {
-        return file != null
-                && REMOVED_USER_EXPRESSION_FILE.equalsIgnoreCase(file.getName());
+        return file != null && isExcludedExpressionName(file.getName());
     }
 
     private static boolean isExcludedExpressionName(String name) {
         if (name == null) return false;
-        String trimmed = name.trim();
-        return REMOVED_USER_EXPRESSION_FILE.equalsIgnoreCase(trimmed)
-                || REMOVED_USER_EXPRESSION_FILE.equalsIgnoreCase(trimmed + ".exp3.json");
+        String normalized = name.trim().toLowerCase(java.util.Locale.ROOT)
+                .replaceFirst("\\.exp3\\.json$", "")
+                .replaceAll("[^a-z0-9]+", "");
+        String removedUserExpression = REMOVED_USER_EXPRESSION_FILE
+                .toLowerCase(java.util.Locale.ROOT)
+                .replaceFirst("\\.exp3\\.json$", "")
+                .replaceAll("[^a-z0-9]+", "");
+        return removedUserExpression.equals(normalized)
+                || "watermark".equals(normalized)
+                || "hearteyes1".equals(normalized)
+                || "press".equals(normalized);
     }
 
     private File findFirst(File root, String suffix) {

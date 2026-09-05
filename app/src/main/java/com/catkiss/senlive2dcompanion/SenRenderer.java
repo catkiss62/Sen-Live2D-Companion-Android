@@ -99,6 +99,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         if (model != null) model.setExpression(name);
     }
 
+    void resetNativePresets() {
+        if (model != null) model.resetNativePresets();
+    }
+
     void selectEmotion(String name) {
         if (model != null) model.selectEmotion(name);
     }

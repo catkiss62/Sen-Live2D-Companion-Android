@@ -407,7 +407,10 @@ final class SenLive2DModel extends CubismUserModel {
         CubismExpressionMotionManager manager = expressionManagers.get(name);
         if (manager == null) return;
         if (activeExpressionNames.contains(name)) {
-            fadeOutManager(manager, motion.getFadeOutTime());
+            // A toggle-off is an explicit state change, not another authored transition.
+            // Stopping immediately guarantees model.loadParameters() restores the base value
+            // on the next frame instead of leaving a fading queue entry apparently enabled.
+            manager.stopAllMotions();
             activeExpressionNames.remove(name);
             return;
         }
@@ -421,6 +424,16 @@ final class SenLive2DModel extends CubismUserModel {
         }
         manager.startMotionPriority(motion, 3);
         activeExpressionNames.add(name);
+    }
+
+    void resetNativePresets() {
+        for (CubismExpressionMotionManager manager : expressionManagers.values()) {
+            manager.stopAllMotions();
+        }
+        activeExpressionNames.clear();
+        transientExpressionManager.stopAllMotions();
+        transientExpressionRemaining = 0.0f;
+        glassesEnabled = false;
     }
 
     void playNativeMotion(String name) {

@@ -474,7 +474,7 @@ final class SenPerformanceEngine {
                 writer.add("ParamEyeBallY", 0.16f); writer.add("ParamJawOpen", 0.18f);
                 writer.add("ParamBrowLY", 0.18f); writer.add("ParamBrowRY", 0.18f); break;
             case "affection":
-                smile(writer, 0.45f, 0.10f); writer.add("Hearteyes1", 0.95f);
+                smile(writer, 0.45f, 0.10f); writer.add("Hearteyes2", 0.95f);
                 writer.add("Param13", 0.68f); writer.add("ParamAngleZ", -2.5f); break;
             case "shy":
                 smile(writer, 0.24f, 0.02f); writer.add("Param13", 0.92f);
@@ -482,7 +482,7 @@ final class SenPerformanceEngine {
                 writer.add("ParamEyeBallY", -0.26f); writer.add("ParamEyeLOpen", -0.14f);
                 writer.add("ParamEyeROpen", -0.14f); writer.add("ParamAngleZ", -4.0f); break;
             case "flustered":
-                writer.add("Param13", 0.82f); writer.add("Param15", 1.00f);
+                writer.add("Param13", 0.82f); writer.add("Parammicrophone", 1.00f);
                 writer.add("ParamMouthForm", -0.46f);
                 writer.add("ParamMouthOpenY", 0.32f); writer.add("ParamMouthFunnel", 0.28f);
                 writer.add("ParamBrowLY", 0.32f); writer.add("ParamBrowRY", 0.32f);
@@ -507,11 +507,10 @@ final class SenPerformanceEngine {
                 writer.add("ParamMouthShrug", 0.65f); writer.add("ParamEyeLOpen", -0.18f);
                 writer.add("ParamEyeROpen", -0.18f); writer.add("ParamAngleZ", -6.0f); break;
             case "afraid":
-                writer.add("Param15", 1.00f); writer.add("ParamEyeLOpen", 0.38f);
-                writer.add("ParamEyeROpen", 0.38f); writer.add("ParamMouthOpenY", 0.60f);
-                writer.add("ParamJawOpen", 0.42f); writer.add("ParamMouthFunnel", 0.18f);
-                writer.add("ParamMouthForm", -0.72f);
-                writer.add("ParamBrowLY", 0.44f); writer.add("ParamBrowRY", 0.44f); break;
+                writer.add("Param15", 1.00f); writer.add("Param11", 1.00f);
+                writer.add("ParamMouthForm", -0.12f);
+                writer.add("ParamMouthOpenY", 0.06f); writer.add("MouthPressLip", 0.12f);
+                writer.add("ParamEyeBallY", -0.08f); break;
             case "angry":
                 writer.add("Param11", 0.84f); writer.add("CheekPuff", 0.46f);
                 writer.add("ParamMouthForm", -0.72f); writer.add("ParamBrowLY", -0.48f);
@@ -534,10 +533,10 @@ final class SenPerformanceEngine {
                 writer.add("ParamBrowLForm2", -0.88f);
                 writer.add("ParamBrowRForm2", -0.88f); break;
             case "surprised":
-                writer.add("Param15", 0.76f); writer.add("ParamEyeLOpen", 0.48f);
-                writer.add("ParamEyeROpen", 0.48f); writer.add("ParamMouthOpenY", 0.72f);
-                writer.add("ParamJawOpen", 0.58f); writer.add("ParamBrowLY", 0.35f);
-                writer.add("ParamBrowRY", 0.35f); break;
+                writer.add("ParamEyeLOpen", 0.38f); writer.add("ParamEyeROpen", 0.38f);
+                writer.add("ParamMouthOpenY", 0.60f); writer.add("ParamJawOpen", 0.42f);
+                writer.add("ParamMouthFunnel", 0.18f); writer.add("ParamMouthForm", -0.72f);
+                writer.add("ParamBrowLY", 0.44f); writer.add("ParamBrowRY", 0.44f); break;
             case "confident":
                 smile(writer, 0.50f, 0.06f); writer.add("ParamMouthX", 0.42f);
                 writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f);
