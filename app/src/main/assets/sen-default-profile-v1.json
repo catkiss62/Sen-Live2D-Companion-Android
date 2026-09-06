@@ -1,0 +1,2339 @@
+{
+  "schema": "sen-vts-profile",
+  "schemaVersion": 1,
+  "model": {
+    "modelName": "Sen Customizable Model_2K",
+    "numberOfLive2DParameters": 581
+  },
+  "snapshots": [
+    {
+      "name": "正常待机",
+      "live2DParameters": [
+        {
+          "name": "ApronLower",
+          "value": 1.0
+        },
+        {
+          "name": "ApronUpper",
+          "value": 1.0
+        },
+        {
+          "name": "Apron_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Apron_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Apron_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "B2_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "B2_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "B2_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "BEHT_L",
+          "value": 0.0
+        },
+        {
+          "name": "BEHT_R",
+          "value": 0.0
+        },
+        {
+          "name": "BeanEyebrows_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "BeanEyebrows_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "BeanEyebrows_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "BoobaY2",
+          "value": -0.00409597996622324
+        },
+        {
+          "name": "Boobax1",
+          "value": 0.0
+        },
+        {
+          "name": "Boobax2",
+          "value": 0.0
+        },
+        {
+          "name": "Boobay1",
+          "value": -0.0007575989002361894
+        },
+        {
+          "name": "Bottom",
+          "value": 0.0
+        },
+        {
+          "name": "Bottom_Hue1",
+          "value": 0.0
+        },
+        {
+          "name": "Bottom_Lightness1",
+          "value": 0.0
+        },
+        {
+          "name": "Bottom_Saturation1",
+          "value": 0.0
+        },
+        {
+          "name": "Bow",
+          "value": 0.0
+        },
+        {
+          "name": "Bow2",
+          "value": 0.0
+        },
+        {
+          "name": "CheekPuff",
+          "value": 0.0
+        },
+        {
+          "name": "Chest_Ribbon",
+          "value": 0.0
+        },
+        {
+          "name": "Cloth1",
+          "value": 0.022803962230682373
+        },
+        {
+          "name": "Cloth10",
+          "value": -0.0005849599838256836
+        },
+        {
+          "name": "Cloth11",
+          "value": 0.0008522486314177513
+        },
+        {
+          "name": "Cloth12",
+          "value": -0.0005849599838256836
+        },
+        {
+          "name": "Cloth13",
+          "value": -0.00028705596923828125
+        },
+        {
+          "name": "Cloth2",
+          "value": 0.0007649660110473633
+        },
+        {
+          "name": "Cloth26",
+          "value": -0.0014583664014935493
+        },
+        {
+          "name": "Cloth29",
+          "value": 0.004631757736206055
+        },
+        {
+          "name": "Cloth3",
+          "value": -0.07027890533208847
+        },
+        {
+          "name": "Cloth4",
+          "value": -0.000321140541927889
+        },
+        {
+          "name": "Cloth5",
+          "value": -0.05970842018723488
+        },
+        {
+          "name": "Cloth6",
+          "value": 0.0007664143922738731
+        },
+        {
+          "name": "Cloth7",
+          "value": -0.0007662891875952482
+        },
+        {
+          "name": "Cloth8",
+          "value": 0.05970842018723488
+        },
+        {
+          "name": "Cloth9",
+          "value": -0.0008522486314177513
+        },
+        {
+          "name": "Dark_circles",
+          "value": 0.0
+        },
+        {
+          "name": "Detachable_Collar",
+          "value": 0.0
+        },
+        {
+          "name": "EyeShape1",
+          "value": 0.0
+        },
+        {
+          "name": "EyeShape3",
+          "value": 0.0
+        },
+        {
+          "name": "EyeShape4",
+          "value": 0.0
+        },
+        {
+          "name": "EyeShape5",
+          "value": 0.6700000762939453
+        },
+        {
+          "name": "EyeShape6",
+          "value": 0.5171557664871216
+        },
+        {
+          "name": "Eyebrow_shape",
+          "value": 0.0
+        },
+        {
+          "name": "Eyelashes_Hue",
+          "value": 1.0
+        },
+        {
+          "name": "Eyelashes_Hue2",
+          "value": 1.0
+        },
+        {
+          "name": "Eyelashes_Lightness",
+          "value": 7.199999809265137
+        },
+        {
+          "name": "Eyelashes_Lightness2",
+          "value": 7.199999809265137
+        },
+        {
+          "name": "Eyelashes_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Eyelashes_Saturation2",
+          "value": 0.0
+        },
+        {
+          "name": "Eyepatch",
+          "value": 0.0
+        },
+        {
+          "name": "Eyepatch2",
+          "value": 0.0
+        },
+        {
+          "name": "FP_LB",
+          "value": 0.0
+        },
+        {
+          "name": "FP_RB",
+          "value": 0.0
+        },
+        {
+          "name": "FacepostionZ",
+          "value": 0.0
+        },
+        {
+          "name": "Flower",
+          "value": 0.0
+        },
+        {
+          "name": "Frame_Hue3",
+          "value": 4.5
+        },
+        {
+          "name": "Frame_Hue4",
+          "value": 0.0
+        },
+        {
+          "name": "Frame_Lightness3",
+          "value": 5.0
+        },
+        {
+          "name": "Frame_Lightness4",
+          "value": 5.0
+        },
+        {
+          "name": "Frame_Saturation3",
+          "value": 10.0
+        },
+        {
+          "name": "Frame_Saturation4",
+          "value": 10.0
+        },
+        {
+          "name": "GarterL",
+          "value": 0.0
+        },
+        {
+          "name": "GarterR",
+          "value": 0.0
+        },
+        {
+          "name": "Glasses",
+          "value": 0.0
+        },
+        {
+          "name": "HBounce1",
+          "value": 0.0
+        },
+        {
+          "name": "HBounce2",
+          "value": 0.0
+        },
+        {
+          "name": "HSway1",
+          "value": 0.0
+        },
+        {
+          "name": "HSway2",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_Hue2",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_Hue3",
+          "value": -0.10582852363586426
+        },
+        {
+          "name": "Hair_Lightness2",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_Saturation2",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar10",
+          "value": 1.0
+        },
+        {
+          "name": "Hair_behindEar11",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar12",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar13",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar14",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar15",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar16",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar17",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar18",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar19",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar1L",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar1R",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar20",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar22",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar23",
+          "value": 0.5985941886901855
+        },
+        {
+          "name": "Hair_behindEar24",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar25",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar26",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar27",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar28",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar2L",
+          "value": 0.6700000166893005
+        },
+        {
+          "name": "Hair_behindEar2R",
+          "value": 0.6700000166893005
+        },
+        {
+          "name": "Hair_behindEar3L",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar3R",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar4L",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar4R",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar5",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar6",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar7",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar8",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar9",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar_tuftL",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_behindEar_tuftR",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_tuftL",
+          "value": 0.0
+        },
+        {
+          "name": "Hair_tuftR",
+          "value": 0.0
+        },
+        {
+          "name": "Headphones",
+          "value": 0.0
+        },
+        {
+          "name": "Hearteyes1",
+          "value": 0.0
+        },
+        {
+          "name": "Hearteyes2",
+          "value": 0.0
+        },
+        {
+          "name": "HoleL",
+          "value": 0.0
+        },
+        {
+          "name": "HoleR1",
+          "value": 0.0
+        },
+        {
+          "name": "KB_1",
+          "value": 0.0
+        },
+        {
+          "name": "KB_2",
+          "value": 0.0
+        },
+        {
+          "name": "KB_3",
+          "value": 0.0
+        },
+        {
+          "name": "KB_4",
+          "value": 0.0
+        },
+        {
+          "name": "KB_A",
+          "value": 0.0
+        },
+        {
+          "name": "KB_ALT",
+          "value": 0.0
+        },
+        {
+          "name": "KB_B",
+          "value": 0.0
+        },
+        {
+          "name": "KB_C",
+          "value": 0.0
+        },
+        {
+          "name": "KB_CTRL",
+          "value": 0.0
+        },
+        {
+          "name": "KB_D",
+          "value": 0.0
+        },
+        {
+          "name": "KB_E",
+          "value": 0.0
+        },
+        {
+          "name": "KB_ENTER",
+          "value": 0.0
+        },
+        {
+          "name": "KB_F",
+          "value": 0.0
+        },
+        {
+          "name": "KB_G",
+          "value": 0.0
+        },
+        {
+          "name": "KB_H",
+          "value": 0.0
+        },
+        {
+          "name": "KB_I",
+          "value": 0.0
+        },
+        {
+          "name": "KB_J",
+          "value": 0.0
+        },
+        {
+          "name": "KB_K",
+          "value": 0.0
+        },
+        {
+          "name": "KB_L",
+          "value": 0.0
+        },
+        {
+          "name": "KB_M",
+          "value": 0.0
+        },
+        {
+          "name": "KB_N",
+          "value": 0.0
+        },
+        {
+          "name": "KB_O",
+          "value": 0.0
+        },
+        {
+          "name": "KB_P",
+          "value": 0.0
+        },
+        {
+          "name": "KB_Q",
+          "value": 0.0
+        },
+        {
+          "name": "KB_R",
+          "value": 0.0
+        },
+        {
+          "name": "KB_S",
+          "value": 0.0
+        },
+        {
+          "name": "KB_SHIFT",
+          "value": 0.0
+        },
+        {
+          "name": "KB_SPANCE",
+          "value": 0.0
+        },
+        {
+          "name": "KB_T",
+          "value": 0.0
+        },
+        {
+          "name": "KB_U",
+          "value": 0.0
+        },
+        {
+          "name": "KB_V",
+          "value": 0.0
+        },
+        {
+          "name": "KB_W",
+          "value": 0.0
+        },
+        {
+          "name": "KB_WIN",
+          "value": 0.0
+        },
+        {
+          "name": "KB_X",
+          "value": 0.0
+        },
+        {
+          "name": "KB_Y",
+          "value": 0.0
+        },
+        {
+          "name": "KB_Z",
+          "value": 0.0
+        },
+        {
+          "name": "KB_x",
+          "value": 0.0
+        },
+        {
+          "name": "KB_y",
+          "value": 0.0
+        },
+        {
+          "name": "LBottom_Hue",
+          "value": 4.699999809265137
+        },
+        {
+          "name": "LBottom_Lightness",
+          "value": 2.5
+        },
+        {
+          "name": "LBottom_Opacity",
+          "value": 0.5
+        },
+        {
+          "name": "LBottom_Saturation",
+          "value": 7.0
+        },
+        {
+          "name": "Lens_Opacity",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "Lens_Opacity8",
+          "value": 0.0
+        },
+        {
+          "name": "Lenses_Hue",
+          "value": 1.899999976158142
+        },
+        {
+          "name": "Lenses_Lightness",
+          "value": 1.899999976158142
+        },
+        {
+          "name": "Lenses_Saturation",
+          "value": 5.0
+        },
+        {
+          "name": "Loose_sockL",
+          "value": 0.0
+        },
+        {
+          "name": "Loose_sockR",
+          "value": 0.0
+        },
+        {
+          "name": "Mouse_X",
+          "value": -14.643820762634277
+        },
+        {
+          "name": "Mouse_Y",
+          "value": 7.674546718597412
+        },
+        {
+          "name": "MouthBounce1",
+          "value": 0.0
+        },
+        {
+          "name": "MouthBounce2",
+          "value": 0.0
+        },
+        {
+          "name": "MouthFunnel2",
+          "value": 0.0
+        },
+        {
+          "name": "MouthJawOpen2",
+          "value": 0.0
+        },
+        {
+          "name": "MouthPressLip",
+          "value": 0.0
+        },
+        {
+          "name": "MouthPressLip2",
+          "value": 0.0
+        },
+        {
+          "name": "MouthPuckerWiden",
+          "value": 0.0
+        },
+        {
+          "name": "MouthPuckerWiden2",
+          "value": 0.0
+        },
+        {
+          "name": "MouthShrug2",
+          "value": 0.0
+        },
+        {
+          "name": "Nail_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Nail_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Nail_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Param",
+          "value": 0.0
+        },
+        {
+          "name": "Param10",
+          "value": 0.0
+        },
+        {
+          "name": "Param11",
+          "value": 0.0
+        },
+        {
+          "name": "Param12",
+          "value": 1.0
+        },
+        {
+          "name": "Param13",
+          "value": 0.0
+        },
+        {
+          "name": "Param15",
+          "value": 0.0
+        },
+        {
+          "name": "Param21",
+          "value": 0.0
+        },
+        {
+          "name": "Param25",
+          "value": 0.0
+        },
+        {
+          "name": "Param26",
+          "value": 1.0
+        },
+        {
+          "name": "Param27",
+          "value": 1.0
+        },
+        {
+          "name": "Param28",
+          "value": 0.0
+        },
+        {
+          "name": "Param29",
+          "value": 0.0
+        },
+        {
+          "name": "Param30",
+          "value": 0.0
+        },
+        {
+          "name": "Param31",
+          "value": 0.0
+        },
+        {
+          "name": "Param41_Saturation2",
+          "value": 0.0
+        },
+        {
+          "name": "Param41_Saturation3",
+          "value": 0.0
+        },
+        {
+          "name": "Param41_Saturation4",
+          "value": 10.0
+        },
+        {
+          "name": "Param41_Saturation5",
+          "value": 10.0
+        },
+        {
+          "name": "Param41_Saturation6",
+          "value": 0.0
+        },
+        {
+          "name": "Param41_Saturation7",
+          "value": 10.0
+        },
+        {
+          "name": "Param42_Lightness2",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "Param42_Lightness3",
+          "value": 2.949645757675171
+        },
+        {
+          "name": "Param42_Lightness4",
+          "value": 0.0
+        },
+        {
+          "name": "Param42_Lightness5",
+          "value": 0.0
+        },
+        {
+          "name": "Param42_Lightness6",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "Param42_Lightness7",
+          "value": 1.0
+        },
+        {
+          "name": "Param43_Hue2",
+          "value": 0.0
+        },
+        {
+          "name": "Param43_Hue3",
+          "value": 4.5
+        },
+        {
+          "name": "Param43_Hue4",
+          "value": 4.5
+        },
+        {
+          "name": "Param43_Hue5",
+          "value": 4.0
+        },
+        {
+          "name": "Param43_Hue6",
+          "value": 0.0
+        },
+        {
+          "name": "Param43_Hue7",
+          "value": 0.0
+        },
+        {
+          "name": "Param5",
+          "value": 0.0
+        },
+        {
+          "name": "Param52",
+          "value": 0.0
+        },
+        {
+          "name": "Param57",
+          "value": -0.00822305679321289
+        },
+        {
+          "name": "Param58",
+          "value": -0.00822305679321289
+        },
+        {
+          "name": "Param59",
+          "value": -0.00822305679321289
+        },
+        {
+          "name": "Param62",
+          "value": -0.0421142578125
+        },
+        {
+          "name": "Param63",
+          "value": -0.0421142578125
+        },
+        {
+          "name": "Param7",
+          "value": 0.0
+        },
+        {
+          "name": "Param73",
+          "value": 0.5
+        },
+        {
+          "name": "Param80",
+          "value": 0.0
+        },
+        {
+          "name": "Param87",
+          "value": 0.0
+        },
+        {
+          "name": "Param88",
+          "value": 0.0
+        },
+        {
+          "name": "Param89",
+          "value": 0.0
+        },
+        {
+          "name": "Param9",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleX",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleX2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleX3",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleXAug",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleXBounce",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleY",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleY2",
+          "value": 2.543891668319702
+        },
+        {
+          "name": "ParamAngleYAug",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleYBounce",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleZ",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleZ2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleZ3",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleZAug",
+          "value": 0.0
+        },
+        {
+          "name": "ParamAngleZBounce",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyAngleX",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyAngleY",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyAngleY2",
+          "value": 0.5320267677307129
+        },
+        {
+          "name": "ParamBodyAngleZ",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyAngleZ2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyPosZ",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyPosZ2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyPositionX2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyPositionX5",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyPositionY2",
+          "value": 0.5320267677307129
+        },
+        {
+          "name": "ParamBodyPositionx",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyPositiony",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyShoulder",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyShoulder2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyShoulder3",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyShoulder4",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyStep",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyZLowerPhysic",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBodyZdown",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBreath",
+          "value": 0.9626021981239319
+        },
+        {
+          "name": "ParamBreath2",
+          "value": 0.19636189937591553
+        },
+        {
+          "name": "ParamBrowLForm2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBrowLY",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBrowRForm2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamBrowRY",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyeBallX",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyeBallY",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyeLOpen",
+          "value": 1.0
+        },
+        {
+          "name": "ParamEyeLSmile",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyeROpen",
+          "value": 1.0
+        },
+        {
+          "name": "ParamEyeRSmile",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyesBallSizeL",
+          "value": 1.7881393432617188E-7
+        },
+        {
+          "name": "ParamEyesBallSizeR",
+          "value": 1.7881393432617188E-7
+        },
+        {
+          "name": "ParamEyesLash",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyesLash2",
+          "value": -1.506805489270846E-7
+        },
+        {
+          "name": "ParamEyesLash3",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyesLash4",
+          "value": -1.7881393432617188E-7
+        },
+        {
+          "name": "ParamEyesLipL1",
+          "value": -1.1920928955078125E-7
+        },
+        {
+          "name": "ParamEyesLipL2",
+          "value": 8.34465012644614E-8
+        },
+        {
+          "name": "ParamEyesLipR",
+          "value": -1.1920928955078125E-7
+        },
+        {
+          "name": "ParamEyesLipR2",
+          "value": 8.34465012644614E-8
+        },
+        {
+          "name": "ParamEyesPupilSizeL",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyesPupilSizeR",
+          "value": 0.0
+        },
+        {
+          "name": "ParamEyesballHlXL",
+          "value": -0.19547684490680695
+        },
+        {
+          "name": "ParamEyesballHlXR",
+          "value": 0.19547684490680695
+        },
+        {
+          "name": "ParamEyesballHlYL",
+          "value": 2.2649764730431343E-7
+        },
+        {
+          "name": "ParamEyesballHlYR",
+          "value": 2.2649764730431343E-7
+        },
+        {
+          "name": "ParamFacePhysic1",
+          "value": -0.15707969665527344
+        },
+        {
+          "name": "ParamFacePhysic2",
+          "value": -1.1920928955078125E-7
+        },
+        {
+          "name": "ParamHairL_Hue11",
+          "value": 0.0
+        },
+        {
+          "name": "ParamHairL_Lightness2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamHairL_Saturation2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamHairR_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "ParamHairR_Hue2",
+          "value": 4.099999904632568
+        },
+        {
+          "name": "ParamHairR_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "ParamHairR_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "ParamHairS1_1",
+          "value": -0.0011127841426059604
+        },
+        {
+          "name": "ParamHairS1_10",
+          "value": 0.0065975189208984375
+        },
+        {
+          "name": "ParamHairS1_2",
+          "value": 0.0005686241202056408
+        },
+        {
+          "name": "ParamHairS1_3",
+          "value": 0.00045994663378223777
+        },
+        {
+          "name": "ParamHairS1_4",
+          "value": 0.07690776884555817
+        },
+        {
+          "name": "ParamHairS1_5",
+          "value": 0.07292139530181885
+        },
+        {
+          "name": "ParamHairS1_6",
+          "value": 0.00021479128918144852
+        },
+        {
+          "name": "ParamHairS1_7",
+          "value": 0.0017327427631244063
+        },
+        {
+          "name": "ParamHairS1_8",
+          "value": -0.008817244321107864
+        },
+        {
+          "name": "ParamHairS1_9",
+          "value": -0.0019691705238074064
+        },
+        {
+          "name": "ParamHairS2_1",
+          "value": -0.0011127841426059604
+        },
+        {
+          "name": "ParamHairS2_10",
+          "value": 0.0065975189208984375
+        },
+        {
+          "name": "ParamHairS2_2",
+          "value": 0.0005806797998957336
+        },
+        {
+          "name": "ParamHairS2_3",
+          "value": 0.00044761563185602427
+        },
+        {
+          "name": "ParamHairS2_4",
+          "value": 0.0769563764333725
+        },
+        {
+          "name": "ParamHairS2_5",
+          "value": 0.07292139530181885
+        },
+        {
+          "name": "ParamHairS2_6",
+          "value": 0.00021479128918144852
+        },
+        {
+          "name": "ParamHairS2_7",
+          "value": 0.0017327427631244063
+        },
+        {
+          "name": "ParamHairS2_8",
+          "value": -0.008817244321107864
+        },
+        {
+          "name": "ParamHairS2_9",
+          "value": -0.0019691705238074064
+        },
+        {
+          "name": "ParamHair_Hue2",
+          "value": 3.650233745574951
+        },
+        {
+          "name": "ParamHair_Hue4",
+          "value": 3.273258686065674
+        },
+        {
+          "name": "ParamHair_Hue5",
+          "value": 6.099999904632568
+        },
+        {
+          "name": "ParamInnerMouth_Hue",
+          "value": 4.5
+        },
+        {
+          "name": "ParamInnerMouth_Lightness",
+          "value": 2.700000047683716
+        },
+        {
+          "name": "ParamInnerMouth_Saturation",
+          "value": 8.0
+        },
+        {
+          "name": "ParamJawOpen",
+          "value": 0.0
+        },
+        {
+          "name": "ParamKeyboardmouse",
+          "value": 0.0
+        },
+        {
+          "name": "ParamL_angle",
+          "value": -8.768003463745117
+        },
+        {
+          "name": "ParamL_yoko",
+          "value": 0.11444568634033203
+        },
+        {
+          "name": "ParamLipstick_Hue",
+          "value": 4.491645812988281
+        },
+        {
+          "name": "ParamLipstick_Lightness",
+          "value": 1.2000000476837158
+        },
+        {
+          "name": "ParamLipstick_Saturation",
+          "value": 10.0
+        },
+        {
+          "name": "ParamMouthForm",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthForm2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthFunnel",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthOpenY",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthOpenY2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthPhysic1",
+          "value": 1.1920928955078125E-7
+        },
+        {
+          "name": "ParamMouthPhysic2",
+          "value": -8.344650268554688E-7
+        },
+        {
+          "name": "ParamMouthShrug",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthX",
+          "value": 0.0
+        },
+        {
+          "name": "ParamMouthX2",
+          "value": 0.0
+        },
+        {
+          "name": "ParamPupilType",
+          "value": 1.1112029552459717
+        },
+        {
+          "name": "ParamPupilType2",
+          "value": 1.4882177114486694
+        },
+        {
+          "name": "ParamR_angle",
+          "value": -8.768003463745117
+        },
+        {
+          "name": "ParamR_angle2",
+          "value": -8.768003463745117
+        },
+        {
+          "name": "ParamR_yoko3",
+          "value": 0.11444568634033203
+        },
+        {
+          "name": "ParamSkin_Hue",
+          "value": 4.462832450866699
+        },
+        {
+          "name": "ParamSkin_Lightness",
+          "value": 0.25
+        },
+        {
+          "name": "ParamSkin_Lightness2",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "ParamSkin_Saturation",
+          "value": 10.0
+        },
+        {
+          "name": "ParamTongueOut",
+          "value": 0.0
+        },
+        {
+          "name": "ParamTop_Hue2",
+          "value": 6.0
+        },
+        {
+          "name": "ParamTop_Lightness2",
+          "value": 5.0
+        },
+        {
+          "name": "ParamTop_Saturation2",
+          "value": 10.0
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer10",
+          "value": -12.891112327575684
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer11",
+          "value": -12.682211875915527
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer12",
+          "value": -11.619120597839355
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer5",
+          "value": 19.339969635009766
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer6",
+          "value": -0.45672607421875
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer7",
+          "value": -2.303907871246338
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer8",
+          "value": -5.0975799560546875
+        },
+        {
+          "name": "Param_Angle_TemporaryDeformer9",
+          "value": -7.850029468536377
+        },
+        {
+          "name": "Paramhandle",
+          "value": 0.0
+        },
+        {
+          "name": "Paramlr",
+          "value": 0.0
+        },
+        {
+          "name": "Paramlr10",
+          "value": 0.0
+        },
+        {
+          "name": "Paramlr3",
+          "value": 1.0
+        },
+        {
+          "name": "Paramlr5",
+          "value": 1.0
+        },
+        {
+          "name": "Paramlr6",
+          "value": 0.963107705116272
+        },
+        {
+          "name": "Paramlr7",
+          "value": 0.10493683815002441
+        },
+        {
+          "name": "Paramlr8",
+          "value": 0.7559570074081421
+        },
+        {
+          "name": "Paramlr9",
+          "value": 0.10950851440429688
+        },
+        {
+          "name": "Parammicrophone",
+          "value": 0.0
+        },
+        {
+          "name": "Parammicrophone2",
+          "value": 0.0
+        },
+        {
+          "name": "Paramy2",
+          "value": 0.0
+        },
+        {
+          "name": "Pendant",
+          "value": 0.0
+        },
+        {
+          "name": "Puff_Sleeve",
+          "value": 0.0
+        },
+        {
+          "name": "Pupi_Hue2",
+          "value": 0.0
+        },
+        {
+          "name": "Pupi_Hue3",
+          "value": 0.0
+        },
+        {
+          "name": "Pupi_Lightness2",
+          "value": 6.878870010375977
+        },
+        {
+          "name": "Pupi_Lightness3",
+          "value": 6.878871440887451
+        },
+        {
+          "name": "Pupi_Saturation2",
+          "value": 0.0
+        },
+        {
+          "name": "Pupi_Saturation3",
+          "value": 0.0
+        },
+        {
+          "name": "RabbitEarrs",
+          "value": 1.0
+        },
+        {
+          "name": "RabbitEarrs2",
+          "value": 0.0
+        },
+        {
+          "name": "Ribbon_Bow",
+          "value": 0.0
+        },
+        {
+          "name": "Ribbon_Choker",
+          "value": 0.9140143394470215
+        },
+        {
+          "name": "Ribbon_Collar",
+          "value": 0.0
+        },
+        {
+          "name": "Ring",
+          "value": 0.0
+        },
+        {
+          "name": "Ruffles",
+          "value": 0.0
+        },
+        {
+          "name": "S2_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "S2_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "S2_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Sailor_Collar",
+          "value": 0.0
+        },
+        {
+          "name": "Sclera_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Sclera_Hue3",
+          "value": 0.0
+        },
+        {
+          "name": "Sclera_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Sclera_Lightness3",
+          "value": 0.0
+        },
+        {
+          "name": "Sclera_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Sclera_Saturation3",
+          "value": 0.0
+        },
+        {
+          "name": "Shirt",
+          "value": 0.0
+        },
+        {
+          "name": "Shirt_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Shirt_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Shirt_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Shirt_cuffs",
+          "value": 1.0
+        },
+        {
+          "name": "Shoes",
+          "value": 1.49483060836792
+        },
+        {
+          "name": "Shoes_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Shoes_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Shoes_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair10",
+          "value": 0.001483387895859778
+        },
+        {
+          "name": "Sidehair11",
+          "value": 0.00042464875150471926
+        },
+        {
+          "name": "Sidehair14",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair16",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair1L",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair1R",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair2L",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair2R",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair3L",
+          "value": 0.6482015252113342
+        },
+        {
+          "name": "Sidehair3R",
+          "value": 0.6515084505081177
+        },
+        {
+          "name": "Sidehair4L",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair4R",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair5L",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair5R",
+          "value": 0.0
+        },
+        {
+          "name": "Sidehair9",
+          "value": 0.07772061228752136
+        },
+        {
+          "name": "Sleeve",
+          "value": 1.0
+        },
+        {
+          "name": "Sleeve_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Sleeve_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Sleeve_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "SockL_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "SockL_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "SockL_Opacity",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "SockL_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "SockR",
+          "value": 0.7540299892425537
+        },
+        {
+          "name": "SockR2",
+          "value": 0.7540295720100403
+        },
+        {
+          "name": "SockR_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "SockR_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "SockR_Opacity",
+          "value": 0.20000000298023224
+        },
+        {
+          "name": "SockR_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Star",
+          "value": 0.0
+        },
+        {
+          "name": "Sticker_Face_L",
+          "value": 0.0
+        },
+        {
+          "name": "Sticker_Face_R",
+          "value": 0.0
+        },
+        {
+          "name": "Strap",
+          "value": 0.0
+        },
+        {
+          "name": "TA2_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "TA2_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "TA2_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "TA3_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "TA3_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "TA3_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Thick_Choker",
+          "value": 0.0
+        },
+        {
+          "name": "Thin_Choker",
+          "value": 0.0
+        },
+        {
+          "name": "Top",
+          "value": 0.0
+        },
+        {
+          "name": "TopAddons_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "TopAddons_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "TopAddons_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "TopLower",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Hue",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Hue2",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Hue3",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Lightness",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Lightness2",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Lightness3",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Saturation",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Saturation2",
+          "value": 0.0
+        },
+        {
+          "name": "Top_Saturation3",
+          "value": 0.0
+        },
+        {
+          "name": "Warning",
+          "value": 0.0
+        },
+        {
+          "name": "Warning2",
+          "value": -1.0
+        },
+        {
+          "name": "Warning3",
+          "value": 0.0
+        },
+        {
+          "name": "Warning4",
+          "value": 0.0
+        },
+        {
+          "name": "Warning5",
+          "value": 0.0
+        },
+        {
+          "name": "Warning6",
+          "value": 0.0
+        },
+        {
+          "name": "XB_A",
+          "value": 0.0
+        },
+        {
+          "name": "XB_B",
+          "value": 0.0
+        },
+        {
+          "name": "XB_Back",
+          "value": 0.0
+        },
+        {
+          "name": "XB_DPadDown",
+          "value": 0.0
+        },
+        {
+          "name": "XB_DPadLeft",
+          "value": 0.0
+        },
+        {
+          "name": "XB_DPadRight",
+          "value": 0.0
+        },
+        {
+          "name": "XB_DPadUp",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LFinger1ToDPad",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LFinger1ToDPadDown",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LFinger1ToDPadLeft",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LFinger1ToDPadRight",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LFinger1ToDPadUp",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LeftShoulder",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LeftStickButton",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LeftStickX",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LeftStickY",
+          "value": 0.0
+        },
+        {
+          "name": "XB_LeftTrigger",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RFinger1ToA",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RFinger1ToABXY",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RFinger1ToB",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RFinger1ToX",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RFinger1ToY",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RightShoulder",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RightStickButton",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RightStickX",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RightStickY",
+          "value": 0.0
+        },
+        {
+          "name": "XB_RightTrigger",
+          "value": 0.0
+        },
+        {
+          "name": "XB_Start",
+          "value": 0.0
+        },
+        {
+          "name": "XB_X",
+          "value": 0.0
+        },
+        {
+          "name": "XB_Y",
+          "value": 0.0
+        },
+        {
+          "name": "divider1",
+          "value": 0.0
+        },
+        {
+          "name": "divider10",
+          "value": 0.0
+        },
+        {
+          "name": "divider11",
+          "value": 0.0
+        },
+        {
+          "name": "divider12",
+          "value": 0.0
+        },
+        {
+          "name": "divider13",
+          "value": 0.0
+        },
+        {
+          "name": "divider14",
+          "value": 0.0
+        },
+        {
+          "name": "divider15",
+          "value": 0.0
+        },
+        {
+          "name": "divider16",
+          "value": 0.0
+        },
+        {
+          "name": "divider17",
+          "value": 0.0
+        },
+        {
+          "name": "divider18",
+          "value": 0.0
+        },
+        {
+          "name": "divider19",
+          "value": 0.0
+        },
+        {
+          "name": "divider2",
+          "value": 0.0
+        },
+        {
+          "name": "divider20",
+          "value": 0.0
+        },
+        {
+          "name": "divider21",
+          "value": 0.0
+        },
+        {
+          "name": "divider22",
+          "value": 0.0
+        },
+        {
+          "name": "divider23",
+          "value": 0.0
+        },
+        {
+          "name": "divider24",
+          "value": 0.0
+        },
+        {
+          "name": "divider25",
+          "value": 0.0
+        },
+        {
+          "name": "divider26",
+          "value": 0.0
+        },
+        {
+          "name": "divider27",
+          "value": 0.0
+        },
+        {
+          "name": "divider28",
+          "value": 0.0
+        },
+        {
+          "name": "divider29",
+          "value": 0.0
+        },
+        {
+          "name": "divider3",
+          "value": 0.0
+        },
+        {
+          "name": "divider30",
+          "value": 0.0
+        },
+        {
+          "name": "divider31",
+          "value": 0.0
+        },
+        {
+          "name": "divider32",
+          "value": 0.0
+        },
+        {
+          "name": "divider33",
+          "value": 0.0
+        },
+        {
+          "name": "divider34",
+          "value": 0.0
+        },
+        {
+          "name": "divider35",
+          "value": 0.0
+        },
+        {
+          "name": "divider36",
+          "value": 0.0
+        },
+        {
+          "name": "divider37",
+          "value": 0.0
+        },
+        {
+          "name": "divider38",
+          "value": 0.0
+        },
+        {
+          "name": "divider39",
+          "value": 0.0
+        },
+        {
+          "name": "divider4",
+          "value": 0.0
+        },
+        {
+          "name": "divider40",
+          "value": 0.0
+        },
+        {
+          "name": "divider41",
+          "value": 0.0
+        },
+        {
+          "name": "divider42",
+          "value": 0.0
+        },
+        {
+          "name": "divider43",
+          "value": 0.0
+        },
+        {
+          "name": "divider44",
+          "value": 0.0
+        },
+        {
+          "name": "divider45",
+          "value": 0.0
+        },
+        {
+          "name": "divider47",
+          "value": 0.0
+        },
+        {
+          "name": "divider48",
+          "value": 0.0
+        },
+        {
+          "name": "divider49",
+          "value": 0.0
+        },
+        {
+          "name": "divider5",
+          "value": 0.0
+        },
+        {
+          "name": "divider50",
+          "value": 0.0
+        },
+        {
+          "name": "divider51",
+          "value": 0.0
+        },
+        {
+          "name": "divider52",
+          "value": 0.0
+        },
+        {
+          "name": "divider53",
+          "value": 0.0
+        },
+        {
+          "name": "divider54",
+          "value": 0.0
+        },
+        {
+          "name": "divider55",
+          "value": 0.0
+        },
+        {
+          "name": "divider56",
+          "value": 0.0
+        },
+        {
+          "name": "divider57",
+          "value": 0.0
+        },
+        {
+          "name": "divider58",
+          "value": 0.0
+        },
+        {
+          "name": "divider59",
+          "value": 0.0
+        },
+        {
+          "name": "divider6",
+          "value": 0.0
+        },
+        {
+          "name": "divider7",
+          "value": 0.0
+        },
+        {
+          "name": "divider8",
+          "value": 0.0
+        },
+        {
+          "name": "divider9",
+          "value": 0.0
+        },
+        {
+          "name": "hair_bobbleL",
+          "value": 0.0
+        },
+        {
+          "name": "hair_bobbleR",
+          "value": 0.0
+        },
+        {
+          "name": "iris_Hue",
+          "value": 1.2642379999160767
+        },
+        {
+          "name": "iris_Hue2",
+          "value": 1.2642391920089722
+        },
+        {
+          "name": "iris_Lightness",
+          "value": 2.9921481609344482
+        },
+        {
+          "name": "iris_Lightness2",
+          "value": 2.992145538330078
+        },
+        {
+          "name": "iris_Saturation",
+          "value": 10.0
+        },
+        {
+          "name": "iris_Saturation2",
+          "value": 10.0
+        },
+        {
+          "name": "larmrotate",
+          "value": 0.030066490173339844
+        },
+        {
+          "name": "larmrotate17",
+          "value": 0.0011200904846191406
+        },
+        {
+          "name": "larmrotate18",
+          "value": -0.004689574241638184
+        },
+        {
+          "name": "larmrotate2",
+          "value": 0.0011200904846191406
+        },
+        {
+          "name": "larmrotate3",
+          "value": 0.004642367362976074
+        },
+        {
+          "name": "larmrotate4",
+          "value": 0.009379148483276367
+        },
+        {
+          "name": "larmrotate5",
+          "value": -0.022072792053222656
+        },
+        {
+          "name": "larmrotate7",
+          "value": 0.0011200904846191406
+        },
+        {
+          "name": "larmrotate8",
+          "value": -0.004689574241638184
+        },
+        {
+          "name": "mm",
+          "value": 0.0
+        },
+        {
+          "name": "mm2",
+          "value": 0.0
+        },
+        {
+          "name": "mm3",
+          "value": 0.0
+        },
+        {
+          "name": "my2",
+          "value": 0.0
+        },
+        {
+          "name": "rarmrotate",
+          "value": 0.030066490173339844
+        },
+        {
+          "name": "rarmrotate2",
+          "value": 0.0011200904846191406
+        },
+        {
+          "name": "rarmrotate3",
+          "value": 0.004642367362976074
+        },
+        {
+          "name": "rarmrotate4",
+          "value": 0.009379148483276367
+        },
+        {
+          "name": "rarmrotate5",
+          "value": -0.022072792053222656
+        }
+      ]
+    }
+  ]
+}

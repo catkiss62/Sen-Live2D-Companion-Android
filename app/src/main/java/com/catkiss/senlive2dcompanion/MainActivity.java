@@ -2,6 +2,7 @@ package com.catkiss.senlive2dcompanion;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.opengl.GLSurfaceView;
@@ -17,7 +18,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.SeekBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -28,7 +28,6 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -50,34 +49,8 @@ import java.util.zip.ZipInputStream;
 
 public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
-    private static final int AHOGE_CONFIRMED_PRESET_VERSION = 6;
-    private static final int AHOGE_ANCHOR_PRESET_VERSION = 2;
-    private static final int AHOGE_MOTION_PRESET_VERSION = 1;
-    private static final int EAR_CONFIRMED_PRESET_VERSION = 1;
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
-    private static final float CONFIRMED_AHOGE_HEIGHT = 56.0f;
-    private static final float CONFIRMED_AHOGE_LENGTH = 100.0f;
-    private static final float CONFIRMED_AHOGE_WIDTH = 83.0f;
-    private static final float CONFIRMED_AHOGE_ROTATION = -49.0f;
-    private static final float CONFIRMED_AHOGE_X = -0.006f;
-    private static final float CONFIRMED_AHOGE_Y = 0.0f;
-    private static final String CONFIRMED_AHOGE_ANCHOR_JSON =
-            "{\"schema\":\"sen-ahoge-anchor\",\"schemaVersion\":2,"
-                    + "\"coordinateSystem\":\"Cubism model-local barycentric triangle coordinates\","
-                    + "\"screenPixelsPersisted\":false,"
-                    + "\"root\":{\"drawableId\":\"ArtMesh151\","
-                    + "\"triangleVertexIds\":[8,8,8],\"barycentricWeights\":[1,0,0],"
-                    + "\"capturedModelPoint\":[-0.007617833,2.1282744]},"
-                    + "\"direction\":{\"drawableId\":\"ArtMesh151\","
-                    + "\"triangleVertexIds\":[21,5,22],"
-                    + "\"barycentricWeights\":[0.65576994,0.30497047,0.039259583],"
-                    + "\"capturedModelPoint\":[-0.04180951,2.1795814]},"
-                    + "\"rootCandidates\":[],\"directionCandidates\":[]}";
-    private static final float DEFAULT_AHOGE_ROOT_FOLLOW = 50.0f;
-    private static final float DEFAULT_AHOGE_ROOT_ROTATION = 50.0f;
-    private static final float DEFAULT_AHOGE_LOCAL_MOTION = 50.0f;
-    private static final float DEFAULT_EAR_SPEED_PERCENT = 135.0f;
-    private static final float DEFAULT_EAR_AMPLITUDE_PERCENT = 100.0f;
+    private static final String DEFAULT_PROFILE_ASSET = "sen-default-profile-v1.json";
     private static final float DEFAULT_HEAD_ZONE_LEFT = .4927f;
     private static final float DEFAULT_HEAD_ZONE_TOP = .0482f;
     private static final float DEFAULT_HEAD_ZONE_RIGHT = .7095f;
@@ -97,33 +70,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SharedPreferences prefs;
     private File modelRoot;
     private File importRoot;
-    private File appearanceVtubeFile;
-    private File profileFile;
     private GLSurfaceView glSurfaceView;
     private SenRenderer renderer;
     private TextView statusText;
     private TextView summaryText;
     private LinearLayout expressionArea;
     private FrameLayout loadingOverlay;
-    private FrameLayout stageView;
     private TextView loadingText;
-    private boolean applyVtsPreset = true;
-    private boolean freezeVtsSnapshot = true;
-    private SenMaskMode maskMode = SenMaskMode.HIGH_PRECISION;
-    private int highPrecisionMaskSize = 1024;
-    private float earSpeedPercent;
-    private float earAmplitudePercent;
-    private float ahogeScalePercent;
-    private float ahogeLengthPercent;
-    private float ahogeWidthPercent;
-    private float ahogeRotationDegrees;
-    private float ahogeOffsetX;
-    private float ahogeOffsetY;
-    private float ahogeRootFollowPercent;
-    private float ahogeRootRotationPercent;
-    private float ahogeLocalMotionPercent;
-    private boolean ahogeNativePassthrough;
-    private boolean tailMirrored;
+    private SenVtsProfile defaultProfile;
     private boolean adjustmentEnabled;
     private float stageScale = 1.0f;
     private float stageTranslateX;
@@ -132,34 +86,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private float lastTouchY;
     private ScaleGestureDetector scaleGestureDetector;
     private Button adjustmentButton;
-    private TextView earSpeedStatus;
-    private SeekBar earSpeedSeekBar;
-    private TextView earAmplitudeStatus;
-    private SeekBar earAmplitudeSeekBar;
-    private TextView ahogeRootFollowStatus;
-    private SeekBar ahogeRootFollowSeekBar;
-    private TextView ahogeRootRotationStatus;
-    private SeekBar ahogeRootRotationSeekBar;
-    private TextView ahogeLocalMotionStatus;
-    private SeekBar ahogeLocalMotionSeekBar;
-    private TextView ahogeDiagnosticStatus;
-    private TextView ahogeScaleStatus;
-    private TextView ahogeLengthStatus;
-    private TextView ahogeWidthStatus;
-    private TextView ahogeRotationStatus;
-    private SeekBar ahogeScaleSeekBar;
-    private SeekBar ahogeLengthSeekBar;
-    private SeekBar ahogeWidthSeekBar;
-    private SeekBar ahogeRotationSeekBar;
-    private Button ahogeNativePassthroughButton;
-    private Button ahogeMarkerButton;
-    private View ahogeRootMarker;
-    private View ahogeDirectionMarker;
-    private boolean ahogeMarkersEnabled = false;
-    private int ahogeAnchorCalibrationStep;
-    private boolean ahogeAnchorCaptureBusy;
-    private String ahogeAnchorJson = "";
-    private String pendingDiagnosticExport = "";
     private Button autoIdleButton;
     private Button touchFollowButton;
     private boolean autoIdleEnabled;
@@ -189,89 +115,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(), this::onModelZipPicked);
 
-    private final ActivityResultLauncher<String[]> vtsAppearancePicker = registerForActivityResult(
-            new ActivityResultContracts.OpenMultipleDocuments(), this::onVtsAppearancePicked);
-
-    private final ActivityResultLauncher<String> diagnosticExporter = registerForActivityResult(
-            new ActivityResultContracts.CreateDocument("application/json"),
-            this::onDiagnosticExportTargetPicked);
-
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        maskMode = SenMaskMode.fromPreference(prefs.getString("mask_mode", null));
-        highPrecisionMaskSize = normalizeMaskSize(prefs.getInt("mask_size", 1024));
-        // v0.3.7 retires the manual ear Drawable transforms. Clear old persisted test values so
-        // an in-place APK upgrade always returns to the captured VTS ear state.
-        if (prefs.getInt("ear_confirmed_preset_version", 0)
-                < EAR_CONFIRMED_PRESET_VERSION) {
-            prefs.edit()
-                    .putInt("ear_confirmed_preset_version", EAR_CONFIRMED_PRESET_VERSION)
-                    .putFloat("ear_speed_percent", DEFAULT_EAR_SPEED_PERCENT)
-                    .putFloat("ear_amplitude_percent", DEFAULT_EAR_AMPLITUDE_PERCENT)
-                    .apply();
-        }
-        earSpeedPercent = Math.max(50.0f, Math.min(250.0f,
-                prefs.getFloat("ear_speed_percent", DEFAULT_EAR_SPEED_PERCENT)));
-        earAmplitudePercent = Math.max(50.0f, Math.min(250.0f,
-                prefs.getFloat("ear_amplitude_percent", DEFAULT_EAR_AMPLITUDE_PERCENT)));
-        prefs.edit().remove("ear_angle_enabled").remove("ear_angle_degrees")
-                .remove("ear_vertical_offset").apply();
-        if (prefs.getInt("ahoge_confirmed_preset_version", 0)
-                < AHOGE_CONFIRMED_PRESET_VERSION) {
-            prefs.edit()
-                    .putInt("ahoge_confirmed_preset_version", AHOGE_CONFIRMED_PRESET_VERSION)
-                    .putFloat("ahoge_scale_percent", CONFIRMED_AHOGE_HEIGHT)
-                    .putFloat("ahoge_length_percent", CONFIRMED_AHOGE_LENGTH)
-                    .putFloat("ahoge_width_percent", CONFIRMED_AHOGE_WIDTH)
-                    .putFloat("ahoge_rotation_degrees", CONFIRMED_AHOGE_ROTATION)
-                    .putFloat("ahoge_offset_x", CONFIRMED_AHOGE_X)
-                    .putFloat("ahoge_offset_y", CONFIRMED_AHOGE_Y)
-                    .remove("ahoge_root_drawable_id")
-                    .remove("ahoge_root_vertex_index")
-                    .remove("ahoge_root_model_x")
-                    .remove("ahoge_root_model_y")
-                    .remove("ahoge_root_distance")
-                    .putBoolean("tail_mirrored", true)
-                    .apply();
-        }
-        ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
-        ahogeLengthPercent = CONFIRMED_AHOGE_LENGTH;
-        ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
-        ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
-        if (prefs.getInt("ahoge_anchor_preset_version", 0)
-                < AHOGE_ANCHOR_PRESET_VERSION) {
-            prefs.edit()
-                    .putInt("ahoge_anchor_preset_version", AHOGE_ANCHOR_PRESET_VERSION)
-                    .putString("ahoge_anchor_json", CONFIRMED_AHOGE_ANCHOR_JSON)
-                    .putBoolean("ahoge_native_passthrough", false)
-                    .apply();
-        }
-        ahogeOffsetX = CONFIRMED_AHOGE_X;
-        ahogeOffsetY = CONFIRMED_AHOGE_Y;
-        ahogeAnchorJson = CONFIRMED_AHOGE_ANCHOR_JSON;
-        if (prefs.getInt("ahoge_motion_preset_version", 0)
-                < AHOGE_MOTION_PRESET_VERSION) {
-            prefs.edit()
-                    .putInt("ahoge_motion_preset_version", AHOGE_MOTION_PRESET_VERSION)
-                    .putFloat("ahoge_root_follow_percent", DEFAULT_AHOGE_ROOT_FOLLOW)
-                    .putFloat("ahoge_root_rotation_percent", DEFAULT_AHOGE_ROOT_ROTATION)
-                    .putFloat("ahoge_local_motion_percent", DEFAULT_AHOGE_LOCAL_MOTION)
-                    .apply();
-        }
-        ahogeRootFollowPercent = clampPercent(prefs.getFloat(
-                "ahoge_root_follow_percent", DEFAULT_AHOGE_ROOT_FOLLOW));
-        ahogeRootRotationPercent = clampPercent(prefs.getFloat(
-                "ahoge_root_rotation_percent", DEFAULT_AHOGE_ROOT_ROTATION));
-        ahogeLocalMotionPercent = clampPercent(prefs.getFloat(
-                "ahoge_local_motion_percent", DEFAULT_AHOGE_LOCAL_MOTION));
-        ahogeNativePassthrough = false;
-        tailMirrored = true;
-        prefs.edit().putBoolean("tail_mirrored", true)
-                .remove("ahoge_root_drawable_id").remove("ahoge_root_vertex_index")
-                .remove("ahoge_root_model_x").remove("ahoge_root_model_y")
-                .remove("ahoge_root_distance").apply();
+        defaultProfile = loadBundledProfile();
+        prefs.edit()
+                .remove("mask_mode").remove("mask_size")
+                .remove("ear_speed_percent").remove("ear_amplitude_percent")
+                .remove("ahoge_root_follow_percent").remove("ahoge_root_rotation_percent")
+                .remove("ahoge_local_motion_percent").remove("ahoge_native_passthrough")
+                .remove("ahoge_anchor_json").remove("ahoge_scale_percent")
+                .remove("ahoge_length_percent").remove("ahoge_width_percent")
+                .remove("ahoge_rotation_degrees").remove("ahoge_offset_x")
+                .remove("ahoge_offset_y").remove("tail_mirrored")
+                .apply();
         if (prefs.getInt("head_zone_confirmed_preset_version", 0)
                 < HEAD_ZONE_CONFIRMED_PRESET_VERSION) {
             prefs.edit()
@@ -296,8 +154,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 prefs.getString("outfit_preset", SenOutfitPresets.MAID.id));
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
         importRoot = new File(getFilesDir(), "sen-import-temp");
-        appearanceVtubeFile = new File(getFilesDir(), "Sen Customizable Model_2K.vtube.json");
-        profileFile = new File(getFilesDir(), "Sen.vts-profile.json");
         //noinspection ResultOfMethodCallIgnored
         modelRoot.mkdirs();
         purgeRemovedUserExpressionOnUpgrade();
@@ -326,11 +182,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 new String[]{"application/zip", "application/octet-stream"}));
         toolbar.addView(importButton);
 
-        Button appearanceButton = compactButton("导入外观");
-        appearanceButton.setOnClickListener(v -> vtsAppearancePicker.launch(
-                new String[]{"application/json", "text/json", "text/plain", "application/octet-stream"}));
-        toolbar.addView(appearanceButton);
-
         Button reloadButton = compactButton("重载");
         reloadButton.setOnClickListener(v -> loadNativeModel());
         toolbar.addView(reloadButton);
@@ -339,7 +190,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.11 · 羞愧半闭眼修正版");
+        statusText.setText("v0.5.12 · 内置参数收口版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -348,13 +199,13 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
 
         FrameLayout stage = new FrameLayout(this);
-        stageView = stage;
         glSurfaceView = new GLSurfaceView(this);
+        glSurfaceView.setBackgroundColor(Color.TRANSPARENT);
+        glSurfaceView.getHolder().setFormat(PixelFormat.TRANSLUCENT);
         glSurfaceView.setEGLContextClientVersion(2);
         glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 24, 0);
         renderer = new SenRenderer(this, this);
         renderer.setTouchFollowEnabled(touchFollowEnabled);
-        renderer.setEarTuning(earSpeedPercent, earAmplitudePercent);
         glSurfaceView.setRenderer(renderer);
         glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         glSurfaceView.setPreserveEGLContextOnPause(true);
@@ -385,31 +236,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         summaryText.setPadding(0, dp(3), 0, dp(6));
         panel.addView(summaryText);
 
-        LinearLayout controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        Button vtsButton = panelButton("使用VTS外观底座");
-        vtsButton.setOnClickListener(v -> {
-            if (!profileFile.isFile()) {
-                toastLong("请点顶部“导入外观”，选择一次 Sen.vts-profile.json；服装颜色已经内置");
-                return;
-            }
-            applyVtsPreset = true;
-            freezeVtsSnapshot = true;
-            loadNativeModel();
-        });
-        controls.addView(vtsButton, weightedButtonParams());
-
-        Button rawButton = panelButton("查看原始状态");
-        rawButton.setOnClickListener(v -> {
-            applyVtsPreset = false;
-            freezeVtsSnapshot = false;
-            loadNativeModel();
-        });
-        controls.addView(rawButton, weightedButtonParams());
-        panel.addView(controls);
-
         TextView memoryNote = new TextView(this);
-        memoryNote.setText("动态顺序：VTS外观底座 → 情绪/动作 → 原生物理 → 尾巴镜像与呆毛。外观参数每帧恢复，动作不会累积破坏部件选择。");
+        memoryNote.setText("已内置正常待机581项参数。动态顺序：默认参数 → 情绪/动作 → 原生物理 → 尾巴镜像与固化呆毛；透明渲染面可直接替换AI伴侣立绘层。");
         memoryNote.setTextColor(Color.rgb(186, 164, 204));
         memoryNote.setTextSize(10);
         memoryNote.setPadding(dp(3), dp(3), 0, dp(3));
@@ -438,38 +266,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         outfitNote.setPadding(dp(3), dp(2), 0, dp(3));
         panel.addView(outfitNote);
 
-        TextView maskHeading = new TextView(this);
-        maskHeading.setText("底层蒙版模式（只改变渲染策略；每次会重载大模型）");
-        maskHeading.setTextColor(Color.rgb(238, 207, 255));
-        maskHeading.setTextSize(11);
-        maskHeading.setPadding(dp(3), dp(4), 0, 0);
-        panel.addView(maskHeading);
-
-        LinearLayout maskControls = new LinearLayout(this);
-        maskControls.setOrientation(LinearLayout.HORIZONTAL);
-        for (SenMaskMode option : SenMaskMode.values()) {
-            Button button = panelButton(option.displayName());
-            button.setOnClickListener(v -> selectMaskMode(option));
-            maskControls.addView(button, weightedButtonParams());
-        }
-        panel.addView(maskControls);
-
-        TextView maskQualityHeading = new TextView(this);
-        maskQualityHeading.setText("C蒙版清晰度（默认1024；切换后会重载模型）");
-        maskQualityHeading.setTextColor(Color.rgb(220, 198, 238));
-        maskQualityHeading.setTextSize(10);
-        maskQualityHeading.setPadding(dp(3), dp(3), 0, 0);
-        panel.addView(maskQualityHeading);
-
-        LinearLayout maskQualityControls = new LinearLayout(this);
-        maskQualityControls.setOrientation(LinearLayout.HORIZONTAL);
-        for (int size : new int[]{512, 1024}) {
-            Button button = panelButton(size + "px");
-            button.setOnClickListener(v -> selectHighPrecisionMaskSize(size));
-            maskQualityControls.addView(button, weightedButtonParams());
-        }
-        panel.addView(maskQualityControls);
-
         LinearLayout adjustmentControls = new LinearLayout(this);
         adjustmentControls.setOrientation(LinearLayout.HORIZONTAL);
         adjustmentButton = panelButton("调整模型：关闭");
@@ -485,53 +281,11 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(adjustmentControls);
 
         TextView earNotice = new TextView(this);
-        earNotice.setText("兔耳双脉冲：继续走九轴→原生物理，只取三项兔耳输出。确认预设为速度135%、幅度100%；滑杆保留用于以后试调，自主待机会低频触发。");
+        earNotice.setText("兔耳双脉冲固定为速度135%、幅度100%，继续走九轴→原生物理，只取三项兔耳输出；自主待机会低频触发。");
         earNotice.setTextColor(Color.rgb(220, 198, 238));
         earNotice.setTextSize(10);
         earNotice.setPadding(dp(3), dp(5), 0, dp(2));
         panel.addView(earNotice);
-
-        earSpeedStatus = adjustmentStatusText();
-        panel.addView(earSpeedStatus);
-        earSpeedSeekBar = new SeekBar(this);
-        earSpeedSeekBar.setMax(200);
-        earSpeedSeekBar.setProgress(Math.round(earSpeedPercent) - 50);
-        earSpeedSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                earSpeedPercent = progress + 50.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyEarTuning();
-            }
-        });
-        panel.addView(earSpeedSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
-
-        earAmplitudeStatus = adjustmentStatusText();
-        panel.addView(earAmplitudeStatus);
-        earAmplitudeSeekBar = new SeekBar(this);
-        earAmplitudeSeekBar.setMax(200);
-        earAmplitudeSeekBar.setProgress(Math.round(earAmplitudePercent) - 50);
-        earAmplitudeSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                earAmplitudePercent = progress + 50.0f;
-                updateCustomizationControls();
-            }
-
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                persistAndApplyEarTuning();
-            }
-        });
-        panel.addView(earAmplitudeSeekBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34)));
 
         Button earTwitchButton = panelButton("测试：猫耳快速抖动两次");
         earTwitchButton.setOnClickListener(v -> glSurfaceView.queueEvent(
@@ -708,11 +462,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     }
                 });
         glSurfaceView.setOnTouchListener((view, event) -> {
-            if (ahogeAnchorCalibrationStep > 0
-                    && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                handleAhogeAnchorCalibration(view, event.getX(), event.getY());
-                return true;
-            }
             if (headZoneCalibrationMode && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 handleHeadZoneCalibration(view, event.getX(), event.getY());
                 return true;
@@ -825,257 +574,16 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         stageTranslateY = Math.max(-limit, Math.min(limit, stageTranslateY));
     }
 
-    private void selectMaskMode(SenMaskMode selected) {
-        if (selected == null) return;
-        maskMode = selected;
-        prefs.edit().putString("mask_mode", selected.name()).apply();
-        updateSummary();
-        toastLong("切换到 " + selected.displayName() + "，正在重载同一模型");
-        loadNativeModel();
-    }
-
-    private void selectHighPrecisionMaskSize(int size) {
-        highPrecisionMaskSize = normalizeMaskSize(size);
-        maskMode = SenMaskMode.HIGH_PRECISION;
-        prefs.edit()
-                .putInt("mask_size", highPrecisionMaskSize)
-                .putString("mask_mode", maskMode.name())
-                .apply();
-        updateSummary();
-        toastLong("C高精度蒙版切换到 " + highPrecisionMaskSize + "px，正在重载模型");
-        loadNativeModel();
-    }
-
     private void selectOutfitPreset(SenOutfitPresets.Preset preset) {
         if (preset == null) return;
-        if (!profileFile.isFile()) {
-            toastLong("内置服装只需一份VTS外观底座；请先导入Sen.vts-profile.json");
-            return;
-        }
         selectedOutfit = preset;
         prefs.edit().putString("outfit_preset", preset.id).apply();
-        if (applyVtsPreset && freezeVtsSnapshot) {
-            glSurfaceView.queueEvent(() -> renderer.selectOutfit(preset));
-            updateSummary();
-            toastLong("已切换服装：" + preset.displayName);
-        } else {
-            applyVtsPreset = true;
-            freezeVtsSnapshot = true;
-            loadNativeModel();
-        }
-    }
-
-    private static int normalizeMaskSize(int size) {
-        if (size >= 1024) return 1024;
-        return 512;
-    }
-
-    private void resetAhogeTransform() {
-        ahogeScalePercent = CONFIRMED_AHOGE_HEIGHT;
-        ahogeLengthPercent = CONFIRMED_AHOGE_LENGTH;
-        ahogeWidthPercent = CONFIRMED_AHOGE_WIDTH;
-        ahogeRotationDegrees = CONFIRMED_AHOGE_ROTATION;
-        ahogeOffsetX = CONFIRMED_AHOGE_X;
-        ahogeOffsetY = CONFIRMED_AHOGE_Y;
-        ahogeAnchorJson = CONFIRMED_AHOGE_ANCHOR_JSON;
-        ahogeNativePassthrough = false;
-        prefs.edit()
-                .putString("ahoge_anchor_json", ahogeAnchorJson)
-                .putBoolean("ahoge_native_passthrough", false)
-                .apply();
-        if (ahogeScaleSeekBar != null) ahogeScaleSeekBar.setProgress(16);
-        if (ahogeLengthSeekBar != null) ahogeLengthSeekBar.setProgress(60);
-        if (ahogeWidthSeekBar != null) ahogeWidthSeekBar.setProgress(43);
-        if (ahogeRotationSeekBar != null) ahogeRotationSeekBar.setProgress(41);
-        if (glSurfaceView != null && renderer != null) {
-            glSurfaceView.queueEvent(() -> renderer.setAhogeAnchorJson(ahogeAnchorJson));
-        }
-        persistAndApplyCustomization(true);
-        toastLong("已恢复Sen固化呆毛：整体56 / 长度100 / 宽度83 / 角度-49 / 模型X-0.006");
-    }
-
-    private void resetAhogeMotionTuning() {
-        ahogeRootFollowPercent = DEFAULT_AHOGE_ROOT_FOLLOW;
-        ahogeRootRotationPercent = DEFAULT_AHOGE_ROOT_ROTATION;
-        ahogeLocalMotionPercent = DEFAULT_AHOGE_LOCAL_MOTION;
-        if (ahogeRootFollowSeekBar != null) {
-            ahogeRootFollowSeekBar.setProgress(Math.round(ahogeRootFollowPercent));
-        }
-        if (ahogeRootRotationSeekBar != null) {
-            ahogeRootRotationSeekBar.setProgress(Math.round(ahogeRootRotationPercent));
-        }
-        if (ahogeLocalMotionSeekBar != null) {
-            ahogeLocalMotionSeekBar.setProgress(Math.round(ahogeLocalMotionPercent));
-        }
-        applyAhogeMotionTuning(true);
-        toastLong("呆毛运动已恢复试调初值：位移50% / 旋转50% / 柔性50%");
-    }
-
-    private void applyAhogeMotionTuning(boolean persist) {
-        ahogeRootFollowPercent = clampPercent(ahogeRootFollowPercent);
-        ahogeRootRotationPercent = clampPercent(ahogeRootRotationPercent);
-        ahogeLocalMotionPercent = clampPercent(ahogeLocalMotionPercent);
-        if (persist) {
-            prefs.edit()
-                    .putFloat("ahoge_root_follow_percent", ahogeRootFollowPercent)
-                    .putFloat("ahoge_root_rotation_percent", ahogeRootRotationPercent)
-                    .putFloat("ahoge_local_motion_percent", ahogeLocalMotionPercent)
-                    .apply();
-        }
-        updateCustomizationControls();
-        if (glSurfaceView != null && renderer != null) {
-            glSurfaceView.queueEvent(() -> renderer.setAhogeMotionTuning(
-                    ahogeRootFollowPercent, ahogeRootRotationPercent,
-                    ahogeLocalMotionPercent));
-        }
+        glSurfaceView.queueEvent(() -> renderer.selectOutfit(preset));
         updateSummary();
-    }
-
-    private void toggleAhogeNativePassthrough() {
-        ahogeNativePassthrough = !ahogeNativePassthrough;
-        prefs.edit().putBoolean("ahoge_native_passthrough", ahogeNativePassthrough).apply();
-        updateCustomizationControls();
-        if (glSurfaceView != null && renderer != null) {
-            glSurfaceView.queueEvent(() ->
-                    renderer.setAhogeNativePassthrough(ahogeNativePassthrough));
-        }
-        updateSummary();
-        toastLong(ahogeNativePassthrough
-                ? "已开启原生直通：App不再修改任何呆毛顶点"
-                : (ahogeAnchorJson.isEmpty()
-                ? "尚未采集固定点；为防止发根漂移，仍显示原生呆毛"
-                : "已开启固定根部调整：原生物理保留，所有形状变化围绕发根"));
-    }
-
-    private void beginAhogeAnchorCalibration() {
-        ahogeAnchorCalibrationStep = 1;
-        ahogeAnchorCaptureBusy = false;
-        headZoneCalibrationMode = false;
-        adjustmentEnabled = false;
-        if (adjustmentButton != null) adjustmentButton.setText("调整模型：关闭");
-        ahogeNativePassthrough = true;
-        prefs.edit().putBoolean("ahoge_native_passthrough", true).apply();
-        updateCustomizationControls();
-        glSurfaceView.queueEvent(() -> renderer.setAhogeNativePassthrough(true));
-        toastLong("已切到原生呆毛。请点击呆毛与头发连接的发根；模型可以提前任意放大和移动");
-    }
-
-    private void handleAhogeAnchorCalibration(View view, float x, float y) {
-        if (ahogeAnchorCaptureBusy || ahogeAnchorCalibrationStep <= 0) return;
-        ahogeAnchorCaptureBusy = true;
-        float normalizedX = x / Math.max(1, view.getWidth());
-        float normalizedY = y / Math.max(1, view.getHeight());
-        boolean rootPoint = ahogeAnchorCalibrationStep == 1;
-        glSurfaceView.queueEvent(() -> renderer.captureAhogeAnchor(
-                normalizedX, normalizedY, rootPoint));
-    }
-
-    private void toggleAhogeMarkers() {
-        ahogeMarkersEnabled = !ahogeMarkersEnabled;
-        updateCustomizationControls();
-        if (!ahogeMarkersEnabled) {
-            ahogeRootMarker.setVisibility(View.GONE);
-            ahogeDirectionMarker.setVisibility(View.GONE);
-        }
-    }
-
-    private void requestDiagnosticExport() {
-        if (renderer == null || glSurfaceView == null) return;
-        glSurfaceView.queueEvent(renderer::requestAhogeDiagnosticExport);
-    }
-
-    private void persistAndApplyCustomization() {
-        persistAndApplyCustomization(true);
-    }
-
-    private void persistAndApplyCustomization(boolean persist) {
-        ahogeScalePercent = clampShapePercent(ahogeScalePercent);
-        ahogeLengthPercent = clampShapePercent(ahogeLengthPercent);
-        ahogeWidthPercent = clampShapePercent(ahogeWidthPercent);
-        ahogeRotationDegrees = Math.max(-90.0f, Math.min(90.0f, ahogeRotationDegrees));
-        ahogeOffsetX = CONFIRMED_AHOGE_X;
-        ahogeOffsetY = CONFIRMED_AHOGE_Y;
-        tailMirrored = true;
-        if (persist) {
-            prefs.edit()
-                    .putFloat("ahoge_scale_percent", ahogeScalePercent)
-                    .putFloat("ahoge_length_percent", ahogeLengthPercent)
-                    .putFloat("ahoge_width_percent", ahogeWidthPercent)
-                    .putFloat("ahoge_rotation_degrees", ahogeRotationDegrees)
-                    .putFloat("ahoge_offset_x", ahogeOffsetX)
-                    .putFloat("ahoge_offset_y", ahogeOffsetY)
-                    .putBoolean("tail_mirrored", true)
-                    .apply();
-        }
-        updateCustomizationControls();
-        if (glSurfaceView != null && renderer != null) {
-            glSurfaceView.queueEvent(() -> renderer.setCustomization(
-                    false, 0.0f, 0.0f,
-                    ahogeScalePercent, ahogeLengthPercent, ahogeWidthPercent,
-                    ahogeRotationDegrees,
-                    ahogeOffsetX, ahogeOffsetY, tailMirrored));
-        }
-        updateSummary();
+        toastLong("已切换服装：" + preset.displayName);
     }
 
     private void updateCustomizationControls() {
-        if (earSpeedStatus != null) {
-            earSpeedStatus.setText(String.format(java.util.Locale.ROOT,
-                    "兔耳速度：%.0f%%（50%%～250%%）", earSpeedPercent));
-        }
-        if (earAmplitudeStatus != null) {
-            earAmplitudeStatus.setText(String.format(java.util.Locale.ROOT,
-                    "兔耳幅度：%.0f%%（50%%～250%%）", earAmplitudePercent));
-        }
-        if (ahogeRootFollowStatus != null) {
-            ahogeRootFollowStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛根部位移跟随：%.0f%%（0%%=不跟头部位移，100%%=v0.4.5）",
-                    ahogeRootFollowPercent));
-        }
-        if (ahogeRootRotationStatus != null) {
-            ahogeRootRotationStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛根部旋转跟随：%.0f%%（0%%=不随头部旋转，100%%=v0.4.5）",
-                    ahogeRootRotationPercent));
-        }
-        if (ahogeLocalMotionStatus != null) {
-            ahogeLocalMotionStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛局部柔性/抖动：%.0f%%（0%%=刚性形状，100%%=原生幅度）",
-                    ahogeLocalMotionPercent));
-        }
-        if (ahogeNativePassthroughButton != null) {
-            ahogeNativePassthroughButton.setText(ahogeNativePassthrough
-                    ? "呆毛原生直通：开启（App顶点后处理=0）"
-                    : (ahogeAnchorJson.isEmpty()
-                    ? "固定根部调整：等待采集（当前原生保护）"
-                    : String.format(java.util.Locale.ROOT,
-                    "固定根部调整：开启（模型X%+.3f/Y%+.3f）",
-                    ahogeOffsetX, ahogeOffsetY)));
-        }
-        if (ahogeScaleStatus != null) {
-            ahogeScaleStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛整体大小：%.0f%%（40%%～160%%）", ahogeScalePercent));
-        }
-        if (ahogeLengthStatus != null) {
-            ahogeLengthStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛长度/高矮：%.0f%%（40%%～160%%）", ahogeLengthPercent));
-        }
-        if (ahogeWidthStatus != null) {
-            ahogeWidthStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛宽度/胖瘦：%.0f%%（40%%～160%%）", ahogeWidthPercent));
-        }
-        if (ahogeRotationStatus != null) {
-            ahogeRotationStatus.setText(String.format(java.util.Locale.ROOT,
-                    "呆毛角度：%+.0f°（-90°～+90°）", ahogeRotationDegrees));
-        }
-        boolean shapeEnabled = !ahogeNativePassthrough && !ahogeAnchorJson.isEmpty();
-        if (ahogeScaleSeekBar != null) ahogeScaleSeekBar.setEnabled(shapeEnabled);
-        if (ahogeLengthSeekBar != null) ahogeLengthSeekBar.setEnabled(shapeEnabled);
-        if (ahogeWidthSeekBar != null) ahogeWidthSeekBar.setEnabled(shapeEnabled);
-        if (ahogeRotationSeekBar != null) ahogeRotationSeekBar.setEnabled(shapeEnabled);
-        if (ahogeMarkerButton != null) {
-            ahogeMarkerButton.setText(ahogeMarkersEnabled
-                    ? "固定点标记：显示" : "固定点标记：隐藏");
-        }
         if (autoIdleButton != null) {
             autoIdleButton.setText(autoIdleEnabled
                     ? "自主待机：开启（柔风+眨眼+随机动作）" : "自主待机：关闭");
@@ -1087,23 +595,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         updateHeadZoneStatus();
     }
 
-    private void persistAndApplyEarTuning() {
-        earSpeedPercent = Math.max(50.0f, Math.min(250.0f, earSpeedPercent));
-        earAmplitudePercent = Math.max(50.0f, Math.min(250.0f, earAmplitudePercent));
-        prefs.edit()
-                .putFloat("ear_speed_percent", earSpeedPercent)
-                .putFloat("ear_amplitude_percent", earAmplitudePercent)
-                .apply();
-        updateCustomizationControls();
-        if (glSurfaceView != null && renderer != null) {
-            glSurfaceView.queueEvent(() -> renderer.setEarTuning(
-                    earSpeedPercent, earAmplitudePercent));
-        }
-    }
-
     private void beginHeadZoneCalibration() {
-        ahogeAnchorCalibrationStep = 0;
-        ahogeAnchorCaptureBusy = false;
         headZoneCalibrationMode = true;
         headZoneFirstX = Float.NaN;
         headZoneFirstY = Float.NaN;
@@ -1201,14 +693,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         return Math.max(0.0f, Math.min(1.0f, value));
     }
 
-    private static float clampPercent(float value) {
-        return Math.max(0.0f, Math.min(100.0f, value));
-    }
-
-    private static float clampShapePercent(float value) {
-        return Math.max(40.0f, Math.min(160.0f, value));
-    }
-
     private void resetStageTransform() {
         stageScale = 1.0f;
         stageTranslateX = 0.0f;
@@ -1249,7 +733,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 runOnUiThread(() -> {
                     expressionNames.clear();
                     expressionNames.addAll(detectedExpressions);
-                    applyVtsPreset = true;
                     rebuildExpressionButtons();
                     updateSummary();
                     toastLong("模型导入成功：ZIP 原生预设 "
@@ -1272,78 +755,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         });
     }
 
-    private void onVtsAppearancePicked(List<Uri> uris) {
-        if (uris == null || uris.isEmpty()) return;
-        showLoading("正在读取 Sen VTS 外观文件…");
-        executor.execute(() -> {
-            try {
-                boolean importedColors = false;
-                boolean importedProfile = false;
-                SenVtsAppearance appearance = null;
-                SenVtsProfile profile = null;
-                for (Uri uri : uris) {
-                    String text = readUtf8Uri(uri, 5 * 1024 * 1024);
-                    JSONObject json = new JSONObject(text);
-                    if ("Live2D Expression".equals(json.optString("Type", ""))) {
-                        throw new IOException("“导入外观”不再接受自建 exp3；ZIP 原生预设随模型导入");
-                    } else if (json.has("ArtMeshDetails")) {
-                        appearance = SenVtsAppearance.parse(text);
-                        writeUtf8File(appearanceVtubeFile, text);
-                        importedColors = true;
-                    } else if (SenVtsProfile.SCHEMA.equals(json.optString("schema", ""))) {
-                        profile = SenVtsProfile.parse(text);
-                        writeUtf8File(profileFile, text);
-                        importedProfile = true;
-                    } else {
-                        throw new IOException("请选择 Sen.vts-profile.json 或当前 .vtube.json");
-                    }
-                }
-
-                String relative = prefs.getString("model_path", "");
-                File modelFile = new File(modelRoot, relative);
-                if (!relative.isBlank() && modelFile.isFile()) {
-                    removeExcludedExpressionFiles(modelFile.getParentFile());
-                    List<String> detectedExpressions = registerExpressions(modelFile);
-                    expressionNames.clear();
-                    expressionNames.addAll(detectedExpressions);
-                    prefs.edit()
-                            .putString("expressions", new JSONArray(expressionNames).toString())
-                            .remove("saved_vts_expressions")
-                            .apply();
-                }
-
-                if (appearance == null && appearanceVtubeFile.isFile()) {
-                    appearance = SenVtsAppearance.parse(readUtf8File(appearanceVtubeFile));
-                }
-                if (profile == null && profileFile.isFile()) {
-                    profile = SenVtsProfile.parse(readUtf8File(profileFile));
-                }
-                String summary = (appearance == null ? "逐部件颜色未导入" : appearance.summary())
-                        + " · " + (profile == null ? "VTS底座未导入" : profile.summary());
-                prefs.edit().putString("vts_appearance_summary", summary).apply();
-                boolean colorsChanged = importedColors;
-                boolean profileChanged = importedProfile;
-                runOnUiThread(() -> {
-                    applyVtsPreset = true;
-                    if (profileFile.isFile()) freezeVtsSnapshot = true;
-                    rebuildExpressionButtons();
-                    updateSummary();
-                    toastLong("外观导入成功："
-                            + (colorsChanged ? "VTS逐部件颜色 " : "")
-                            + (profileChanged ? "VTS动态底座" : ""));
-                    loadNativeModel();
-                });
-            } catch (Throwable error) {
-                runOnUiThread(() -> {
-                    hideLoading();
-                    String message = "外观导入失败：" + readableError(error);
-                    setStatus(message);
-                    toastLong(message);
-                });
-            }
-        });
-    }
-
     private void loadNativeModel() {
         String relative = prefs.getString("model_path", "");
         File modelFile = new File(modelRoot, relative);
@@ -1355,51 +766,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         nativeLoadStartedAt = SystemClock.elapsedRealtime();
         showLoading("正在启动 Android 原生 Cubism 5…");
         List<String> startup = new ArrayList<>();
-        SenVtsAppearance appearance = null;
-        if (applyVtsPreset && freezeVtsSnapshot) {
-            appearance = selectedOutfit.appearance;
-        } else if (applyVtsPreset && appearanceVtubeFile.isFile()) {
-            try {
-                appearance = SenVtsAppearance.parse(readUtf8File(appearanceVtubeFile));
-            } catch (IOException error) {
-                hideLoading();
-                String message = "已保存的VTS逐部件颜色无效：" + readableError(error);
-                setStatus(message);
-                toastLong(message);
-                return;
-            }
-        }
-        SenVtsProfile frozenProfile = null;
-        if (applyVtsPreset && freezeVtsSnapshot) {
-            if (!profileFile.isFile()) {
-                hideLoading();
-                String message = "VTS外观底座需要 Sen.vts-profile.json，请点“导入外观”选择参数包";
-                setStatus(message);
-                toastLong(message);
-                return;
-            }
-            try {
-                frozenProfile = SenVtsProfile.parse(readUtf8File(profileFile));
-            } catch (IOException error) {
-                hideLoading();
-                String message = "已保存的VTS底座参数无效：" + readableError(error);
-                setStatus(message);
-                toastLong(message);
-                return;
-            }
-        }
-        SenVtsAppearance selectedAppearance = appearance;
-        SenVtsProfile selectedFrozenProfile = frozenProfile;
-        SenRenderOptions selectedOptions = new SenRenderOptions(
-                maskMode, highPrecisionMaskSize,
-                false, 0.0f, 0.0f,
-                ahogeScalePercent, ahogeLengthPercent, ahogeWidthPercent,
-                ahogeRotationDegrees,
-                ahogeOffsetX, ahogeOffsetY,
-                ahogeRootFollowPercent, ahogeRootRotationPercent,
-                ahogeLocalMotionPercent,
-                ahogeNativePassthrough, ahogeAnchorJson,
-                true, autoIdleEnabled);
+        SenVtsAppearance selectedAppearance = selectedOutfit.appearance;
+        SenVtsProfile selectedFrozenProfile = defaultProfile;
+        SenRenderOptions selectedOptions = new SenRenderOptions(autoIdleEnabled);
         rendererDetail = "";
         updateSummary();
         glSurfaceView.queueEvent(() -> renderer.requestModel(
@@ -1557,24 +926,23 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void updateSummary() {
         if (summaryText == null) return;
         String diagnostics = prefs.getString("diagnostics", "尚未导入模型 ZIP");
-        String appearance = prefs.getString("vts_appearance_summary",
-                "尚未导入 Sen.vts-profile.json 与当前 .vtube.json");
         summaryText.setText(diagnostics
-                + "\n" + appearance
-                + "\n当前蒙版：" + maskMode.displayName()
-                + (maskMode == SenMaskMode.HIGH_PRECISION
-                ? " · " + highPrecisionMaskSize + "px" : "")
+                + "\n" + defaultProfile.summary() + "（APK内置）"
+                + "\n当前蒙版：" + SenRenderOptions.MASK_MODE.displayName()
+                + " · " + SenRenderOptions.HIGH_PRECISION_MASK_SIZE + "px · 连续渲染"
                 + String.format(java.util.Locale.ROOT,
                 " · 兔耳：隔离九轴双脉冲/速度%.0f%%/幅度%.0f%%",
-                earSpeedPercent, earAmplitudePercent)
+                SenRenderOptions.EAR_SPEED_PERCENT, SenRenderOptions.EAR_AMPLITUDE_PERCENT)
                 + " · 服装：" + selectedOutfit.displayName
                 + String.format(java.util.Locale.ROOT,
                 " · 呆毛：整体%.0f%%/长度%.0f%%/宽度%.0f%%/%+.0f°/模型X%+.3f/Y%+.3f",
-                ahogeScalePercent, ahogeLengthPercent, ahogeWidthPercent,
-                ahogeRotationDegrees, ahogeOffsetX, ahogeOffsetY)
-                + " · 呆毛固定点：" + (ahogeAnchorJson.isEmpty() ? "未采集" : "已采集")
-                + " · 呆毛模式：" + (ahogeNativePassthrough ? "原生直通"
-                : (ahogeAnchorJson.isEmpty() ? "原生保护" : "固定根部调整"))
+                SenRenderOptions.AHOGE_SCALE_PERCENT,
+                SenRenderOptions.AHOGE_LENGTH_PERCENT,
+                SenRenderOptions.AHOGE_WIDTH_PERCENT,
+                SenRenderOptions.AHOGE_ROTATION_DEGREES,
+                SenRenderOptions.AHOGE_OFFSET_X,
+                SenRenderOptions.AHOGE_OFFSET_Y)
+                + " · 呆毛：ArtMesh151固定根部"
                 + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")
@@ -1601,90 +969,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
             updateSummary();
             setStatus(detail + " · "
                     + String.format(java.util.Locale.ROOT, "%.1fs", elapsed / 1000.0));
-            toastLong(freezeVtsSnapshot
-                    ? maskMode.displayName() + " 动态底座已加载：可测试情绪、动作、耳鳍与尾巴"
-                    : "Sen 原始状态已加载，可用于对照");
-        });
-    }
-
-    @Override
-    public void onAhogeDiagnostic(String detail) {
-        runOnUiThread(() -> {
-            if (ahogeDiagnosticStatus != null) {
-                ahogeDiagnosticStatus.setText(detail == null ? "ParamAngleZ3：无读数" : detail);
-            }
-        });
-    }
-
-    @Override
-    public void onAhogeAnchorProjection(float rootScreenX, float rootScreenY,
-                                         float directionScreenX, float directionScreenY,
-                                         boolean valid) {
-        runOnUiThread(() -> updateAhogeMarkerPositions(rootScreenX, rootScreenY,
-                directionScreenX, directionScreenY, valid));
-    }
-
-    @Override
-    public void onAhogeAnchorCaptured(SenLive2DModel.AhogeCaptureResult result) {
-        runOnUiThread(() -> {
-            ahogeAnchorCaptureBusy = false;
-            if (result == null || !result.success) {
-                String message = result == null ? "固定点采集失败" : result.message;
-                if (!ahogeAnchorJson.isEmpty()) {
-                    ahogeAnchorCalibrationStep = 0;
-                    ahogeNativePassthrough = false;
-                    prefs.edit().putBoolean("ahoge_native_passthrough", false).apply();
-                    updateCustomizationControls();
-                    glSurfaceView.queueEvent(() -> renderer.setAhogeNativePassthrough(false));
-                    message += "；已恢复当前固化锚点，本次失败未覆盖参数";
-                }
-                toastLong(message);
-                return;
-            }
-            if (!result.complete) {
-                ahogeAnchorCalibrationStep = 2;
-                toastLong(result.message);
-                return;
-            }
-            ahogeAnchorCalibrationStep = 0;
-            ahogeAnchorJson = result.anchorJson;
-            ahogeNativePassthrough = false;
-            prefs.edit()
-                    .putString("ahoge_anchor_json", ahogeAnchorJson)
-                    .putBoolean("ahoge_native_passthrough", false)
-                    .apply();
-            updateCustomizationControls();
-            updateSummary();
-            glSurfaceView.queueEvent(() -> renderer.setAhogeNativePassthrough(false));
-            toastLong(result.message + "；已切到固定根部调整");
-        });
-    }
-
-    @Override
-    public void onAhogeDiagnosticExport(String modelJson) {
-        runOnUiThread(() -> {
-            try {
-                JSONObject result = new JSONObject(modelJson == null ? "{}" : modelJson);
-                result.put("appVersion", "0.5.4-native-preset-parity");
-                result.put("capturedAtUnixMs", System.currentTimeMillis());
-                result.put("stageTransformDiagnosticOnly", new JSONObject()
-                        .put("scale", stageScale)
-                        .put("translateX", stageTranslateX)
-                        .put("translateY", stageTranslateY)
-                        .put("persistentAnchorUsesTheseValues", false));
-                result.put("headPatRange", new JSONObject()
-                        .put("coordinateSystem", "reference drawable bounds normalized [0,1]")
-                        .put("left", headZoneLeft)
-                        .put("top", headZoneTop)
-                        .put("right", headZoneRight)
-                        .put("bottom", headZoneBottom)
-                        .put("screenPixelsPersisted", false)
-                        .put("followsStageTranslationAndScale", true));
-                pendingDiagnosticExport = result.toString(2);
-                diagnosticExporter.launch("Sen-ahoge-headpat-diagnostics.json");
-            } catch (JSONException error) {
-                toastLong("诊断数据生成失败：" + readableError(error));
-            }
+            toastLong("内置参数与C高精度512px已加载：可测试情绪、动作、耳鳍与尾巴");
         });
     }
 
@@ -1773,76 +1058,6 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         button.setPadding(dp(3), 0, dp(3), 0);
         button.setBackground(rounded(Color.rgb(78, 58, 103), 10));
         return button;
-    }
-
-    private View anchorMarker(int color) {
-        View marker = new View(this);
-        GradientDrawable background = new GradientDrawable();
-        background.setShape(GradientDrawable.OVAL);
-        background.setColor(Color.argb(210, Color.red(color), Color.green(color), Color.blue(color)));
-        background.setStroke(dp(2), Color.WHITE);
-        marker.setBackground(background);
-        marker.setVisibility(View.GONE);
-        marker.setClickable(false);
-        return marker;
-    }
-
-    private SeekBar shapeSeekBar(float initialValue, ShapeValueReceiver receiver) {
-        SeekBar seekBar = new SeekBar(this);
-        seekBar.setMax(120);
-        seekBar.setProgress(Math.round(clampShapePercent(initialValue)) - 40);
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(
-                    SeekBar bar, int progress, boolean fromUser) {
-                if (!fromUser) return;
-                receiver.set(progress + 40.0f);
-                persistAndApplyCustomization(false);
-            }
-            @Override public void onStartTrackingTouch(SeekBar bar) { }
-            @Override public void onStopTrackingTouch(SeekBar bar) {
-                persistAndApplyCustomization(true);
-            }
-        });
-        return seekBar;
-    }
-
-    private void updateAhogeMarkerPositions(float rootX, float rootY,
-                                            float directionX, float directionY,
-                                            boolean valid) {
-        if (!valid || !ahogeMarkersEnabled || stageView == null
-                || stageView.getWidth() <= 0 || stageView.getHeight() <= 0) {
-            if (ahogeRootMarker != null) ahogeRootMarker.setVisibility(View.GONE);
-            if (ahogeDirectionMarker != null) ahogeDirectionMarker.setVisibility(View.GONE);
-            return;
-        }
-        positionMarker(ahogeRootMarker, rootX, rootY);
-        positionMarker(ahogeDirectionMarker, directionX, directionY);
-    }
-
-    private void positionMarker(View marker, float normalizedX, float normalizedY) {
-        if (marker == null) return;
-        marker.setTranslationX(normalizedX * stageView.getWidth()
-                - marker.getLayoutParams().width * .5f);
-        marker.setTranslationY(normalizedY * stageView.getHeight()
-                - marker.getLayoutParams().height * .5f);
-        marker.setVisibility(View.VISIBLE);
-    }
-
-    private void onDiagnosticExportTargetPicked(Uri uri) {
-        if (uri == null || pendingDiagnosticExport.isEmpty()) return;
-        try (OutputStream output = getContentResolver().openOutputStream(uri)) {
-            if (output == null) throw new IOException("无法打开导出目标");
-            output.write(pendingDiagnosticExport.getBytes(StandardCharsets.UTF_8));
-            output.flush();
-            pendingDiagnosticExport = "";
-            toastLong("已导出呆毛固定点、形状参数和摸头范围诊断");
-        } catch (IOException error) {
-            toastLong("诊断导出失败：" + readableError(error));
-        }
-    }
-
-    private interface ShapeValueReceiver {
-        void set(float value);
     }
 
     private TextView adjustmentStatusText() {
@@ -2013,30 +1228,27 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         return base.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/');
     }
 
+    private SenVtsProfile loadBundledProfile() {
+        try (InputStream input = getAssets().open(DEFAULT_PROFILE_ASSET)) {
+            return SenVtsProfile.parse(readUtf8Stream(input));
+        } catch (IOException error) {
+            throw new IllegalStateException("APK内置默认参数无效", error);
+        }
+    }
+
     private String readUtf8File(File file) throws IOException {
-        try (InputStream input = new FileInputStream(file);
-             BufferedReader reader = new BufferedReader(
-                     new InputStreamReader(input, StandardCharsets.UTF_8))) {
+        try (InputStream input = new FileInputStream(file)) {
+            return readUtf8Stream(input);
+        }
+    }
+
+    private static String readUtf8Stream(InputStream input) throws IOException {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(input, StandardCharsets.UTF_8))) {
             StringBuilder result = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) result.append(line).append('\n');
             return result.toString();
-        }
-    }
-
-    private String readUtf8Uri(Uri uri, int maxBytes) throws IOException {
-        try (InputStream input = getContentResolver().openInputStream(uri)) {
-            if (input == null) throw new IOException("无法读取参数文件");
-            byte[] buffer = new byte[16 * 1024];
-            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-            int count;
-            int total = 0;
-            while ((count = input.read(buffer)) != -1) {
-                total += count;
-                if (total > maxBytes) throw new IOException("参数文件超过5 MiB限制");
-                output.write(buffer, 0, count);
-            }
-            return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 

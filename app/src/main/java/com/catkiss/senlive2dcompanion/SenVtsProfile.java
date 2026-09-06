@@ -9,7 +9,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Exact VTube Studio snapshot used only by the static renderer parity test. */
+/** Model-local parameter baseline captured from VTube Studio and bundled with the test app. */
 final class SenVtsProfile {
     static final String SCHEMA = "sen-vts-profile";
 
@@ -75,7 +75,7 @@ final class SenVtsProfile {
     }
 
     String summary() {
-        return "VTS冻结状态：" + snapshotName + " · " + parameters.size() + "项";
+        return "默认参数底座：" + snapshotName + " · " + parameters.size() + "项";
     }
 
     private static JSONObject chooseSnapshot(JSONArray snapshots) throws IOException {
