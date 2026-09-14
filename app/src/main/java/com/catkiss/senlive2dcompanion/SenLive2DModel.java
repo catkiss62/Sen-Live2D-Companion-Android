@@ -92,6 +92,7 @@ final class SenLive2DModel extends CubismUserModel {
     private float transientExpressionDuration = 1.0f;
     private float transientExpressionFadeOut = 0.05f;
     private boolean glassesEnabled;
+    private int[] hiddenOutfitDrawables = new int[0];
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(false);
 
@@ -148,6 +149,7 @@ final class SenLive2DModel extends CubismUserModel {
         normalPhysicsValues = new float[model.getParameterCount()];
         model.saveParameters();
         applyVtsArtMeshColors(appearance, listener);
+        resolveOutfitHiddenDrawables(outfitPreset, listener);
         updateScheduler.sortUpdatableList();
         model.update();
         captureReferenceDrawableBounds();
@@ -338,6 +340,7 @@ final class SenLive2DModel extends CubismUserModel {
         applyOutfitParameters(preset, null);
         model.saveParameters();
         applyVtsArtMeshColors(preset.appearance, null);
+        resolveOutfitHiddenDrawables(preset, null);
         model.update();
         applyRuntimeGeometry();
     }
@@ -545,6 +548,29 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
+    private void resolveOutfitHiddenDrawables(SenOutfitPresets.Preset preset,
+                                              SenRenderer.Listener listener) {
+        Set<Integer> drawables = preset == null || preset.hiddenPartIds.isEmpty()
+                ? Collections.emptySet()
+                : collectChildDrawables(preset.hiddenPartIds.toArray(new String[0]));
+        hiddenOutfitDrawables = new int[drawables.size()];
+        int output = 0;
+        for (int drawable : drawables) hiddenOutfitDrawables[output++] = drawable;
+        if (listener != null && preset != null && !preset.hiddenPartIds.isEmpty()) {
+            appendAppearanceDetail("服装透明网格 " + drawables.size()
+                    + "（来自 " + preset.hiddenPartIds.size() + " 个Part）");
+        }
+    }
+
+    private void applyOutfitDrawableVisibility() {
+        CubismRendererAndroid renderer = getRenderer();
+        if (renderer == null) return;
+        renderer.clearDrawableOpacityOverrides();
+        for (int drawable : hiddenOutfitDrawables) {
+            renderer.setDrawableOpacityOverride(drawable, 0.0f);
+        }
+    }
+
     private void resolveRabbitEarPhysicsParameters() {
         int count = 0;
         int[] candidates = new int[RABBIT_EAR_PHYSICS_OUTPUT_IDS.length];
@@ -696,6 +722,7 @@ final class SenLive2DModel extends CubismUserModel {
             applyAnchoredAhogeTransform(ahogeDrawables);
         }
         applyTailMirror(tailDrawables);
+        applyOutfitDrawableVisibility();
     }
 
     private void skipWhiteShirtPosePreKeyframes() {

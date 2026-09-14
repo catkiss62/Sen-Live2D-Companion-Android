@@ -1,3 +1,38 @@
+diff --git a/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismRendererAndroid.java b/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismRendererAndroid.java
+index 73bdf5a..da4853b 100644
+--- a/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismRendererAndroid.java
++++ b/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismRendererAndroid.java
+@@ -30,0 +31,2 @@ public class CubismRendererAndroid extends CubismRenderer {
++    private final Map<Integer, Float> drawableOpacityOverrides = new HashMap<>();
++
+@@ -67,0 +70,17 @@ public class CubismRendererAndroid extends CubismRenderer {
++    /** Clears App-owned final drawable opacity values. */
++    public void clearDrawableOpacityOverrides() {
++        drawableOpacityOverrides.clear();
++    }
++
++    /** Sets an absolute final opacity for one drawable without changing model parameters. */
++    public void setDrawableOpacityOverride(int drawableIndex, float opacity) {
++        drawableOpacityOverrides.put(drawableIndex,
++            Math.max(0.0f, Math.min(1.0f, opacity)));
++    }
++
++    /** Returns the opacity used by the shader after applying an optional App override. */
++    public float getDrawableOpacityForRendering(int drawableIndex) {
++        Float override = drawableOpacityOverrides.get(drawableIndex);
++        return override == null ? getModel().getDrawableOpacity(drawableIndex) : override;
++    }
++
+diff --git a/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java b/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java
+index e29fca5..d1ccda2 100644
+--- a/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java
++++ b/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java
+@@ -213 +213 @@ public class CubismShaderAndroid {
+-            float drawableOpacity = model.getDrawableOpacity(index);
++            float drawableOpacity = renderer.getDrawableOpacityForRendering(index);
+@@ -224 +224 @@ public class CubismShaderAndroid {
+-                model.getDrawableOpacity(index)
++                renderer.getDrawableOpacityForRendering(index)
 diff --git a/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java b/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java
 index e29fca5..72adb8e 100644
 --- a/framework/src/main/java/com/live2d/sdk/cubism/framework/rendering/android/CubismShaderAndroid.java

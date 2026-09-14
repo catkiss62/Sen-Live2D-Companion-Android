@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * Built-in clothing presets for the purchased Sen model.
  *
- * <p>Handoff rule: these maps are deliberately not full VTS snapshots. The three source
+ * <p>Handoff rule: these maps are deliberately not full VTS snapshots. The source
  * profiles each contained 581 values, including tracking, physics, eye, arm and expression
  * outputs captured at one instant. Only stable clothing selectors and clothing colour overrides
  * belong here. Runtime order is VTS appearance base -> outfit -> performance -> native physics ->
@@ -19,8 +19,10 @@ import java.util.Map;
  * <p>Private files used for offline comparison (never commit the originals):
  * Sen.vts-profile.json + Sen Customizable Model_2K.vtube.json (maid), 白衬衫.json + the same
  * colour table (white shirt), and 兔女郎.json + Sen Customizable Model_2K.vtube兔女郎.json
- * (bunny). Owner-confirmed corrections: ArtMesh210/276/1324/1689 use #444573 in every outfit;
- * the white shirt forces Hair_behindEar10 (CDI: Maid Headband) off.</p>
+ * (bunny). The fourth preset starts from the maid selectors, turns off its removable accessories,
+ * then makes the remaining Top=0/Bottom=0 garment parts transparent. Owner-confirmed corrections:
+ * ArtMesh210/276/387/1324/1689 use #444573 in every outfit; the white shirt and unclothed base
+ * force Hair_behindEar10 (CDI: Maid Headband) off.</p>
  */
 final class SenOutfitPresets {
     static final class Preset {
@@ -28,13 +30,16 @@ final class SenOutfitPresets {
         final String displayName;
         final Map<String, Float> parameterOverrides;
         final SenVtsAppearance appearance;
+        final List<String> hiddenPartIds;
 
         private Preset(String id, String displayName, Map<String, Float> parameters,
-                       SenVtsAppearance appearance) {
+                       SenVtsAppearance appearance, String... hiddenPartIds) {
             this.id = id;
             this.displayName = displayName;
             this.parameterOverrides = Collections.unmodifiableMap(parameters);
             this.appearance = appearance;
+            this.hiddenPartIds = Collections.unmodifiableList(
+                    Arrays.asList(hiddenPartIds.clone()));
         }
     }
 
@@ -101,6 +106,7 @@ final class SenOutfitPresets {
             {"ArtMesh334", "444573FF|000000FF"},
             {"ArtMesh335", "444573FF|000000FF"},
             {"ArtMesh366", "444573FF|000000FF"},
+            {"ArtMesh387", "444573FF|000000FF"},
             {"ArtMesh417", "5162A7FF|000000FF"},
             {"ArtMesh418", "1F1E46FF|000000FF"},
             {"ArtMesh419", "1F1E46FF|000000FF"},
@@ -124,9 +130,19 @@ final class SenOutfitPresets {
             "white_shirt", "白衬衫", whiteShirtParameters(), colors(false));
     static final Preset BUNNY = new Preset(
             "bunny", "兔女郎", bunnyParameters(), colors(true));
+    static final Preset UNDRESSED = new Preset(
+            "undressed", "脱", undressedParameters(), colors(false),
+            // Top=0 and Bottom=0 are visible styles, not an off state. Hide only their
+            // authored garment parts; Part71 (body), hair, ears and tail stay untouched.
+            "Part84",  // 上衣1
+            "Part85",  // 上衣1蝴蝶结
+            "Part91",  // 下1
+            "Part96",  // 裙子1
+            "Part219"  // 裙子后
+    );
 
     static final List<Preset> ALL = Collections.unmodifiableList(
-            Arrays.asList(MAID, WHITE_SHIRT, BUNNY));
+            Arrays.asList(MAID, WHITE_SHIRT, BUNNY, UNDRESSED));
 
     private SenOutfitPresets() { }
 
@@ -156,6 +172,22 @@ final class SenOutfitPresets {
         clothing(values, 0.0f, 0.0f, 2.835882f, 0.93261665f, 1.0f,
                 0.0f, 0.0f, 1.0f, 1.185986f, 0.0f,
                 0.82471985f, 0.0f, 10.0f, 0.5803234f, 1.3493168f, 1.0f);
+        return values;
+    }
+
+    private static Map<String, Float> undressedParameters() {
+        Map<String, Float> values = new LinkedHashMap<>();
+        // Maid-based clean body template. Zero removes the separately authored headband,
+        // choker, apron, sleeves, cuffs, socks and shoes. Top/Bottom zero still select the
+        // first garment style, so those specific parts are hidden by hiddenPartIds above.
+        clothing(values, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        values.put("TopLower", 0.0f);
+        values.put("Puff_Sleeve", 0.0f);
+        values.put("SockL_Opacity", 0.0f);
+        values.put("Loose_sockR", 0.0f);
+        values.put("Loose_sockL", 0.0f);
         return values;
     }
 

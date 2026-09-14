@@ -190,7 +190,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.12 · 内置参数收口版");
+        statusText.setText("v0.5.13 · 无衣底图模板测试版");
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -260,7 +260,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(outfitRow);
 
         TextView outfitNote = new TextView(this);
-        outfitNote.setText("女仆装/白衬衫共用配色，兔女郎使用独立配色；白衬衫会关闭Maid Headband。服装参数不包含九轴、手臂或物理瞬时值。");
+        outfitNote.setText("女仆装/白衬衫/脱共用配色，兔女郎使用独立配色；脱会保留身体、头发、耳朵和尾巴，只关闭女仆附件并透明化基础上衣/下装。四套均固定ArtMesh387为#444573。");
         outfitNote.setTextColor(Color.rgb(186, 164, 204));
         outfitNote.setTextSize(10);
         outfitNote.setPadding(dp(3), dp(2), 0, dp(3));
