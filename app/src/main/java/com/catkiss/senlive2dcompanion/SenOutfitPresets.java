@@ -20,7 +20,8 @@ import java.util.Map;
  * Sen.vts-profile.json + Sen Customizable Model_2K.vtube.json (maid), 白衬衫.json + the same
  * colour table (white shirt), and 兔女郎.json + Sen Customizable Model_2K.vtube兔女郎.json
  * (bunny). The fourth preset starts from the maid selectors, turns off its removable accessories,
- * then makes the remaining Top=0/Bottom=0 garment parts transparent. Owner-confirmed corrections:
+ * then makes the remaining Top=0/Bottom=0 garment parts and direct booba garment meshes
+ * transparent. Owner-confirmed corrections:
  * ArtMesh210/276/387/1324/1689 use #444573 in every outfit; the white shirt and unclothed base
  * force Hair_behindEar10 (CDI: Maid Headband) off.</p>
  */
@@ -31,15 +32,24 @@ final class SenOutfitPresets {
         final Map<String, Float> parameterOverrides;
         final SenVtsAppearance appearance;
         final List<String> hiddenPartIds;
+        final List<String> hiddenDrawableIds;
 
         private Preset(String id, String displayName, Map<String, Float> parameters,
                        SenVtsAppearance appearance, String... hiddenPartIds) {
+            this(id, displayName, parameters, appearance,
+                    Arrays.asList(hiddenPartIds.clone()), Collections.emptyList());
+        }
+
+        private Preset(String id, String displayName, Map<String, Float> parameters,
+                       SenVtsAppearance appearance, List<String> hiddenPartIds,
+                       List<String> hiddenDrawableIds) {
             this.id = id;
             this.displayName = displayName;
             this.parameterOverrides = Collections.unmodifiableMap(parameters);
             this.appearance = appearance;
-            this.hiddenPartIds = Collections.unmodifiableList(
-                    Arrays.asList(hiddenPartIds.clone()));
+            this.hiddenPartIds = Collections.unmodifiableList(new ArrayList<>(hiddenPartIds));
+            this.hiddenDrawableIds = Collections.unmodifiableList(
+                    new ArrayList<>(hiddenDrawableIds));
         }
     }
 
@@ -132,13 +142,21 @@ final class SenOutfitPresets {
             "bunny", "兔女郎", bunnyParameters(), colors(true));
     static final Preset UNDRESSED = new Preset(
             "undressed", "脱", undressedParameters(), colors(false),
-            // Top=0 and Bottom=0 are visible styles, not an off state. Hide only their
-            // authored garment parts; Part71 (body), hair, ears and tail stay untouched.
-            "Part84",  // 上衣1
-            "Part85",  // 上衣1蝴蝶结
-            "Part91",  // 下1
-            "Part96",  // 裙子1
-            "Part219"  // 裙子后
+            Arrays.asList(
+                    // Top=0 and Bottom=0 are visible styles, not an off state. Hide only
+                    // their authored garment parts; Part71, hair, ears and tail stay intact.
+                    "Part84",  // 上衣1
+                    "Part85",  // 上衣1蝴蝶结
+                    "Part91",  // 下1
+                    "Part96",  // 裙子1
+                    "Part219"  // 裙子后
+            ),
+            Arrays.asList(
+                    // These are the six direct children of the booba garment group. Their
+                    // UVs all point to clothing texture_21; Part88 is body skin and excluded.
+                    "ArtMesh492", "ArtMesh966", "ArtMesh528",
+                    "ArtMesh972", "ArtMesh485", "ArtMesh961"
+            )
     );
 
     static final List<Preset> ALL = Collections.unmodifiableList(

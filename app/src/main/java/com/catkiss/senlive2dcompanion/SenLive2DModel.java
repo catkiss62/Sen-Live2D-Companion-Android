@@ -550,15 +550,23 @@ final class SenLive2DModel extends CubismUserModel {
 
     private void resolveOutfitHiddenDrawables(SenOutfitPresets.Preset preset,
                                               SenRenderer.Listener listener) {
-        Set<Integer> drawables = preset == null || preset.hiddenPartIds.isEmpty()
-                ? Collections.emptySet()
-                : collectChildDrawables(preset.hiddenPartIds.toArray(new String[0]));
+        Set<Integer> drawables = new LinkedHashSet<>();
+        if (preset != null) {
+            drawables.addAll(collectChildDrawables(
+                    preset.hiddenPartIds.toArray(new String[0])));
+            for (String drawableId : preset.hiddenDrawableIds) {
+                int drawableIndex = findExistingDrawableIndex(drawableId);
+                if (drawableIndex >= 0) drawables.add(drawableIndex);
+            }
+        }
         hiddenOutfitDrawables = new int[drawables.size()];
         int output = 0;
         for (int drawable : drawables) hiddenOutfitDrawables[output++] = drawable;
-        if (listener != null && preset != null && !preset.hiddenPartIds.isEmpty()) {
+        if (listener != null && preset != null
+                && (!preset.hiddenPartIds.isEmpty() || !preset.hiddenDrawableIds.isEmpty())) {
             appendAppearanceDetail("服装透明网格 " + drawables.size()
-                    + "（来自 " + preset.hiddenPartIds.size() + " 个Part）");
+                    + "（来自 " + preset.hiddenPartIds.size() + " 个Part + "
+                    + preset.hiddenDrawableIds.size() + " 个直属网格）");
         }
     }
 
@@ -926,6 +934,13 @@ final class SenLive2DModel extends CubismUserModel {
     private int findExistingPartIndex(String id) {
         for (int i = 0; i < model.getPartCount(); i++) {
             if (id.equals(model.getPartId(i).getString())) return i;
+        }
+        return -1;
+    }
+
+    private int findExistingDrawableIndex(String id) {
+        for (int i = 0; i < model.getDrawableCount(); i++) {
+            if (id.equals(model.getDrawableId(i).getString())) return i;
         }
         return -1;
     }
