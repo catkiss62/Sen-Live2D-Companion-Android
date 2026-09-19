@@ -260,7 +260,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(outfitRow);
 
         TextView outfitNote = new TextView(this);
-        outfitNote.setText("女仆装/白衬衫/脱共用配色，兔女郎使用独立配色；脱会保留身体、头发、耳朵和尾巴，关闭女仆附件并透明化基础上衣、内衣层和下装。四套均固定ArtMesh387为#444573。");
+        outfitNote.setText("女仆装/白衬衫/脱共用配色，兔女郎使用独立配色；脱以女仆装为底，关闭女仆附件，使用固定版型的Top 0和原生Bottom 4。四套均固定ArtMesh387为#444573。");
         outfitNote.setTextColor(Color.rgb(186, 164, 204));
         outfitNote.setTextSize(10);
         outfitNote.setPadding(dp(3), dp(2), 0, dp(3));

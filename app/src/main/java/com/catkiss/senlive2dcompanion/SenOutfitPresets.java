@@ -20,8 +20,8 @@ import java.util.Map;
  * Sen.vts-profile.json + Sen Customizable Model_2K.vtube.json (maid), 白衬衫.json + the same
  * colour table (white shirt), and 兔女郎.json + Sen Customizable Model_2K.vtube兔女郎.json
  * (bunny). The fourth preset starts from the maid selectors, turns off its removable accessories,
- * then makes the remaining Top=0/Bottom=0 garment parts and direct booba garment meshes
- * transparent. Owner-confirmed corrections:
+ * selects Top=0 and Bottom=4, and locks only Top=0's breast-size/bounce deformation while the
+ * garment still follows all other authored body movement. Owner-confirmed corrections:
  * ArtMesh210/276/387/1324/1689 use #444573 in every outfit; the white shirt and unclothed base
  * force Hair_behindEar10 (CDI: Maid Headband) off.</p>
  */
@@ -31,25 +31,30 @@ final class SenOutfitPresets {
         final String displayName;
         final Map<String, Float> parameterOverrides;
         final SenVtsAppearance appearance;
-        final List<String> hiddenPartIds;
-        final List<String> hiddenDrawableIds;
+        final List<String> shapeLockedPartIds;
+        final List<String> shapeLockedDrawableIds;
+        final Map<String, Float> shapeLockedParameters;
 
         private Preset(String id, String displayName, Map<String, Float> parameters,
-                       SenVtsAppearance appearance, String... hiddenPartIds) {
-            this(id, displayName, parameters, appearance,
-                    Arrays.asList(hiddenPartIds.clone()), Collections.emptyList());
+                       SenVtsAppearance appearance) {
+            this(id, displayName, parameters, appearance, Collections.emptyList(),
+                    Collections.emptyList(), Collections.emptyMap());
         }
 
         private Preset(String id, String displayName, Map<String, Float> parameters,
-                       SenVtsAppearance appearance, List<String> hiddenPartIds,
-                       List<String> hiddenDrawableIds) {
+                       SenVtsAppearance appearance, List<String> shapeLockedPartIds,
+                       List<String> shapeLockedDrawableIds,
+                       Map<String, Float> shapeLockedParameters) {
             this.id = id;
             this.displayName = displayName;
             this.parameterOverrides = Collections.unmodifiableMap(parameters);
             this.appearance = appearance;
-            this.hiddenPartIds = Collections.unmodifiableList(new ArrayList<>(hiddenPartIds));
-            this.hiddenDrawableIds = Collections.unmodifiableList(
-                    new ArrayList<>(hiddenDrawableIds));
+            this.shapeLockedPartIds = Collections.unmodifiableList(
+                    new ArrayList<>(shapeLockedPartIds));
+            this.shapeLockedDrawableIds = Collections.unmodifiableList(
+                    new ArrayList<>(shapeLockedDrawableIds));
+            this.shapeLockedParameters = Collections.unmodifiableMap(
+                    new LinkedHashMap<>(shapeLockedParameters));
         }
     }
 
@@ -143,20 +148,16 @@ final class SenOutfitPresets {
     static final Preset UNDRESSED = new Preset(
             "undressed", "脱", undressedParameters(), colors(false),
             Arrays.asList(
-                    // Top=0 and Bottom=0 are visible styles, not an off state. Hide only
-                    // their authored garment parts; Part71, hair, ears and tail stay intact.
                     "Part84",  // 上衣1
-                    "Part85",  // 上衣1蝴蝶结
-                    "Part91",  // 下1
-                    "Part96",  // 裙子1
-                    "Part219"  // 裙子后
+                    "Part85"   // 上衣1蝴蝶结
             ),
             Arrays.asList(
-                    // These are the six direct children of the booba garment group. Their
-                    // UVs all point to clothing texture_21; Part88 is body skin and excluded.
+                    // Six Top=0 garment meshes are direct children of the booba group rather
+                    // than Part84. Part88 is the body skin and deliberately excluded.
                     "ArtMesh492", "ArtMesh966", "ArtMesh528",
                     "ArtMesh972", "ArtMesh485", "ArtMesh961"
-            )
+            ),
+            undressedShapeParameters()
     );
 
     static final List<Preset> ALL = Collections.unmodifiableList(
@@ -195,10 +196,10 @@ final class SenOutfitPresets {
 
     private static Map<String, Float> undressedParameters() {
         Map<String, Float> values = new LinkedHashMap<>();
-        // Maid-based clean body template. Zero removes the separately authored headband,
-        // choker, apron, sleeves, cuffs, socks and shoes. Top/Bottom zero still select the
-        // first garment style, so those specific parts are hidden by hiddenPartIds above.
-        clothing(values, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        // Maid-based editable clothing template. Zero removes the separately authored headband,
+        // choker, apron, sleeves, cuffs, socks and shoes. Top=0 stays visible for user texture
+        // edits, while Bottom=4 uses the model's authored fourth lower-body style.
+        clothing(values, 0.0f, 0.0f, 4.0f, 0.0f, 0.0f,
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         values.put("TopLower", 0.0f);
@@ -206,6 +207,19 @@ final class SenOutfitPresets {
         values.put("SockL_Opacity", 0.0f);
         values.put("Loose_sockR", 0.0f);
         values.put("Loose_sockL", 0.0f);
+        return values;
+    }
+
+    private static Map<String, Float> undressedShapeParameters() {
+        Map<String, Float> values = new LinkedHashMap<>();
+        // CDI identifies Param26 as "Booba size" and these four values as the authored breast
+        // bounce outputs. Holding only them at the confirmed neutral size keeps Top=0's own
+        // pattern stable; all head/body/arm parameters remain live and are evaluated normally.
+        values.put("Param26", 1.0f);
+        values.put("Boobax1", 0.0f);
+        values.put("Boobax2", 0.0f);
+        values.put("Boobay1", 0.0f);
+        values.put("BoobaY2", 0.0f);
         return values;
     }
 

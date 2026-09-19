@@ -92,7 +92,11 @@ final class SenLive2DModel extends CubismUserModel {
     private float transientExpressionDuration = 1.0f;
     private float transientExpressionFadeOut = 0.05f;
     private boolean glassesEnabled;
-    private int[] hiddenOutfitDrawables = new int[0];
+    private int[] shapeLockedOutfitDrawables = new int[0];
+    private float[][] shapeLockedOutfitVertices = new float[0][];
+    private int[] shapeLockedOutfitParameterIndices = new int[0];
+    private float[] shapeLockedOutfitParameterValues = new float[0];
+    private float[] shapeLockedOutfitParameterRestore = new float[0];
     private SenOutfitPresets.Preset outfitPreset = SenOutfitPresets.MAID;
     private SenRenderOptions renderOptions = new SenRenderOptions(false);
 
@@ -149,9 +153,9 @@ final class SenLive2DModel extends CubismUserModel {
         normalPhysicsValues = new float[model.getParameterCount()];
         model.saveParameters();
         applyVtsArtMeshColors(appearance, listener);
-        resolveOutfitHiddenDrawables(outfitPreset, listener);
+        resolveOutfitShapeLock(outfitPreset, listener);
         updateScheduler.sortUpdatableList();
-        model.update();
+        updateModelWithOutfitShapeLock();
         captureReferenceDrawableBounds();
         restoreAhogeAnchors(SenRenderOptions.AHOGE_ANCHOR_JSON);
         applyRuntimeGeometry();
@@ -199,7 +203,7 @@ final class SenLive2DModel extends CubismUserModel {
         if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
         setParameter("Glasses", glassesEnabled ? 1.0f : 0.0f);
         skipWhiteShirtPosePreKeyframes();
-        model.update();
+        updateModelWithOutfitShapeLock();
         applyRuntimeGeometry();
     }
 
@@ -340,8 +344,8 @@ final class SenLive2DModel extends CubismUserModel {
         applyOutfitParameters(preset, null);
         model.saveParameters();
         applyVtsArtMeshColors(preset.appearance, null);
-        resolveOutfitHiddenDrawables(preset, null);
-        model.update();
+        resolveOutfitShapeLock(preset, null);
+        updateModelWithOutfitShapeLock();
         applyRuntimeGeometry();
     }
 
@@ -548,34 +552,83 @@ final class SenLive2DModel extends CubismUserModel {
         }
     }
 
-    private void resolveOutfitHiddenDrawables(SenOutfitPresets.Preset preset,
-                                              SenRenderer.Listener listener) {
+    private void resolveOutfitShapeLock(SenOutfitPresets.Preset preset,
+                                        SenRenderer.Listener listener) {
         Set<Integer> drawables = new LinkedHashSet<>();
         if (preset != null) {
             drawables.addAll(collectChildDrawables(
-                    preset.hiddenPartIds.toArray(new String[0])));
-            for (String drawableId : preset.hiddenDrawableIds) {
+                    preset.shapeLockedPartIds.toArray(new String[0])));
+            for (String drawableId : preset.shapeLockedDrawableIds) {
                 int drawableIndex = findExistingDrawableIndex(drawableId);
                 if (drawableIndex >= 0) drawables.add(drawableIndex);
             }
         }
-        hiddenOutfitDrawables = new int[drawables.size()];
+        shapeLockedOutfitDrawables = new int[drawables.size()];
+        shapeLockedOutfitVertices = new float[drawables.size()][];
         int output = 0;
-        for (int drawable : drawables) hiddenOutfitDrawables[output++] = drawable;
-        if (listener != null && preset != null
-                && (!preset.hiddenPartIds.isEmpty() || !preset.hiddenDrawableIds.isEmpty())) {
-            appendAppearanceDetail("服装透明网格 " + drawables.size()
-                    + "（来自 " + preset.hiddenPartIds.size() + " 个Part + "
-                    + preset.hiddenDrawableIds.size() + " 个直属网格）");
+        for (int drawable : drawables) {
+            shapeLockedOutfitDrawables[output] = drawable;
+            shapeLockedOutfitVertices[output] = new float[model.getDrawableVertices(drawable).length];
+            output++;
+        }
+        List<Integer> parameterIndices = new ArrayList<>();
+        List<Float> parameterValues = new ArrayList<>();
+        if (preset != null) {
+            for (Map.Entry<String, Float> entry : preset.shapeLockedParameters.entrySet()) {
+                int index = findParameterIndex(entry.getKey());
+                if (index < 0) continue;
+                parameterIndices.add(index);
+                parameterValues.add(entry.getValue());
+            }
+        }
+        shapeLockedOutfitParameterIndices = new int[parameterIndices.size()];
+        shapeLockedOutfitParameterValues = new float[parameterIndices.size()];
+        shapeLockedOutfitParameterRestore = new float[parameterIndices.size()];
+        for (int i = 0; i < parameterIndices.size(); i++) {
+            shapeLockedOutfitParameterIndices[i] = parameterIndices.get(i);
+            shapeLockedOutfitParameterValues[i] = parameterValues.get(i);
+        }
+        if (listener != null && preset != null && !drawables.isEmpty()) {
+            appendAppearanceDetail("Top 0固定版型 " + drawables.size() + "个网格"
+                    + " · 隔离胸型/弹跳 " + parameterIndices.size() + "项");
         }
     }
 
-    private void applyOutfitDrawableVisibility() {
-        CubismRendererAndroid renderer = getRenderer();
-        if (renderer == null) return;
-        renderer.clearDrawableOpacityOverrides();
-        for (int drawable : hiddenOutfitDrawables) {
-            renderer.setDrawableOpacityOverride(drawable, 0.0f);
+    private void updateModelWithOutfitShapeLock() {
+        if (shapeLockedOutfitDrawables.length == 0
+                || shapeLockedOutfitParameterIndices.length == 0) {
+            model.update();
+            return;
+        }
+
+        // First evaluate the selected Top with only its breast-size/bounce inputs held at the
+        // neutral authored values. All body, head, arm, breathing and action parameters remain
+        // untouched, so the garment still follows the character instead of being screen-fixed.
+        for (int i = 0; i < shapeLockedOutfitParameterIndices.length; i++) {
+            int index = shapeLockedOutfitParameterIndices[i];
+            shapeLockedOutfitParameterRestore[i] =
+                    model.getModel().getParameterViews()[index].getValue();
+            model.getModel().getParameterViews()[index].setValue(
+                    shapeLockedOutfitParameterValues[i]);
+        }
+        model.update();
+        for (int i = 0; i < shapeLockedOutfitDrawables.length; i++) {
+            float[] source = model.getDrawableVertices(shapeLockedOutfitDrawables[i]);
+            System.arraycopy(source, 0, shapeLockedOutfitVertices[i], 0, source.length);
+        }
+
+        // Restore the live physics values and evaluate every other drawable normally. Replacing
+        // only the selected Top vertices prevents this compatibility layer from freezing skin,
+        // hair, ears, tail or the Bottom=4 garment.
+        for (int i = 0; i < shapeLockedOutfitParameterIndices.length; i++) {
+            model.getModel().getParameterViews()[shapeLockedOutfitParameterIndices[i]].setValue(
+                    shapeLockedOutfitParameterRestore[i]);
+        }
+        model.update();
+        for (int i = 0; i < shapeLockedOutfitDrawables.length; i++) {
+            float[] destination = model.getDrawableVertices(shapeLockedOutfitDrawables[i]);
+            System.arraycopy(shapeLockedOutfitVertices[i], 0, destination, 0,
+                    destination.length);
         }
     }
 
@@ -730,7 +783,6 @@ final class SenLive2DModel extends CubismUserModel {
             applyAnchoredAhogeTransform(ahogeDrawables);
         }
         applyTailMirror(tailDrawables);
-        applyOutfitDrawableVisibility();
     }
 
     private void skipWhiteShirtPosePreKeyframes() {
