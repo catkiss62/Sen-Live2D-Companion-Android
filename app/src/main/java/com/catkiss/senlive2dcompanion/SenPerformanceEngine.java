@@ -682,17 +682,21 @@ final class SenPerformanceEngine {
                 face("Param13", 0,0, .30f,.22f, .78f,1.18f, 1.16f,1, 1.42f,.32f, 1.70f,0),
                 head("ParamAngleZ", 0,0, .30f,-2.2f, .78f,-8.5f, 1.16f,-5, 1.42f,-2, 1.70f,0),
                 body("ParamBodyAngleX", 0,0, .30f,-.25f, .78f,-.9f, 1.16f,-.45f, 1.42f,-.12f, 1.70f,0)));
-        result.put("excited_bounce", motion(1.72f,
-                // VTS maps FaceAngleY to this authored model parameter over -10..+10. The prior
-                // -0.18..+0.55 test was therefore visually static. Use most of the real range for
-                // two linked whole-character hops, while still avoiding any head-pitch track.
-                body("ParamBodyPositiony", 0,0, .10f,-3.0f, .27f,6.8f, .43f,-2.0f,
-                        .55f,0, .65f,-2.8f, .82f,7.2f, .98f,-2.0f, 1.12f,0, 1.72f,0),
-                face("ParamEyeLSmile", 0,0, .14f,.48f, 1.18f,.68f, 1.48f,.30f, 1.72f,0),
-                face("ParamEyeRSmile", 0,0, .14f,.48f, 1.18f,.68f, 1.48f,.30f, 1.72f,0),
-                face("ParamMouthForm", 0,0, .14f,.46f, 1.18f,.74f, 1.48f,.34f, 1.72f,0),
-                face("ParamMouthOpenY", 0,0, .14f,.15f, 1.18f,.27f, 1.48f,.09f, 1.72f,0),
-                face("Param13", 0,0, .14f,.30f, 1.18f,.48f, 1.48f,.18f, 1.72f,0)));
+        result.put("excited_bounce", motion(2.18f,
+                // ParamBodyPositiony stayed visually inert on-device even across its full declared
+                // range. Use the already proven nod channels instead: two compact, linked nod arcs
+                // produce the requested fallback bounce without returning to an unverified axis.
+                head("ParamAngleY", 0,0,
+                        .10f,4, .34f,-20, .57f,8.5f, .76f,-3, .91f,0,
+                        1.01f,4, 1.25f,-20, 1.48f,8.5f, 1.67f,-3, 1.82f,0, 2.18f,0),
+                body("ParamBodyAngleY", 0,0,
+                        .10f,1.4f, .34f,-3.8f, .57f,4.8f, .76f,-1.2f, .91f,0,
+                        1.01f,1.4f, 1.25f,-3.8f, 1.48f,4.8f, 1.67f,-1.2f, 1.82f,0, 2.18f,0),
+                face("ParamEyeLSmile", 0,0, .14f,.48f, 1.70f,.68f, 1.94f,.30f, 2.18f,0),
+                face("ParamEyeRSmile", 0,0, .14f,.48f, 1.70f,.68f, 1.94f,.30f, 2.18f,0),
+                face("ParamMouthForm", 0,0, .14f,.46f, 1.70f,.74f, 1.94f,.34f, 2.18f,0),
+                face("ParamMouthOpenY", 0,0, .14f,.15f, 1.70f,.27f, 1.94f,.09f, 2.18f,0),
+                face("Param13", 0,0, .14f,.30f, 1.70f,.48f, 1.94f,.18f, 2.18f,0)));
         result.put("look_around", motion(3.20f,
                 head("ParamAngleX", 0,0, .70f,-8, 1.70f,9, 2.50f,3, 3.20f,0),
                 face("ParamEyeBallX", 0,0, .70f,-.55f, 1.70f,.65f, 2.50f,.25f, 3.20f,0),
