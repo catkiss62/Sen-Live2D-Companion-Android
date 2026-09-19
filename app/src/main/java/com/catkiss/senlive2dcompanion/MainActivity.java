@@ -376,22 +376,21 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(ttsLipSyncStatus);
 
         TextView actionHeading = new TextView(this);
-        actionHeading.setText("程序动作手动测试（17项；9项仅由自主待机调用）");
+        actionHeading.setText("程序动作手动测试（12项；10项仅由自主待机调用）");
         actionHeading.setTextColor(Color.rgb(238, 207, 255));
         actionHeading.setTextSize(12);
         actionHeading.setPadding(0, dp(7), 0, dp(3));
         panel.addView(actionHeading);
         String[] manualActionLabels = {
                 "点头", "摇头", "歪头", "惊讶眨眼", "叹气", "撅嘴",
-                "开心弹跳（两轮）", "轻摆", "低头抬头", "小点头", "重心切换",
-                "慢眨眼", "摆头", "轻触回应", "双手护胸（实验）",
+                "开心弹跳", "小点头", "慢眨眼", "摆头",
                 "摸头常规", "摸头疑惑彩蛋"
         };
         addPerformanceGrid(panel, SenPerformanceEngine.MANUAL_TEST_ACTIONS,
                 manualActionLabels, false);
 
         TextView actionNote = adjustmentStatusText();
-        actionNote.setText("环顾、待机歪头、左右侧看、叹气下沉、柔风摆动、明显风摆、展示级大摆和视频式环绕仅由自主待机调用；双手护胸先在“脱”模板验证手臂前景与交叉姿势。");
+        actionNote.setText("环顾、待机歪头、左右侧看、低头抬头、叹气下沉、柔风摆动、明显风摆、展示级大摆和视频式环绕仅由自主待机调用。");
         panel.addView(actionNote);
 
         TextView expressionHeading = new TextView(this);
