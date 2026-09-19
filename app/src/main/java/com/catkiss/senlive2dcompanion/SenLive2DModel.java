@@ -46,6 +46,7 @@ final class SenLive2DModel extends CubismUserModel {
     };
     private static final float WHITE_SHIRT_POSE_FIRST_KEYFORM = 0.11f;
     private static final float ACTION_FACE_FADE_SECONDS = 0.28f;
+    private static final float LOADING_SPIN_SECONDS = 0.90f;
     // Expressions and motions finish by order 310; mouth-driven physics starts at 600.
     // Put lip sync in between so the model's authored MouthOpenY physics receives the voice.
     private static final int LIP_SYNC_UPDATE_ORDER = 550;
@@ -107,6 +108,7 @@ final class SenLive2DModel extends CubismUserModel {
     private float transientExpressionRemaining;
     private float transientExpressionDuration = 1.0f;
     private float transientExpressionFadeOut = 0.05f;
+    private float loadingSpinTime;
     private boolean glassesEnabled;
     private int[] shapeLockedOutfitDrawables = new int[0];
     private float[][] shapeLockedOutfitVertices = new float[0][];
@@ -220,6 +222,7 @@ final class SenLive2DModel extends CubismUserModel {
         if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
         setParameter("Glasses", glassesEnabled ? 1.0f : 0.0f);
         skipWhiteShirtPosePreKeyframes();
+        updateLoadingSpinner(deltaSeconds);
         applyChestCoverArmPose();
         updateModelWithOutfitShapeLock();
         applyRuntimeGeometry();
@@ -765,6 +768,34 @@ final class SenLive2DModel extends CubismUserModel {
             model.getModel().getParameterViews()[index].setValue(
                     Math.max(minimum, Math.min(maximum, value)));
         }
+    }
+
+    private void updateLoadingSpinner(float deltaSeconds) {
+        if (!isNativeExpressionEnabled("loading")) {
+            loadingSpinTime = 0.0f;
+            return;
+        }
+        int index = findParameterIndex("Param29");
+        if (index < 0) return;
+        float minimum = model.getParameterMinimumValue(index);
+        float maximum = model.getParameterMaximumValue(index);
+        if (maximum - minimum < 0.0001f) return;
+        loadingSpinTime = (loadingSpinTime + Math.max(0.0f, deltaSeconds))
+                % LOADING_SPIN_SECONDS;
+        float phase = loadingSpinTime / LOADING_SPIN_SECONDS;
+        // Param28 is the authored visibility switch. CDI identifies Param29 as the second
+        // Loading channel; sweeping its full declared range makes the icon use the moc3's own
+        // rotation keyforms. The endpoints are authored as the same orientation, so wrapping is
+        // continuous and independent of screen zoom, translation or frame rate.
+        model.getModel().getParameterViews()[index].setValue(
+                minimum + (maximum - minimum) * phase);
+    }
+
+    private boolean isNativeExpressionEnabled(String normalizedName) {
+        for (String name : activeExpressionNames) {
+            if (normalizedName.equals(normalizeExpressionName(name))) return true;
+        }
+        return false;
     }
 
     private void applyFrozenProfile(SenVtsProfile profile, SenRenderer.Listener listener) {
