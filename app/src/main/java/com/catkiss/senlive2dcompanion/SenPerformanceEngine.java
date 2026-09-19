@@ -53,7 +53,6 @@ final class SenPerformanceEngine {
             "look_around", "look_down_up", "small_nod", "head_tilt_idle",
             "side_look_left", "side_look_right", "sigh_sink", "slow_blink",
             "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
-            "head_sway",
             "head_pat", "head_pat_confused"));
 
     // These ten routes have been confirmed as autonomous-idle responsibilities, so they stay
@@ -64,8 +63,8 @@ final class SenPerformanceEngine {
     // 柔风摆动 wind_sway_soft（持续底层）；明显风摆 wind_sway_medium、
     // 展示级大摆 wind_sway_showcase、视频式环绕 showcase_orbit（低频展示池）。
     // Removed by user from the active library: lean_forward, lean_back, listening,
-    // gentle_lean, soft_sway, weight_shift, touch_response, chest_cover and the legacy
-    // one-direction side_look.
+    // gentle_lean, soft_sway, weight_shift, touch_response, chest_cover, head_sway and the
+    // legacy one-direction side_look.
     private static final List<String> AUTO_IDLE_ONLY_ACTIONS = Arrays.asList(
             "look_around", "look_down_up", "head_tilt_idle",
             "side_look_left", "side_look_right",
@@ -561,9 +560,9 @@ final class SenPerformanceEngine {
                 writer.add("ParamEyeLOpen", -0.18f); writer.add("ParamEyeROpen", -0.18f);
                 writer.add("ParamAngleY", 5.0f); writer.add("ParamAngleZ", -4.0f); break;
             case "playful":
-                smile(writer, 0.72f, 0.30f); writer.add("ParamTongueOut", 0.84f);
-                writer.add("ParamMouthX", 0.34f); writer.add("ParamEyeLOpen", -0.58f);
-                writer.add("ParamEyeROpen", -0.58f);
+                smile(writer, 0.72f, 0.30f); writer.add("ParamTongueOut", 0.68f);
+                writer.add("ParamMouthX", 0.34f); writer.add("ParamEyeLOpen", -0.44f);
+                writer.add("ParamEyeROpen", -0.44f);
                 writer.add("ParamAngleZ", 8.0f); break;
             case "ashamed":
                 writer.add("Param13", 0.98f); writer.add("ParamMouthForm", -0.72f);
@@ -684,10 +683,11 @@ final class SenPerformanceEngine {
                 head("ParamAngleZ", 0,0, .30f,-2.2f, .78f,-8.5f, 1.16f,-5, 1.42f,-2, 1.70f,0),
                 body("ParamBodyAngleX", 0,0, .30f,-.25f, .78f,-.9f, 1.16f,-.45f, 1.42f,-.12f, 1.70f,0)));
         result.put("excited_bounce", motion(1.72f,
-                // Two linked whole-character hops. Deliberately write only model-space vertical
-                // body position: no AngleY/BodyAngleY track is allowed to turn this into nodding.
-                body("ParamBodyPositiony", 0,0, .10f,-.18f, .27f,.52f, .43f,-.12f,
-                        .55f,0, .65f,-.17f, .82f,.55f, .98f,-.12f, 1.12f,0, 1.72f,0),
+                // VTS maps FaceAngleY to this authored model parameter over -10..+10. The prior
+                // -0.18..+0.55 test was therefore visually static. Use most of the real range for
+                // two linked whole-character hops, while still avoiding any head-pitch track.
+                body("ParamBodyPositiony", 0,0, .10f,-3.0f, .27f,6.8f, .43f,-2.0f,
+                        .55f,0, .65f,-2.8f, .82f,7.2f, .98f,-2.0f, 1.12f,0, 1.72f,0),
                 face("ParamEyeLSmile", 0,0, .14f,.48f, 1.18f,.68f, 1.48f,.30f, 1.72f,0),
                 face("ParamEyeRSmile", 0,0, .14f,.48f, 1.18f,.68f, 1.48f,.30f, 1.72f,0),
                 face("ParamMouthForm", 0,0, .14f,.46f, 1.18f,.74f, 1.48f,.34f, 1.72f,0),
@@ -738,11 +738,6 @@ final class SenPerformanceEngine {
                 body("ParamBodyAngleZ", 0,0, .52f,-1.8f, 1.08f,-5.5f, 1.72f,-4.2f, 2.38f,2.4f, 3.02f,5.8f, 3.68f,4.1f, 4.28f,-.7f, 4.78f,.65f, 5.20f,0),
                 face("ParamEyeBallX", 0,0, .52f,-.38f, 1.08f,-.7f, 1.72f,-.24f, 2.38f,.5f, 3.02f,.72f, 3.68f,.2f, 4.28f,-.28f, 4.78f,.08f, 5.20f,0),
                 face("ParamEyeBallY", 0,0, .52f,.28f, 1.08f,.04f, 1.72f,-.38f, 2.38f,-.3f, 3.02f,.16f, 3.68f,.42f, 4.28f,.15f, 4.78f,-.05f, 5.20f,0)));
-        // Final metronome-style attempt: only head roll around the neck. No yaw, pitch, eye or
-        // body tracks are mixed in, because those made the previous version read as head shaking.
-        result.put("head_sway", motion(2.25f,
-                head("ParamAngleZ", 0,0, .34f,8.0f, .70f,-10.0f,
-                        1.06f,10.0f, 1.42f,-10.0f, 1.82f,7.0f, 2.25f,0)));
         result.put("head_pat", motion(1.75f,
                 head("ParamAngleY", 0,0, .28f,-2.2f, .68f,-4.5f, 1.08f,-3.6f, 1.42f,-1.3f, 1.75f,0),
                 head("ParamAngleZ", 0,0, .28f,-2.5f, .68f,3.8f, 1.08f,-3.1f, 1.42f,1.2f, 1.75f,0),
