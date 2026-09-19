@@ -43,25 +43,30 @@ final class SenPerformanceEngine {
 
     static final List<String> EMOTIONS = Collections.unmodifiableList(Arrays.asList(
             "normal", "happy", "excited", "affection", "shy",
-            "flustered", "tense", "worried", "confused", "helpless",
+            "romantic_shy", "flustered", "tense", "worried", "confused", "helpless",
             "afraid", "angry", "sad", "disgust", "serious",
             "surprised", "confident", "playful", "ashamed", "calm"));
 
     static final List<String> ACTIONS = Collections.unmodifiableList(Arrays.asList(
-            "nod", "shake_head", "tilt_head", "lean_forward", "lean_back",
-            "blink_surprised", "sigh", "pout", "excited_bounce", "listening",
+            "nod", "shake_head", "tilt_head", "blink_surprised", "sigh", "pout",
+            "excited_bounce",
             "look_around", "soft_sway", "look_down_up", "small_nod", "head_tilt_idle",
-            "side_look", "weight_shift", "gentle_lean", "sigh_sink", "slow_blink",
+            "side_look_left", "side_look_right", "weight_shift", "sigh_sink", "slow_blink",
             "wind_sway_soft", "wind_sway_medium", "wind_sway_showcase", "showcase_orbit",
+            "head_sway", "touch_response", "chest_cover",
             "head_pat", "head_pat_confused"));
 
-    // These seven routes have been confirmed as autonomous-idle responsibilities, so they stay
+    // These nine routes have been confirmed as autonomous-idle responsibilities, so they stay
     // in ACTIONS/MOTIONS but no longer occupy manual test buttons:
     // 环顾 look_around、待机歪头 head_tilt_idle、叹气下沉 sigh_sink；
+    // 左右侧看 side_look_left/right（取代旧的单向 side_look）；
     // 柔风摆动 wind_sway_soft（持续底层）；明显风摆 wind_sway_medium、
     // 展示级大摆 wind_sway_showcase、视频式环绕 showcase_orbit（低频展示池）。
+    // Removed by user from the active library: lean_forward, lean_back, listening,
+    // gentle_lean and the legacy one-direction side_look.
     private static final List<String> AUTO_IDLE_ONLY_ACTIONS = Arrays.asList(
-            "look_around", "head_tilt_idle", "sigh_sink", "wind_sway_soft",
+            "look_around", "head_tilt_idle", "side_look_left", "side_look_right",
+            "sigh_sink", "wind_sway_soft",
             "wind_sway_medium", "wind_sway_showcase", "showcase_orbit");
     static final List<String> MANUAL_TEST_ACTIONS = createManualTestActions();
 
@@ -76,8 +81,8 @@ final class SenPerformanceEngine {
     // 明显风摆 / 视频式环绕 / 展示级大摆由 update() 的低频展示池按
     // 55% / 31% / 14% 抽取，首次28～60秒，随后48～100秒。
     private static final List<String> ROUTINE_IDLE_ACTIONS = Arrays.asList(
-            "head_tilt_idle", "head_tilt_idle", "side_look", "weight_shift",
-            "gentle_lean", "slow_blink", "look_around", "look_around",
+            "head_tilt_idle", "head_tilt_idle", "side_look_left", "side_look_right",
+            "weight_shift", "slow_blink", "look_around", "look_around",
             "soft_sway", "soft_sway", "small_nod", "sigh_sink");
 
     private final Random random = new Random();
@@ -126,10 +131,12 @@ final class SenPerformanceEngine {
 
     void clearEmotionForHeadPat() {
         emotion = "normal";
-        emotionFromValues = new HashMap<>();
-        emotionCurrentValues = new HashMap<>();
+        // Keep the current face as the source and fade it to neutral while the head-pat action
+        // closes the eyes. Clearing both maps here caused every emotion to flash through the
+        // wide-eyed base face before reaching the half-closed-eye pose.
+        emotionFromValues = new HashMap<>(emotionCurrentValues);
         emotionTargetValues = new HashMap<>();
-        emotionTransitionTime = EMOTION_TRANSITION_SECONDS;
+        emotionTransitionTime = 0.0f;
     }
 
     String getEmotion() {
@@ -205,6 +212,17 @@ final class SenPerformanceEngine {
         float progress = clamp((actionTime - duration) / ACTION_PHYSICS_RELEASE_SECONDS,
                 0.0f, 1.0f);
         return .35f + .65f * smoothStep(progress);
+    }
+
+    boolean isChestCoverActionActive() {
+        return "chest_cover".equals(action);
+    }
+
+    float getChestCoverPoseMix() {
+        if (!isChestCoverActionActive()) return 0.0f;
+        if (actionTime < .48f) return smoothStep(actionTime / .48f);
+        if (actionTime < 2.65f) return 1.0f;
+        return 1.0f - smoothStep((actionTime - 2.65f) / .75f);
     }
 
     void update(float deltaSeconds, ParameterWriter writer) {
@@ -481,6 +499,15 @@ final class SenPerformanceEngine {
                 writer.add("MouthPressLip", 0.30f); writer.add("ParamMouthX", -0.14f);
                 writer.add("ParamEyeBallY", -0.26f); writer.add("ParamEyeLOpen", -0.14f);
                 writer.add("ParamEyeROpen", -0.14f); writer.add("ParamAngleZ", -4.0f); break;
+            case "romantic_shy":
+                writer.add("Hearteyes2", 0.78f); writer.add("Param13", 0.98f);
+                writer.add("ParamMouthForm", 0.10f); writer.add("ParamMouthOpenY", 0.11f);
+                writer.add("ParamMouthFunnel", 0.04f); writer.add("ParamEyeBallX", -0.10f);
+                writer.add("ParamEyeBallY", -0.12f);
+                writer.add("ParamEyeLOpen", -0.28f); writer.add("ParamEyeROpen", -0.28f);
+                writer.add("ParamEyeLSmile", 0.46f); writer.add("ParamEyeRSmile", 0.46f);
+                writer.add("ParamBrowLY", 0.16f); writer.add("ParamBrowRY", 0.16f);
+                writer.add("ParamAngleY", -2.0f); writer.add("ParamAngleZ", -5.0f); break;
             case "flustered":
                 writer.add("Param13", 0.82f); writer.add("Parammicrophone", 1.00f);
                 writer.add("ParamMouthForm", -0.46f);
@@ -642,14 +669,6 @@ final class SenPerformanceEngine {
                 head("ParamAngleZ", 0,0, .70f,16, 1.20f,5, 1.50f,0),
                 body("ParamBodyAngleX", 0,0, .70f,1.2f, 1.20f,.5f, 1.50f,0),
                 body("ParamBodyAngleY", 0,0, .70f,.8f, 1.20f,.2f, 1.50f,0)));
-        result.put("lean_forward", motion(2.00f,
-                body("ParamBodyAngleY", 0,0, .20f,-1.5f, .78f,2.4f, 1.18f,2.8f, 1.52f,1.8f, 1.78f,.7f, 2,0),
-                head("ParamAngleY", 0,0, .20f,1, .78f,-4, 1.18f,-5.5f, 1.52f,-2, 1.78f,-.6f, 2,0),
-                head("ParamAngleZ", 0,0, .20f,-1, .78f,2, 1.18f,2.5f, 1.52f,1, 1.78f,.2f, 2,0)));
-        result.put("lean_back", motion(1.25f,
-                body("ParamBodyAngleY", 0,0, .14f,1, .48f,-2, .78f,-2.7f, 1,-1.4f, 1.25f,0),
-                head("ParamAngleY", 0,0, .14f,-.8f, .48f,3.5f, .78f,4.6f, 1,1.8f, 1.25f,0),
-                head("ParamAngleZ", 0,0, .14f,.6f, .48f,-1.6f, .78f,-2, 1,-.7f, 1.25f,0)));
         result.put("blink_surprised", motion(.88f,
                 head("ParamAngleY", 0,0, .16f,2.5f, .36f,-5.5f, .58f,1.8f, .88f,0),
                 body("ParamBodyAngleY", 0,0, .16f,2, .36f,-2.5f, .58f,1.4f, .88f,0),
@@ -672,16 +691,19 @@ final class SenPerformanceEngine {
                 head("ParamAngleZ", 0,0, .30f,-2.2f, .78f,-8.5f, 1.16f,-5, 1.42f,-2, 1.70f,0),
                 body("ParamBodyAngleX", 0,0, .30f,-.25f, .78f,-.9f, 1.16f,-.45f, 1.42f,-.12f, 1.70f,0)));
         result.put("excited_bounce", motion(2.00f,
-                head("ParamAngleY", 0,0, .30f,5, .80f,-2, 1,3, 1.5f,-1, 2,0),
-                body("ParamBodyAngleY", 0,0, .30f,3, .80f,-5, 1,2, 1.5f,1, 2,0),
-                face("ParamEyeLSmile", 0,0, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
-                face("ParamEyeRSmile", 0,0, .30f,.45f, .80f,.68f, 1,.56f, 1.5f,.34f, 2,0),
-                face("ParamMouthForm", 0,0, .30f,.42f, .80f,.72f, 1,.56f, 1.5f,.36f, 2,0),
-                face("ParamMouthOpenY", 0,0, .30f,.14f, .80f,.28f, 1,.18f, 1.5f,.1f, 2,0),
-                face("Param13", 0,0, .30f,.28f, .80f,.48f, 1,.36f, 1.5f,.2f, 2,0)));
-        result.put("listening", motion(2.20f,
-                head("ParamAngleZ", 0,0, .40f,6, 1.55f,6, 2.20f,0),
-                head("ParamAngleY", 0,0, .40f,2, 1.55f,2, 2.20f,0)));
+                // Two complete crouch-lift-land cycles. BodyPositionY is a model-space body
+                // parameter, so this remains correct after screen zoom or translation.
+                body("ParamBodyPositiony", 0,0, .14f,-.10f, .31f,.31f, .49f,-.07f,
+                        .66f,0, .82f,-.10f, .99f,.34f, 1.18f,-.07f, 1.39f,0, 2,0),
+                head("ParamAngleY", 0,0, .14f,-2, .31f,5.5f, .49f,-2.5f, .66f,0,
+                        .82f,-2, .99f,6, 1.18f,-2.5f, 1.39f,0, 2,0),
+                body("ParamBodyAngleY", 0,0, .14f,-2, .31f,3.8f, .49f,-2.2f, .66f,0,
+                        .82f,-2, .99f,4.2f, 1.18f,-2.2f, 1.39f,0, 2,0),
+                face("ParamEyeLSmile", 0,0, .18f,.48f, 1.35f,.68f, 1.72f,.30f, 2,0),
+                face("ParamEyeRSmile", 0,0, .18f,.48f, 1.35f,.68f, 1.72f,.30f, 2,0),
+                face("ParamMouthForm", 0,0, .18f,.46f, 1.35f,.74f, 1.72f,.34f, 2,0),
+                face("ParamMouthOpenY", 0,0, .18f,.15f, 1.35f,.27f, 1.72f,.09f, 2,0),
+                face("Param13", 0,0, .18f,.30f, 1.35f,.48f, 1.72f,.18f, 2,0)));
         result.put("look_around", motion(3.20f,
                 head("ParamAngleX", 0,0, .70f,-8, 1.70f,9, 2.50f,3, 3.20f,0),
                 face("ParamEyeBallX", 0,0, .70f,-.55f, 1.70f,.65f, 2.50f,.25f, 3.20f,0),
@@ -701,19 +723,20 @@ final class SenPerformanceEngine {
                 head("ParamAngleZ", 0,0, .55f,-8, 1.35f,-6, 1.90f,0),
                 head("ParamAngleX", 0,0, .55f,-1.5f, 1.35f,-1, 1.90f,0),
                 face("ParamEyeBallX", 0,0, .55f,.2f, 1.35f,.12f, 1.90f,0)));
-        result.put("side_look", motion(2.15f,
+        result.put("side_look_right", motion(2.15f,
                 face("ParamEyeBallX", 0,0, .35f,.65f, 1.35f,.56f, 1.75f,.12f, 2.15f,0),
                 face("ParamEyeBallY", 0,0, .35f,.06f, 1.35f,.04f, 1.75f,0, 2.15f,0),
                 head("ParamAngleX", 0,0, .35f,3, 1.35f,4.8f, 1.75f,3, 2.15f,0),
                 head("ParamAngleZ", 0,0, .35f,-1.5f, 1.35f,-2.2f, 1.75f,-1.2f, 2.15f,0)));
+        result.put("side_look_left", motion(2.15f,
+                face("ParamEyeBallX", 0,0, .35f,-.65f, 1.35f,-.56f, 1.75f,-.12f, 2.15f,0),
+                face("ParamEyeBallY", 0,0, .35f,.06f, 1.35f,.04f, 1.75f,0, 2.15f,0),
+                head("ParamAngleX", 0,0, .35f,-3, 1.35f,-4.8f, 1.75f,-3, 2.15f,0),
+                head("ParamAngleZ", 0,0, .35f,1.5f, 1.35f,2.2f, 1.75f,1.2f, 2.15f,0)));
         result.put("weight_shift", motion(2.35f,
                 body("ParamBodyAngleX", 0,0, .70f,-3.8f, 1.60f,-3.1f, 2.35f,0),
                 body("ParamBodyAngleZ", 0,0, .70f,-1.8f, 1.60f,-1.4f, 2.35f,0),
                 head("ParamAngleZ", 0,0, .70f,3.5f, 1.60f,2.7f, 2.35f,0)));
-        result.put("gentle_lean", motion(1.80f,
-                body("ParamBodyAngleY", 0,0, .55f,1.7f, 1.25f,1.35f, 1.80f,0),
-                head("ParamAngleY", 0,0, .55f,-3.5f, 1.25f,-2.7f, 1.80f,0),
-                face("ParamEyeBallY", 0,0, .55f,.16f, 1.25f,.12f, 1.80f,0)));
         result.put("sigh_sink", motion(2.30f,
                 head("ParamAngleY", 0,0, .75f,-6, 1.65f,-4.5f, 2.30f,0),
                 body("ParamBodyAngleY", 0,0, .75f,-1.7f, 1.65f,-1.2f, 2.30f,0),
@@ -734,6 +757,43 @@ final class SenPerformanceEngine {
                 body("ParamBodyAngleZ", 0,0, .52f,-1.8f, 1.08f,-5.5f, 1.72f,-4.2f, 2.38f,2.4f, 3.02f,5.8f, 3.68f,4.1f, 4.28f,-.7f, 4.78f,.65f, 5.20f,0),
                 face("ParamEyeBallX", 0,0, .52f,-.38f, 1.08f,-.7f, 1.72f,-.24f, 2.38f,.5f, 3.02f,.72f, 3.68f,.2f, 4.28f,-.28f, 4.78f,.08f, 5.20f,0),
                 face("ParamEyeBallY", 0,0, .52f,.28f, 1.08f,.04f, 1.72f,-.38f, 2.38f,-.3f, 3.02f,.16f, 3.68f,.42f, 4.28f,.15f, 4.78f,-.05f, 5.20f,0)));
+        // Re-authored from the user's VTuber reference: two friendly roll cycles around Z,
+        // deliberately avoiding the large AngleX yaw that reads as a refusal shake.
+        result.put("head_sway", motion(2.10f,
+                head("ParamAngleZ", 0,0, .18f,-4, .48f,-11, .78f,9.5f,
+                        1.08f,-9.5f, 1.38f,10.5f, 1.72f,-4, 2.10f,0),
+                body("ParamBodyAngleX", 0,0, .18f,1, .48f,3.4f, .78f,-2.8f,
+                        1.08f,2.8f, 1.38f,-3.0f, 1.72f,1, 2.10f,0),
+                body("ParamBodyAngleZ", 0,0, .18f,.4f, .48f,1.4f, .78f,-1.2f,
+                        1.08f,1.2f, 1.38f,-1.3f, 1.72f,.4f, 2.10f,0),
+                face("ParamEyeBallX", 0,0, .48f,-.12f, .78f,.10f, 1.08f,-.10f,
+                        1.38f,.12f, 2.10f,0)));
+        // AAAAGENT exposes no transferable model preset, but its generic tap-response curve is
+        // clear enough to independently re-author: quick recoil, blink, gentle overshoot, return.
+        result.put("touch_response", motion(1.45f,
+                head("ParamAngleY", 0,0, .12f,-2, .30f,-9, .56f,3.8f,
+                        .86f,-1.5f, 1.15f,.6f, 1.45f,0),
+                head("ParamAngleZ", 0,0, .12f,1.5f, .30f,4.5f, .56f,-2,
+                        .86f,.8f, 1.15f,-.3f, 1.45f,0),
+                body("ParamBodyAngleY", 0,0, .12f,-.8f, .30f,-3.2f, .56f,1.5f,
+                        .86f,-.5f, 1.15f,.2f, 1.45f,0),
+                face("ParamEyeLOpen", 0,0, .12f,-.2f, .27f,-1, .40f,-.18f,
+                        .62f,.06f, .90f,0, 1.45f,0),
+                face("ParamEyeROpen", 0,0, .12f,-.2f, .27f,-1, .40f,-.18f,
+                        .62f,.06f, .90f,0, 1.45f,0),
+                face("ParamBrowLY", 0,0, .30f,.28f, .62f,.10f, 1.45f,0),
+                face("ParamBrowRY", 0,0, .30f,.28f, .62f,.10f, 1.45f,0)));
+        // Face/body timing for the experimental crossed-arm pose. Arm-chain values are applied
+        // after native physics by SenLive2DModel so the physics pass cannot overwrite them.
+        result.put("chest_cover", motion(3.40f,
+                head("ParamAngleY", 0,0, .48f,-4.5f, 2.65f,-4.5f, 3.40f,0),
+                head("ParamAngleZ", 0,0, .48f,-2.5f, 2.65f,-2.5f, 3.40f,0),
+                body("ParamBodyAngleY", 0,0, .48f,-1.8f, 2.65f,-1.8f, 3.40f,0),
+                face("ParamEyeBallY", 0,0, .48f,-.12f, 2.65f,-.12f, 3.40f,0),
+                face("ParamEyeLOpen", 0,0, .48f,-.14f, 2.65f,-.14f, 3.40f,0),
+                face("ParamEyeROpen", 0,0, .48f,-.14f, 2.65f,-.14f, 3.40f,0),
+                face("ParamMouthForm", 0,0, .48f,-.18f, 2.65f,-.18f, 3.40f,0),
+                face("Param13", 0,0, .48f,.32f, 2.65f,.32f, 3.40f,0)));
         result.put("head_pat", motion(1.75f,
                 head("ParamAngleY", 0,0, .28f,-2.2f, .68f,-4.5f, 1.08f,-3.6f, 1.42f,-1.3f, 1.75f,0),
                 head("ParamAngleZ", 0,0, .28f,-2.5f, .68f,3.8f, 1.08f,-3.1f, 1.42f,1.2f, 1.75f,0),

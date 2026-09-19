@@ -41,7 +41,11 @@ final class SenLive2DModel extends CubismUserModel {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
     private static final String[] TAIL_PART_IDS = {"Part239"};
+    private static final String[] CHEST_COVER_FOREGROUND_PART_IDS = {
+            "Part100", "Part216", "Part101"
+    };
     private static final float WHITE_SHIRT_POSE_FIRST_KEYFORM = 0.11f;
+    private static final float ACTION_FACE_FADE_SECONDS = 0.28f;
     // Expressions and motions finish by order 310; mouth-driven physics starts at 600.
     // Put lip sync in between so the model's authored MouthOpenY physics receives the voice.
     private static final int LIP_SYNC_UPDATE_ORDER = 550;
@@ -56,6 +60,17 @@ final class SenLive2DModel extends CubismUserModel {
             "larmrotate4", "larmrotate5", "larmrotate7", "larmrotate8",
             "rarmrotate", "rarmrotate2", "rarmrotate3", "rarmrotate4",
             "rarmrotate5", "larmrotate17", "larmrotate18"
+    };
+    private static final String[] CHEST_COVER_ARM_IDS = {
+            "larmrotate", "larmrotate2", "larmrotate3", "larmrotate4", "larmrotate5",
+            "rarmrotate", "rarmrotate2", "rarmrotate3", "rarmrotate4", "rarmrotate5"
+    };
+    // This is an experimental pose, intentionally isolated from the normal physics baseline.
+    // Mirrored X/rotation targets bring each arm inward; phone testing will determine whether
+    // this moc3 exposes enough authored keyforms for a convincing crossed-arm silhouette.
+    private static final float[] CHEST_COVER_ARM_TARGETS = {
+            -8.5f, -9.0f, -5.0f, 8.0f, 0.8f,
+            8.5f, 9.0f, 5.0f, -8.0f, 0.8f
     };
     private final Map<String, ACubismMotion> expressions = new HashMap<>();
     private final Map<String, CubismExpressionMotionManager> expressionManagers =
@@ -73,6 +88,7 @@ final class SenLive2DModel extends CubismUserModel {
     private boolean geometryDiagnosticsAdded;
     private int[] armPhysicsIndices = new int[0];
     private float[] armPhysicsBaseValues = new float[0];
+    private int[] chestCoverForegroundDrawables = new int[0];
     private int[] rabbitEarPhysicsIndices = new int[0];
     private float[] isolatedEarValues = new float[0];
     private CubismPhysics isolatedEarPhysics;
@@ -148,6 +164,7 @@ final class SenLive2DModel extends CubismUserModel {
             applyOutfitParameters(outfitPreset, listener);
         }
         resolveArmPhysicsParameters();
+        resolveChestCoverForegroundDrawables();
         resolveRabbitEarPhysicsParameters();
         prePhysicsValues = new float[model.getParameterCount()];
         normalPhysicsValues = new float[model.getParameterCount()];
@@ -203,6 +220,7 @@ final class SenLive2DModel extends CubismUserModel {
         if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
         setParameter("Glasses", glassesEnabled ? 1.0f : 0.0f);
         skipWhiteShirtPosePreKeyframes();
+        applyChestCoverArmPose();
         updateModelWithOutfitShapeLock();
         applyRuntimeGeometry();
     }
@@ -215,6 +233,10 @@ final class SenLive2DModel extends CubismUserModel {
         if (model == null || getRenderer() == null) return;
         CubismMatrix44.multiply(modelMatrix.getArray(), matrix.getArray(), matrix.getArray());
         CubismRendererAndroid renderer = getRenderer();
+        renderer.setForegroundDrawableIndices(
+                performance.getChestCoverPoseMix() > 0.0001f
+                        && outfitPreset == SenOutfitPresets.UNDRESSED
+                        ? chestCoverForegroundDrawables : null);
         renderer.setMvpMatrix(matrix);
         renderer.drawModel();
     }
@@ -702,6 +724,14 @@ final class SenLive2DModel extends CubismUserModel {
         appendAppearanceDetail("动作手臂物理 " + count + "项×35%→平滑100%");
     }
 
+    private void resolveChestCoverForegroundDrawables() {
+        Set<Integer> drawables = collectChildDrawables(CHEST_COVER_FOREGROUND_PART_IDS);
+        chestCoverForegroundDrawables = new int[drawables.size()];
+        int output = 0;
+        for (int drawable : drawables) chestCoverForegroundDrawables[output++] = drawable;
+        appendAppearanceDetail("护胸前景手臂网格 " + drawables.size() + "项（仅脱模板）");
+    }
+
     private void captureArmPhysicsBase() {
         for (int i = 0; i < armPhysicsIndices.length; i++) {
             armPhysicsBaseValues[i] = model.getModel().getParameterViews()[
@@ -718,6 +748,22 @@ final class SenLive2DModel extends CubismUserModel {
             float base = armPhysicsBaseValues[i];
             model.getModel().getParameterViews()[index].setValue(
                     base + (current - base) * gain);
+        }
+    }
+
+    private void applyChestCoverArmPose() {
+        float mix = performance.getChestCoverPoseMix();
+        if (mix <= 0.0001f) return;
+        for (int i = 0; i < CHEST_COVER_ARM_IDS.length; i++) {
+            int index = findParameterIndex(CHEST_COVER_ARM_IDS[i]);
+            if (index < 0) continue;
+            float current = model.getModel().getParameterViews()[index].getValue();
+            float target = CHEST_COVER_ARM_TARGETS[i];
+            float value = current + (target - current) * mix;
+            float minimum = model.getParameterMinimumValue(index);
+            float maximum = model.getParameterMaximumValue(index);
+            model.getModel().getParameterViews()[index].setValue(
+                    Math.max(minimum, Math.min(maximum, value)));
         }
     }
 
@@ -816,10 +862,10 @@ final class SenLive2DModel extends CubismUserModel {
         for (String name : new ArrayList<>(activeExpressionNames)) {
             if (isHeadPatRetainedExpression(name)) continue;
             CubismExpressionMotionManager manager = expressionManagers.get(name);
-            if (manager != null) manager.stopAllMotions();
+            if (manager != null) fadeOutManager(manager, ACTION_FACE_FADE_SECONDS);
             activeExpressionNames.remove(name);
         }
-        transientExpressionManager.stopAllMotions();
+        fadeOutManager(transientExpressionManager, ACTION_FACE_FADE_SECONDS);
         transientExpressionRemaining = 0.0f;
     }
 
