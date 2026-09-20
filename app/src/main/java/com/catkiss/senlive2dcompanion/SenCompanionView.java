@@ -133,6 +133,18 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
         queueRenderer(() -> renderer.setAutoIdle(enabled));
     }
 
+    // Test-harness-only controls. The stable SenCompanionController remains semantic and does
+    // not expose experimental VAD implementation details to the future AI companion host.
+    void setPerformanceLabMode(String mode) {
+        queueRenderer(() -> renderer.setPerformanceLabMode(mode));
+    }
+
+    void setPerformanceLabTuning(float expressionGain, float bodyMotionGain,
+                                 float responseGain) {
+        queueRenderer(() -> renderer.setPerformanceLabTuning(
+                expressionGain, bodyMotionGain, responseGain));
+    }
+
     @Override
     public void setVisible(boolean visible) {
         setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
