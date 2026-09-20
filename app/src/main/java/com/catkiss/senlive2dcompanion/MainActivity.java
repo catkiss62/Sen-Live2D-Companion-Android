@@ -48,7 +48,7 @@ import java.util.zip.ZipInputStream;
 public class MainActivity extends AppCompatActivity implements SenCompanionView.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
-    private static final String APP_VERSION_LABEL = "v0.5.22 · 表现适配实验室";
+    private static final String APP_VERSION_LABEL = "v0.5.23 · AI伴侣接入基线";
     private static final float DEFAULT_HEAD_ZONE_LEFT = .4927f;
     private static final float DEFAULT_HEAD_ZONE_TOP = .0482f;
     private static final float DEFAULT_HEAD_ZONE_RIGHT = .7095f;
@@ -104,11 +104,6 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
     private final float[] headZonePoint = new float[2];
     private TextView headZoneStatus;
     private TextView ttsLipSyncStatus;
-    private TextView performanceLabStatus;
-    private String performanceLabMode = SenPerformanceLab.MODE_LEGACY;
-    private float performanceLabExpressionGain = 1.0f;
-    private float performanceLabBodyMotionGain = 1.0f;
-    private float performanceLabResponseGain = 1.0f;
     private SenSystemTtsLipSync systemTtsLipSync;
     private SenOutfitPresets.Preset selectedOutfit;
     private long nativeLoadStartedAt;
@@ -338,48 +333,6 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
             updateCustomizationControls();
         });
         panel.addView(autoIdleButton);
-
-        TextView labHeading = new TextView(this);
-        labHeading.setText("表现适配实验室（默认原版；不改服装、外观或原生物理）");
-        labHeading.setTextColor(Color.rgb(238, 207, 255));
-        labHeading.setTextSize(12);
-        labHeading.setPadding(0, dp(9), 0, dp(3));
-        panel.addView(labHeading);
-
-        TextView labNote = adjustmentStatusText();
-        labNote.setText("同一情绪按钮可做三模式对照；任一既有程序动作播放时实验层自动让路。");
-        panel.addView(labNote);
-
-        LinearLayout labModeRow = new LinearLayout(this);
-        labModeRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button legacyLabButton = panelButton("原版Sen");
-        legacyLabButton.setOnClickListener(v ->
-                setPerformanceLabMode(SenPerformanceLab.MODE_LEGACY));
-        labModeRow.addView(legacyLabButton, weightedButtonParams());
-        Button facsLabButton = panelButton("通用FACS/VAD");
-        facsLabButton.setOnClickListener(v ->
-                setPerformanceLabMode(SenPerformanceLab.MODE_FACS));
-        labModeRow.addView(facsLabButton, weightedButtonParams());
-        Button hybridLabButton = panelButton("Sen混合");
-        hybridLabButton.setOnClickListener(v ->
-                setPerformanceLabMode(SenPerformanceLab.MODE_HYBRID));
-        labModeRow.addView(hybridLabButton, weightedButtonParams());
-        panel.addView(labModeRow);
-
-        addPerformanceLabTuningRow(panel, "表情幅度", 0);
-        addPerformanceLabTuningRow(panel, "身体微动", 1);
-        addPerformanceLabTuningRow(panel, "响应速度", 2);
-        Button resetLabButton = panelButton("还原实验参数（100% / 100% / 100%）");
-        resetLabButton.setOnClickListener(v -> {
-            performanceLabExpressionGain = 1.0f;
-            performanceLabBodyMotionGain = 1.0f;
-            performanceLabResponseGain = 1.0f;
-            applyPerformanceLabTuning();
-        });
-        panel.addView(resetLabButton);
-        performanceLabStatus = adjustmentStatusText();
-        panel.addView(performanceLabStatus);
-        updatePerformanceLabStatus();
 
         TextView emotionHeading = new TextView(this);
         emotionHeading.setText("AI伴侣情绪（21个语义入口；含暧昧羞涩实验组合）");
@@ -1022,66 +975,6 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         overlay.addView(card, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         return overlay;
-    }
-
-    private void setPerformanceLabMode(String mode) {
-        performanceLabMode = mode;
-        companionView.setPerformanceLabMode(mode);
-        updatePerformanceLabStatus();
-    }
-
-    private void addPerformanceLabTuningRow(LinearLayout parent, String label, int channel) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        TextView name = adjustmentStatusText();
-        name.setText(label);
-        name.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(name, weightedButtonParams());
-        Button minus = panelButton("－10%");
-        minus.setOnClickListener(v -> adjustPerformanceLabTuning(channel, -0.10f));
-        row.addView(minus, weightedButtonParams());
-        Button plus = panelButton("＋10%");
-        plus.setOnClickListener(v -> adjustPerformanceLabTuning(channel, 0.10f));
-        row.addView(plus, weightedButtonParams());
-        parent.addView(row);
-    }
-
-    private void adjustPerformanceLabTuning(int channel, float delta) {
-        if (channel == 0) {
-            performanceLabExpressionGain = Math.max(0.50f,
-                    Math.min(1.50f, performanceLabExpressionGain + delta));
-        } else if (channel == 1) {
-            performanceLabBodyMotionGain = Math.max(0.50f,
-                    Math.min(1.50f, performanceLabBodyMotionGain + delta));
-        } else {
-            performanceLabResponseGain = Math.max(0.50f,
-                    Math.min(2.00f, performanceLabResponseGain + delta));
-        }
-        applyPerformanceLabTuning();
-    }
-
-    private void applyPerformanceLabTuning() {
-        companionView.setPerformanceLabTuning(performanceLabExpressionGain,
-                performanceLabBodyMotionGain, performanceLabResponseGain);
-        updatePerformanceLabStatus();
-    }
-
-    private void updatePerformanceLabStatus() {
-        if (performanceLabStatus == null) return;
-        String modeLabel;
-        if (SenPerformanceLab.MODE_FACS.equals(performanceLabMode)) {
-            modeLabel = "通用FACS/VAD（只用标准通道）";
-        } else if (SenPerformanceLab.MODE_HYBRID.equals(performanceLabMode)) {
-            modeLabel = "Sen混合（原表情+低权连续层）";
-        } else {
-            modeLabel = "原版Sen（实验层关闭）";
-        }
-        performanceLabStatus.setText(String.format(java.util.Locale.ROOT,
-                "当前：%s · 表情%d%% · 身体%d%% · 响应%d%%",
-                modeLabel,
-                Math.round(performanceLabExpressionGain * 100.0f),
-                Math.round(performanceLabBodyMotionGain * 100.0f),
-                Math.round(performanceLabResponseGain * 100.0f)));
     }
 
     private void addPerformanceGrid(LinearLayout parent, List<String> ids,
