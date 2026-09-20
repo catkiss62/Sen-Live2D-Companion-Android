@@ -68,6 +68,8 @@ final class SenLive2DModel extends CubismUserModel {
             new CubismExpressionMotionManager();
     private volatile float lipSyncValue;
     private final SenPerformanceEngine performance = new SenPerformanceEngine();
+    private final SenPerformanceLab performanceLab = new SenPerformanceLab();
+    private String selectedEmotion = "normal";
     private ICubismModelSetting setting;
     private File homeDirectory;
     private String appearanceDetail = "";
@@ -201,6 +203,17 @@ final class SenLive2DModel extends CubismUserModel {
             }
         }
         updateScheduler.onLateUpdate(model, deltaSeconds);
+        // The optional lab is evaluated after expressions/motions so its output can be compared
+        // consistently, but it yields completely while an authored Sen action is active.
+        performanceLab.update(deltaSeconds, performance.isActionActive(),
+                new SenPerformanceEngine.ParameterWriter() {
+                    @Override public void add(String id, float value) {
+                        addParameter(id, value);
+                    }
+                    @Override public void set(String id, float value) {
+                        setParameter(id, value);
+                    }
+                });
         // Outfit selection is an App-owned preset. Expressions, native motions and program
         // actions may animate pose parameters, but they must never alter the selected clothes.
         if (hasVtsBaseProfile) applyOutfitParameters(outfitPreset, null);
@@ -298,7 +311,10 @@ final class SenLive2DModel extends CubismUserModel {
     void selectEmotion(String name) {
         // Program emotions and authored ZIP switches are independent layers. Selecting one must
         // not silently turn off props or another explicitly enabled ZIP effect.
-        performance.selectEmotion(name);
+        if (!SenPerformanceEngine.EMOTIONS.contains(name)) return;
+        selectedEmotion = name;
+        performanceLab.selectEmotion(name);
+        performance.selectEmotion(performanceLab.usesLegacyEmotion() ? name : "normal");
     }
 
     void playAction(String name) {
@@ -339,6 +355,17 @@ final class SenLive2DModel extends CubismUserModel {
 
     void setAutoIdle(boolean enabled) {
         performance.setAutoIdle(enabled);
+    }
+
+    void setPerformanceLabMode(String mode) {
+        performanceLab.setMode(mode);
+        performance.selectEmotion(performanceLab.usesLegacyEmotion()
+                ? selectedEmotion : "normal");
+    }
+
+    void setPerformanceLabTuning(float expressionGain, float bodyMotionGain,
+                                 float responseGain) {
+        performanceLab.setTuning(expressionGain, bodyMotionGain, responseGain);
     }
 
     void selectOutfit(SenOutfitPresets.Preset preset) {
