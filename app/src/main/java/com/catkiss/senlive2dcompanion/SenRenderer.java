@@ -46,6 +46,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private volatile float stageTranslateY;
     private volatile boolean touchFollowEnabled = true;
     private volatile float lipSyncValue;
+    private String performanceLabMode = SenPerformanceLab.MODE_LEGACY;
+    private float performanceLabExpressionGain = 1.0f;
+    private float performanceLabBodyMotionGain = 1.0f;
+    private float performanceLabResponseGain = 1.0f;
     private volatile float modelBoundsLeft;
     private volatile float modelBoundsRight;
     private volatile float modelBoundsTop;
@@ -140,6 +144,21 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void setAutoIdle(boolean enabled) {
         if (model != null) model.setAutoIdle(enabled);
+    }
+
+    void setPerformanceLabMode(String mode) {
+        performanceLabMode = mode;
+        if (model != null) model.setPerformanceLabMode(mode);
+    }
+
+    void setPerformanceLabTuning(float expressionGain, float bodyMotionGain,
+                                 float responseGain) {
+        performanceLabExpressionGain = expressionGain;
+        performanceLabBodyMotionGain = bodyMotionGain;
+        performanceLabResponseGain = responseGain;
+        if (model != null) {
+            model.setPerformanceLabTuning(expressionGain, bodyMotionGain, responseGain);
+        }
     }
 
     void selectOutfit(SenOutfitPresets.Preset preset) {
@@ -280,6 +299,9 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             next.setEarTuning(SenRenderOptions.EAR_SPEED_PERCENT,
                     SenRenderOptions.EAR_AMPLITUDE_PERCENT);
             next.setLipSyncValue(lipSyncValue);
+            next.setPerformanceLabTuning(performanceLabExpressionGain,
+                    performanceLabBodyMotionGain, performanceLabResponseGain);
+            next.setPerformanceLabMode(performanceLabMode);
             listener.onReady(readyDetail());
         } catch (Throwable error) {
             releaseCurrentModel();
