@@ -39,6 +39,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     private int maxTextureSize;
     private boolean frameworkReady;
     private boolean contextRecreated;
+    private boolean released;
     private long lastFrameNanos;
     private volatile float stageScale = 1.0f;
     private volatile float stageTranslateX;
@@ -59,6 +60,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     void requestModel(File modelFile, List<String> startupExpressions, SenVtsAppearance appearance,
                       SenVtsProfile frozenProfile, SenRenderOptions options,
                       SenOutfitPresets.Preset outfitPreset) {
+        if (released) return;
         pendingRequest = new ModelRequest(modelFile, startupExpressions, appearance, frozenProfile,
                 options, outfitPreset);
     }
@@ -146,6 +148,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     @Override
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
+        if (released) return;
         try {
             initializeFramework();
             GLES20.glEnable(GLES20.GL_BLEND);
@@ -165,6 +168,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     @Override
     public void onSurfaceChanged(GL10 unused, int width, int height) {
+        if (released) return;
         surfaceWidth = width;
         surfaceHeight = height;
         GLES20.glViewport(0, 0, width, height);
@@ -187,6 +191,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         GLES20.glClearDepthf(1.0f);
+
+        if (released) return;
 
         if (pendingRequest != null && surfaceWidth > 0 && surfaceHeight > 0) {
             ModelRequest request = pendingRequest;
@@ -238,6 +244,9 @@ final class SenRenderer implements GLSurfaceView.Renderer {
     }
 
     void release() {
+        if (released) return;
+        released = true;
+        pendingRequest = null;
         releaseCurrentModel();
         if (frameworkReady && CubismFramework.isInitialized()) CubismFramework.dispose();
         CubismFramework.cleanUp();
@@ -261,7 +270,7 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         try {
             releaseCurrentModel();
             lastFrameNanos = 0L;
-            listener.onStatus("原生渲染：准备加载 Sen 2K 模型…");
+            listener.onStatus("原生渲染：准备加载 Sen 模型…");
             SenLive2DModel next = new SenLive2DModel();
             model = next;
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,

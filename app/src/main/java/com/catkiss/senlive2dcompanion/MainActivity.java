@@ -2,10 +2,8 @@ package com.catkiss.senlive2dcompanion;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.Gravity;
@@ -47,10 +45,10 @@ import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public class MainActivity extends AppCompatActivity implements SenRenderer.Listener {
+public class MainActivity extends AppCompatActivity implements SenCompanionView.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
-    private static final String DEFAULT_PROFILE_ASSET = "sen-default-profile-v1.json";
+    private static final String APP_VERSION_LABEL = "v0.5.21 · AI伴侣移植收口测试";
     private static final float DEFAULT_HEAD_ZONE_LEFT = .4927f;
     private static final float DEFAULT_HEAD_ZONE_TOP = .0482f;
     private static final float DEFAULT_HEAD_ZONE_RIGHT = .7095f;
@@ -70,8 +68,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private SharedPreferences prefs;
     private File modelRoot;
     private File importRoot;
-    private GLSurfaceView glSurfaceView;
-    private SenRenderer renderer;
+    private SenCompanionView companionView;
     private TextView statusText;
     private TextView summaryText;
     private LinearLayout expressionArea;
@@ -190,7 +187,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         statusText.setTextColor(Color.rgb(235, 224, 246));
         statusText.setTextSize(10);
         statusText.setSingleLine(true);
-        statusText.setText("v0.5.14 · 无衣底图上衣修正版");
+        statusText.setText(APP_VERSION_LABEL);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusParams.setMarginStart(dp(5));
@@ -199,18 +196,11 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
 
         FrameLayout stage = new FrameLayout(this);
-        glSurfaceView = new GLSurfaceView(this);
-        glSurfaceView.setBackgroundColor(Color.TRANSPARENT);
-        glSurfaceView.getHolder().setFormat(PixelFormat.TRANSLUCENT);
-        glSurfaceView.setEGLContextClientVersion(2);
-        glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 24, 0);
-        renderer = new SenRenderer(this, this);
-        renderer.setTouchFollowEnabled(touchFollowEnabled);
-        glSurfaceView.setRenderer(renderer);
-        glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
-        glSurfaceView.setPreserveEGLContextOnPause(true);
+        companionView = new SenCompanionView(this);
+        companionView.setListener(this);
+        companionView.setTouchFollowEnabled(touchFollowEnabled);
         installStageAdjustmentGestures();
-        stage.addView(glSurfaceView, new FrameLayout.LayoutParams(
+        stage.addView(companionView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         page.addView(stage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f));
@@ -288,8 +278,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         panel.addView(earNotice);
 
         Button earTwitchButton = panelButton("测试：猫耳快速抖动两次");
-        earTwitchButton.setOnClickListener(v -> glSurfaceView.queueEvent(
-                () -> renderer.triggerEarTwitch()));
+        earTwitchButton.setOnClickListener(v -> companionView.triggerEarTwitch());
         panel.addView(earTwitchButton);
 
         TextView tailHeading = new TextView(this);
@@ -311,7 +300,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         touchFollowButton.setOnClickListener(v -> {
             touchFollowEnabled = !touchFollowEnabled;
             prefs.edit().putBoolean("touch_follow_enabled", touchFollowEnabled).apply();
-            glSurfaceView.queueEvent(() -> renderer.setTouchFollowEnabled(touchFollowEnabled));
+            companionView.setTouchFollowEnabled(touchFollowEnabled);
             updateCustomizationControls();
         });
         panel.addView(touchFollowButton);
@@ -340,7 +329,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         autoIdleButton.setOnClickListener(v -> {
             autoIdleEnabled = !autoIdleEnabled;
             prefs.edit().putBoolean("auto_idle_enabled", autoIdleEnabled).apply();
-            glSurfaceView.queueEvent(() -> renderer.setAutoIdle(autoIdleEnabled));
+            companionView.setAutoIdle(autoIdleEnabled);
             updateCustomizationControls();
         });
         panel.addView(autoIdleButton);
@@ -357,7 +346,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "害怕", "生气", "伤心", "嫌弃", "认真",
                 "惊讶", "自信", "调皮", "羞愧", "平静"
         };
-        addPerformanceGrid(panel, SenPerformanceEngine.EMOTIONS, emotionLabels, true);
+        addPerformanceGrid(panel, SenPerformanceCatalog.EMOTIONS, emotionLabels, true);
 
         TextView ttsHeading = new TextView(this);
         ttsHeading.setText("系统语音口型测试（4句循环；实际PCM音量优先）");
@@ -386,7 +375,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 "开心弹跳", "小点头", "慢眨眼",
                 "摸头常规", "摸头疑惑彩蛋"
         };
-        addPerformanceGrid(panel, SenPerformanceEngine.MANUAL_TEST_ACTIONS,
+        addPerformanceGrid(panel, SenPerformanceCatalog.MANUAL_ACTIONS,
                 manualActionLabels, false);
 
         TextView actionNote = adjustmentStatusText();
@@ -427,10 +416,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     }
 
                     @Override public void onMouthValue(float value) {
-                        GLSurfaceView surface = glSurfaceView;
-                        SenRenderer activeRenderer = renderer;
-                        if (surface == null || activeRenderer == null) return;
-                        surface.queueEvent(() -> activeRenderer.setLipSyncValue(value));
+                        SenCompanionView view = companionView;
+                        if (view != null) view.setSpeechAmplitude(value);
                     }
                 });
     }
@@ -446,8 +433,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                                 Math.min(6.0f, oldScale * detector.getScaleFactor()));
                         if (Math.abs(newScale - oldScale) < 0.0001f) return true;
 
-                        int width = Math.max(1, glSurfaceView.getWidth());
-                        int height = Math.max(1, glSurfaceView.getHeight());
+                        int width = Math.max(1, companionView.getWidth());
+                        int height = Math.max(1, companionView.getHeight());
                         float focusX = detector.getFocusX() * 2.0f / width - 1.0f;
                         float focusY = 1.0f - detector.getFocusY() * 2.0f / height;
                         float ratio = newScale / oldScale;
@@ -459,7 +446,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                         return true;
                     }
                 });
-        glSurfaceView.setOnTouchListener((view, event) -> {
+        companionView.setOnTouchListener((view, event) -> {
             if (headZoneCalibrationMode && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 handleHeadZoneCalibration(view, event.getX(), event.getY());
                 return true;
@@ -537,14 +524,14 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     && duration >= 120L && headPatTravel >= threshold) {
                 headPatTriggered = true;
                 boolean confused = Math.random() < .10;
-                glSurfaceView.queueEvent(() -> renderer.triggerHeadPat(confused));
+                companionView.triggerHeadPat(confused);
             }
             return true;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
                 || action == MotionEvent.ACTION_POINTER_UP) {
             queueTouchTarget(view, false, x, y);
-            glSurfaceView.queueEvent(renderer::releaseHeadPat);
+            companionView.releaseHeadPat();
             interactionPointerId = -1;
             headPatCandidate = false;
             headPatTriggered = false;
@@ -556,13 +543,12 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     private void queueTouchTarget(View view, boolean active, float x, float y) {
         float normalizedX = x * 2.0f / Math.max(1, view.getWidth()) - 1.0f;
         float normalizedY = 1.0f - y * 2.0f / Math.max(1, view.getHeight());
-        glSurfaceView.queueEvent(() -> renderer.setTouchTarget(
-                active, normalizedX, normalizedY));
+        companionView.setLookTarget(active, normalizedX, normalizedY);
     }
 
     private void applyStageTransform() {
-        if (renderer != null) {
-            renderer.setStageTransform(stageScale, stageTranslateX, stageTranslateY);
+        if (companionView != null) {
+            companionView.setStageTransform(stageScale, stageTranslateX, stageTranslateY);
         }
     }
 
@@ -576,7 +562,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         if (preset == null) return;
         selectedOutfit = preset;
         prefs.edit().putString("outfit_preset", preset.id).apply();
-        glSurfaceView.queueEvent(() -> renderer.selectOutfit(preset));
+        companionView.setOutfit(preset.id);
         updateSummary();
         toastLong("已切换服装：" + preset.displayName);
     }
@@ -674,10 +660,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     }
 
     private boolean screenToModelPoint(View view, float x, float y, float[] result) {
-        if (renderer == null) return false;
+        if (companionView == null) return false;
         float screenX = x / Math.max(1, view.getWidth());
         float screenY = y / Math.max(1, view.getHeight());
-        return renderer.screenToModelNormalized(screenX, screenY, result);
+        return companionView.screenToModelNormalized(screenX, screenY, result);
     }
 
     private boolean isInHeadZone(float x, float y, float margin) {
@@ -763,15 +749,9 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
         }
         nativeLoadStartedAt = SystemClock.elapsedRealtime();
         showLoading("正在启动 Android 原生 Cubism 5…");
-        List<String> startup = new ArrayList<>();
-        SenVtsAppearance selectedAppearance = selectedOutfit.appearance;
-        SenVtsProfile selectedFrozenProfile = defaultProfile;
-        SenRenderOptions selectedOptions = new SenRenderOptions(autoIdleEnabled);
         rendererDetail = "";
         updateSummary();
-        glSurfaceView.queueEvent(() -> renderer.requestModel(
-                modelFile, startup, selectedAppearance, selectedFrozenProfile, selectedOptions,
-                selectedOutfit));
+        companionView.loadModel(modelFile, autoIdleEnabled, selectedOutfit.id);
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -867,13 +847,8 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                     button.setContentDescription(isReset ? "还原全部预设" : name);
                     button.setTextSize(10);
                     button.setOnClickListener(v -> {
-                        glSurfaceView.queueEvent(() -> {
-                            if (isReset) {
-                                renderer.resetNativePresets();
-                            } else {
-                                renderer.applyExpression(name);
-                            }
-                        });
+                        if (isReset) companionView.resetNativePresets();
+                        else companionView.applyExpression(name);
                     });
                     row.addView(button, weightedButtonParams());
                 } else {
@@ -887,12 +862,11 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         String nativeKey = nativeKeyboardMotionName(event.getKeyCode());
-        if (nativeKey != null && glSurfaceView != null) {
+        if (nativeKey != null && companionView != null) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                glSurfaceView.queueEvent(() -> renderer.playNativeMotion(
-                        "keyboard/" + nativeKey));
+                companionView.playNativeMotion("keyboard/" + nativeKey);
             } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                glSurfaceView.queueEvent(renderer::stopNativeMotion);
+                companionView.stopNativeMotion();
             }
         }
         return super.dispatchKeyEvent(event);
@@ -1018,10 +992,10 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
                 String label = index < labels.length ? labels[index] : id;
                 Button button = panelButton(label);
                 button.setTextSize(10);
-                button.setOnClickListener(v -> glSurfaceView.queueEvent(() -> {
-                    if (emotion) renderer.selectEmotion(id);
-                    else renderer.playAction(id);
-                }));
+                button.setOnClickListener(v -> {
+                    if (emotion) companionView.setEmotion(id);
+                    else companionView.playAction(id);
+                });
                 row.addView(button, weightedButtonParams());
             }
             parent.addView(row);
@@ -1227,7 +1201,7 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     }
 
     private SenVtsProfile loadBundledProfile() {
-        try (InputStream input = getAssets().open(DEFAULT_PROFILE_ASSET)) {
+        try (InputStream input = getAssets().open(SenCompanionView.DEFAULT_PROFILE_ASSET)) {
             return SenVtsProfile.parse(readUtf8Stream(input));
         } catch (IOException error) {
             throw new IllegalStateException("APK内置默认参数无效", error);
@@ -1296,22 +1270,20 @@ public class MainActivity extends AppCompatActivity implements SenRenderer.Liste
     @Override
     protected void onResume() {
         super.onResume();
-        if (glSurfaceView != null) glSurfaceView.onResume();
+        if (companionView != null) companionView.onHostResume();
     }
 
     @Override
     protected void onPause() {
         if (systemTtsLipSync != null) systemTtsLipSync.stop();
-        if (glSurfaceView != null && renderer != null) {
-            glSurfaceView.queueEvent(renderer::releaseHeadPat);
-        }
-        if (glSurfaceView != null) glSurfaceView.onPause();
+        if (companionView != null) companionView.onHostPause();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
         if (systemTtsLipSync != null) systemTtsLipSync.shutdown();
+        if (companionView != null) companionView.release();
         executor.shutdownNow();
         super.onDestroy();
     }

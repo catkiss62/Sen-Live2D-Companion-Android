@@ -2,7 +2,7 @@
 
 Sen 专用的 Android Live2D AI 伴侣实验项目。它与“迷梦”项目完全分离，避免不同模型的参数、外观预设和调试结论互相污染。
 
-## 当前版本：v0.5.18 弹跳范围与调皮微调测试版
+## 当前版本：v0.5.21 AI伴侣移植收口测试版
 
 项目使用 Live2D 官方 Cubism SDK for Java 5 R5 与 Android 原生 OpenGL。C高精度蒙版已解决Sen的60组蒙版溢出造成的白块、缺刘海、嘴、手指和耳朵错层；当前继续验证内置换装和动态表现。
 
@@ -32,6 +32,16 @@ Sen 专用的 Android Live2D AI 伴侣实验项目。它与“迷梦”项目完
 - 使用 App `largeHeap` 为首次创建超大型模型保留空间，并显示 model3、moc3、表情、物理和每张贴图的原生加载进度。
 
 内置参数只保留模型名和581项参数名/值，不包含VTS运行状态、屏幕位置、账号或授权信息；服装预设不会复制整份581项快照。当前系统TTS只用于验证通用音量口型链路；DeepSeek对话和正式TTS音频接入仍留在后续阶段。
+
+## AI伴侣迁移边界
+
+本项目仍是可独立安装的视觉回归壳，但核心已由公开的`SenCompanionView`和
+`SenCompanionController`统一驱动。最终不需要运行第二个APK或服务：把同一套原生源码、
+Cubism依赖和内置参数资源直接并入AI伴侣APK，即可通过`setEmotion / playAction /
+setSpeechAmplitude / setLookTarget / setAutoIdle / setVisible / release`控制透明立绘层。
+
+完整文件边界、生命周期和Flutter分层注意事项见
+[Sen接入AI伴侣](docs/AI_COMPANION_INTEGRATION.md)。
 
 ## APK 使用
 

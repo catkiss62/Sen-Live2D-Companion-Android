@@ -140,13 +140,14 @@ final class SenOutfitPresets {
             {"ArtMesh960", "7360C5FF|000000FF"}
     };
 
-    static final Preset MAID = new Preset("maid", "女仆装", maidParameters(), colors(false));
+    static final Preset MAID = new Preset(
+            SenOutfitCatalog.MAID, "女仆装", maidParameters(), colors(false));
     static final Preset WHITE_SHIRT = new Preset(
-            "white_shirt", "白衬衫", whiteShirtParameters(), colors(false));
+            SenOutfitCatalog.WHITE_SHIRT, "白衬衫", whiteShirtParameters(), colors(false));
     static final Preset BUNNY = new Preset(
-            "bunny", "兔女郎", bunnyParameters(), colors(true));
+            SenOutfitCatalog.BUNNY, "兔女郎", bunnyParameters(), colors(true));
     static final Preset UNDRESSED = new Preset(
-            "undressed", "脱", undressedParameters(), colors(false),
+            SenOutfitCatalog.UNDRESSED, "脱", undressedParameters(), colors(false),
             Arrays.asList(
                     "Part84",  // 上衣1
                     "Part85"   // 上衣1蝴蝶结
