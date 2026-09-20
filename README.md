@@ -2,9 +2,11 @@
 
 Sen 专用的 Android Live2D AI 伴侣实验项目。它与“迷梦”项目完全分离，避免不同模型的参数、外观预设和调试结论互相污染。
 
-## 当前版本：v0.5.21 AI伴侣移植收口测试版
+## 当前版本：v0.5.22 表现适配实验室测试版
 
 项目使用 Live2D 官方 Cubism SDK for Java 5 R5 与 Android 原生 OpenGL。C高精度蒙版已解决Sen的60组蒙版溢出造成的白块、缺刘海、嘴、手指和耳朵错层；当前继续验证内置换装和动态表现。
+
+- 新增与既有表现层完全隔离的VAD/FACS实验室：默认“原版Sen”零写入，可切换“通用FACS/VAD”和“Sen混合”做同一情绪A/B/C对照；提供表情幅度、身体微动、响应速度三组运行时微调。实验层在任何已确认程序动作期间自动让路，不修改服装、外观、原生物理或TTS。摸头常规/疑惑继续可由`playAction`直接触发，兔耳仍只由自主待机低频调度。
 
 - 导入用户本机的 Sen 模型 ZIP，不将模型写入仓库或 APK。
 - 自动扫描 ZIP 中未登记的 `.exp3.json` 并补写到 App 私有目录内的 `model3.json` 副本。
@@ -42,6 +44,9 @@ setSpeechAmplitude / setLookTarget / setAutoIdle / setVisible / release`控制�
 
 完整文件边界、生命周期和Flutter分层注意事项见
 [Sen接入AI伴侣](docs/AI_COMPANION_INTEGRATION.md)。
+
+实验模式、保护边界和推荐实机对照流程见
+[Sen表现适配实验室](docs/PERFORMANCE_ADAPTATION_LAB.md)。
 
 ## APK 使用
 
