@@ -48,7 +48,7 @@ import java.util.zip.ZipInputStream;
 public class MainActivity extends AppCompatActivity implements SenCompanionView.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
-    private static final String APP_VERSION_LABEL = "v0.5.23 · AI伴侣接入基线";
+    private static final String APP_VERSION_LABEL = "v0.5.24 · E.V双模式动作实验";
     private static final float DEFAULT_HEAD_ZONE_LEFT = .4927f;
     private static final float DEFAULT_HEAD_ZONE_TOP = .0482f;
     private static final float DEFAULT_HEAD_ZONE_RIGHT = .7095f;
@@ -85,8 +85,14 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
     private Button adjustmentButton;
     private Button autoIdleButton;
     private Button touchFollowButton;
+    private TextView motionModeStatus;
+    private TextView motionDiagnosticOverlay;
     private boolean autoIdleEnabled;
     private boolean touchFollowEnabled = true;
+    private SenMotionMode selectedMotionMode = SenMotionMode.ORIGINAL;
+    private boolean motionDiagnosticRunning;
+    private String lastMotionDiagnosticReport = "";
+    private String pendingMotionDiagnosticExport = "";
     private int interactionPointerId = -1;
     private boolean headPatCandidate;
     private boolean headPatTriggered;
@@ -111,6 +117,20 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
 
     private final ActivityResultLauncher<String[]> modelZipPicker = registerForActivityResult(
             new ActivityResultContracts.OpenDocument(), this::onModelZipPicked);
+    private final ActivityResultLauncher<String> motionDiagnosticExporter =
+            registerForActivityResult(new ActivityResultContracts.CreateDocument("text/plain"),
+                    uri -> {
+                        if (uri == null || pendingMotionDiagnosticExport.isBlank()) return;
+                        try (OutputStream output = getContentResolver().openOutputStream(uri)) {
+                            if (output == null) throw new IOException("无法打开导出位置");
+                            output.write(pendingMotionDiagnosticExport.getBytes(
+                                    StandardCharsets.UTF_8));
+                            output.flush();
+                            toastLong("动作诊断报告已导出");
+                        } catch (IOException error) {
+                            toastLong("导出失败：" + readableError(error));
+                        }
+                    });
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -147,6 +167,9 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         }
         autoIdleEnabled = prefs.getBoolean("auto_idle_enabled", false);
         touchFollowEnabled = prefs.getBoolean("touch_follow_enabled", true);
+        selectedMotionMode = SenMotionMode.fromId(
+                prefs.getString("motion_mode", SenMotionMode.ORIGINAL.id));
+        lastMotionDiagnosticReport = prefs.getString("last_motion_diagnostic_report", "");
         selectedOutfit = SenOutfitPresets.fromId(
                 prefs.getString("outfit_preset", SenOutfitPresets.MAID.id));
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
@@ -202,6 +225,17 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         installStageAdjustmentGestures();
         stage.addView(companionView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        motionDiagnosticOverlay = new TextView(this);
+        motionDiagnosticOverlay.setTextColor(Color.WHITE);
+        motionDiagnosticOverlay.setTextSize(13);
+        motionDiagnosticOverlay.setPadding(dp(10), dp(7), dp(10), dp(7));
+        motionDiagnosticOverlay.setBackground(rounded(Color.argb(210, 69, 45, 96), 10));
+        motionDiagnosticOverlay.setVisibility(View.GONE);
+        FrameLayout.LayoutParams diagnosticOverlayParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
+        diagnosticOverlayParams.setMargins(dp(10), dp(10), dp(10), dp(10));
+        stage.addView(motionDiagnosticOverlay, diagnosticOverlayParams);
         page.addView(stage, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 2f));
 
@@ -325,7 +359,7 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         panel.addView(dynamicHeading);
 
         autoIdleButton = panelButton(autoIdleEnabled
-                ? "自主待机：开启（柔风+眨眼+随机动作）" : "自主待机：关闭");
+                ? "自主待机总开关：开启" : "自主待机总开关：关闭");
         autoIdleButton.setOnClickListener(v -> {
             autoIdleEnabled = !autoIdleEnabled;
             prefs.edit().putBoolean("auto_idle_enabled", autoIdleEnabled).apply();
@@ -333,6 +367,54 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
             updateCustomizationControls();
         });
         panel.addView(autoIdleButton);
+
+        TextView motionModeHeading = new TextView(this);
+        motionModeHeading.setText("自主动作层（互相隔离；原Sen基线始终保留）");
+        motionModeHeading.setTextColor(Color.rgb(238, 207, 255));
+        motionModeHeading.setTextSize(12);
+        motionModeHeading.setPadding(0, dp(7), 0, dp(3));
+        panel.addView(motionModeHeading);
+
+        LinearLayout motionModeRow = new LinearLayout(this);
+        motionModeRow.setOrientation(LinearLayout.HORIZONTAL);
+        for (SenMotionMode mode : SenMotionMode.values()) {
+            Button button = panelButton(mode == SenMotionMode.ORIGINAL
+                    ? "原Sen" : mode == SenMotionMode.EV_FAITHFUL ? "E.V忠实" : "Sen适配");
+            button.setOnClickListener(v -> selectMotionMode(mode));
+            motionModeRow.addView(button, weightedButtonParams());
+        }
+        panel.addView(motionModeRow);
+        motionModeStatus = adjustmentStatusText();
+        panel.addView(motionModeStatus);
+
+        TextView diagnosticHeading = new TextView(this);
+        diagnosticHeading.setText("E.V动作强制诊断（屏幕显示中文动作；完成后导出TXT）");
+        diagnosticHeading.setTextColor(Color.rgb(238, 207, 255));
+        diagnosticHeading.setTextSize(12);
+        diagnosticHeading.setPadding(0, dp(7), 0, dp(3));
+        panel.addView(diagnosticHeading);
+
+        LinearLayout diagnosticStartRow = new LinearLayout(this);
+        diagnosticStartRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button faithfulDiagnosticButton = panelButton("诊断E.V忠实版");
+        faithfulDiagnosticButton.setOnClickListener(v ->
+                startMotionDiagnostic(SenMotionMode.EV_FAITHFUL));
+        diagnosticStartRow.addView(faithfulDiagnosticButton, weightedButtonParams());
+        Button adaptedDiagnosticButton = panelButton("诊断Sen适配版");
+        adaptedDiagnosticButton.setOnClickListener(v ->
+                startMotionDiagnostic(SenMotionMode.SEN_ADAPTED));
+        diagnosticStartRow.addView(adaptedDiagnosticButton, weightedButtonParams());
+        panel.addView(diagnosticStartRow);
+
+        LinearLayout diagnosticControlRow = new LinearLayout(this);
+        diagnosticControlRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button stopDiagnosticButton = panelButton("停止并生成报告");
+        stopDiagnosticButton.setOnClickListener(v -> companionView.stopMotionDiagnostic());
+        diagnosticControlRow.addView(stopDiagnosticButton, weightedButtonParams());
+        Button exportDiagnosticButton = panelButton("导出最近报告");
+        exportDiagnosticButton.setOnClickListener(v -> exportMotionDiagnostic());
+        diagnosticControlRow.addView(exportDiagnosticButton, weightedButtonParams());
+        panel.addView(diagnosticControlRow);
 
         TextView emotionHeading = new TextView(this);
         emotionHeading.setText("AI伴侣情绪（21个语义入口；含暧昧羞涩实验组合）");
@@ -567,14 +649,49 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         toastLong("已切换服装：" + preset.displayName);
     }
 
+    private void selectMotionMode(SenMotionMode mode) {
+        if (mode == null) return;
+        selectedMotionMode = mode;
+        prefs.edit().putString("motion_mode", mode.id).apply();
+        companionView.setMotionMode(mode.id);
+        updateCustomizationControls();
+        updateSummary();
+        toastLong("自主动作层已切换：" + mode.displayName);
+    }
+
+    private void startMotionDiagnostic(SenMotionMode mode) {
+        motionDiagnosticRunning = true;
+        if (motionDiagnosticOverlay != null) {
+            motionDiagnosticOverlay.setVisibility(View.VISIBLE);
+            motionDiagnosticOverlay.setText("准备诊断：" + mode.displayName);
+        }
+        companionView.startMotionDiagnostic(mode.id);
+        toastLong("将逐项强制执行E.V动作；诊断期间请不要切换模式或点击动作按钮");
+    }
+
+    private void exportMotionDiagnostic() {
+        if (lastMotionDiagnosticReport == null || lastMotionDiagnosticReport.isBlank()) {
+            toastLong("还没有诊断报告，请先完成或停止一次诊断");
+            return;
+        }
+        pendingMotionDiagnosticExport = lastMotionDiagnosticReport;
+        String suffix = selectedMotionMode == SenMotionMode.SEN_ADAPTED
+                ? "sen-adapted" : "ev-faithful";
+        motionDiagnosticExporter.launch("sen-motion-diagnostic-" + suffix + ".txt");
+    }
+
     private void updateCustomizationControls() {
         if (autoIdleButton != null) {
             autoIdleButton.setText(autoIdleEnabled
-                    ? "自主待机：开启（柔风+眨眼+随机动作）" : "自主待机：关闭");
+                    ? "自主待机总开关：开启" : "自主待机总开关：关闭");
         }
         if (touchFollowButton != null) {
             touchFollowButton.setText(touchFollowEnabled
                     ? "极限触屏跟随：开启" : "极限触屏跟随：关闭");
+        }
+        if (motionModeStatus != null) {
+            motionModeStatus.setText("当前动作层：" + selectedMotionMode.displayName
+                    + "；自主待机总开关：" + (autoIdleEnabled ? "开启" : "关闭"));
         }
         updateHeadZoneStatus();
     }
@@ -751,7 +868,8 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         showLoading("正在启动 Android 原生 Cubism 5…");
         rendererDetail = "";
         updateSummary();
-        companionView.loadModel(modelFile, autoIdleEnabled, selectedOutfit.id);
+        companionView.loadModel(modelFile, autoIdleEnabled, selectedMotionMode.id,
+                selectedOutfit.id);
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -918,6 +1036,7 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
                 + " · 尾巴：固定右侧镜像"
                 + " · 极限跟随：" + (touchFollowEnabled ? "开" : "关")
                 + " · 自主待机：" + (autoIdleEnabled ? "开" : "关")
+                + " · 动作层：" + selectedMotionMode.displayName
                 + (rendererDetail.isEmpty() ? "" : "\n渲染实测：" + rendererDetail)
                 + "\nCore：官方 Cubism Java 5 R5 · Android 原生 OpenGL · 原始2K");
     }
@@ -952,6 +1071,34 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
             String message = "原生 Cubism 加载失败：" + readableError(error);
             setStatus(message);
             toastLong(message);
+        });
+    }
+
+    @Override
+    public void onMotionDiagnosticStep(String label, int index, int total) {
+        runOnUiThread(() -> {
+            motionDiagnosticRunning = true;
+            if (motionDiagnosticOverlay != null) {
+                motionDiagnosticOverlay.setVisibility(View.VISIBLE);
+                motionDiagnosticOverlay.setText("动作诊断 " + index + "/" + total + "\n" + label);
+            }
+            setStatus("正在诊断：" + label + "（" + index + "/" + total + "）");
+        });
+    }
+
+    @Override
+    public void onMotionDiagnosticComplete(String report) {
+        runOnUiThread(() -> {
+            motionDiagnosticRunning = false;
+            lastMotionDiagnosticReport = report == null ? "" : report;
+            prefs.edit().putString("last_motion_diagnostic_report",
+                    lastMotionDiagnosticReport).apply();
+            if (motionDiagnosticOverlay != null) {
+                motionDiagnosticOverlay.setVisibility(View.VISIBLE);
+                motionDiagnosticOverlay.setText("动作诊断已完成\n可点击“导出最近报告”");
+            }
+            setStatus("动作诊断已完成，可导出TXT报告");
+            toastLong("动作诊断已完成：报告记录参数写入与可见网格响应");
         });
     }
 

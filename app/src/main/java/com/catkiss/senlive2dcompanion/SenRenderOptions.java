@@ -30,8 +30,14 @@ final class SenRenderOptions {
                     + "\"rootCandidates\":[],\"directionCandidates\":[]}";
 
     final boolean autoIdleEnabled;
+    final SenMotionMode motionMode;
 
     SenRenderOptions(boolean autoIdleEnabled) {
+        this(autoIdleEnabled, SenMotionMode.ORIGINAL);
+    }
+
+    SenRenderOptions(boolean autoIdleEnabled, SenMotionMode motionMode) {
         this.autoIdleEnabled = autoIdleEnabled;
+        this.motionMode = motionMode == null ? SenMotionMode.ORIGINAL : motionMode;
     }
 }

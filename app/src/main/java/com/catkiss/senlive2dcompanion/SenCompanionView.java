@@ -31,6 +31,8 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
         void onStatus(String status);
         void onReady(String detail);
         void onError(Throwable error);
+        void onMotionDiagnosticStep(String label, int index, int total);
+        void onMotionDiagnosticComplete(String report);
     }
 
     public static final String DEFAULT_PROFILE_ASSET = "sen-default-profile-v1.json";
@@ -39,6 +41,8 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
         @Override public void onStatus(String status) { }
         @Override public void onReady(String detail) { }
         @Override public void onError(Throwable error) { }
+        @Override public void onMotionDiagnosticStep(String label, int index, int total) { }
+        @Override public void onMotionDiagnosticComplete(String report) { }
     };
 
     private final SenRenderer renderer;
@@ -67,6 +71,14 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
             @Override public void onError(Throwable error) {
                 listener.onError(error);
             }
+
+            @Override public void onMotionDiagnosticStep(String label, int index, int total) {
+                listener.onMotionDiagnosticStep(label, index, total);
+            }
+
+            @Override public void onMotionDiagnosticComplete(String report) {
+                listener.onMotionDiagnosticComplete(report);
+            }
         });
         setRenderer(renderer);
         setRenderMode(RENDERMODE_CONTINUOUSLY);
@@ -79,12 +91,24 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
 
     /** Loads the imported model with Sen's bundled baseline and a built-in outfit ID. */
     public void loadModel(File modelFile, boolean autoIdle, String outfitId) {
-        loadModel(modelFile, Collections.emptyList(), autoIdle, outfitId);
+        loadModel(modelFile, Collections.emptyList(), autoIdle,
+                SenMotionMode.ORIGINAL.id, outfitId);
+    }
+
+    /** Loads the model with one of the isolated autonomous motion modes. */
+    public void loadModel(File modelFile, boolean autoIdle, String motionModeId,
+                          String outfitId) {
+        loadModel(modelFile, Collections.emptyList(), autoIdle, motionModeId, outfitId);
     }
 
     /** Loads the imported model and optionally enables named ZIP expressions at startup. */
     public void loadModel(File modelFile, List<String> startupExpressions,
                           boolean autoIdle, String outfitId) {
+        loadModel(modelFile, startupExpressions, autoIdle, SenMotionMode.ORIGINAL.id, outfitId);
+    }
+
+    public void loadModel(File modelFile, List<String> startupExpressions,
+                          boolean autoIdle, String motionModeId, String outfitId) {
         if (released) {
             listener.onError(new IllegalStateException("SenCompanionView 已释放，不能再次加载"));
             return;
@@ -105,7 +129,7 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
                 ? Collections.emptyList() : startupExpressions;
         queueRenderer(() -> renderer.requestModel(
                 modelFile, expressions, outfit.appearance, profile,
-                new SenRenderOptions(autoIdle), outfit));
+                new SenRenderOptions(autoIdle, SenMotionMode.fromId(motionModeId)), outfit));
     }
 
     @Override
@@ -131,6 +155,20 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
     @Override
     public void setAutoIdle(boolean enabled) {
         queueRenderer(() -> renderer.setAutoIdle(enabled));
+    }
+
+    public void setMotionMode(String motionModeId) {
+        SenMotionMode mode = SenMotionMode.fromId(motionModeId);
+        queueRenderer(() -> renderer.setMotionMode(mode));
+    }
+
+    public void startMotionDiagnostic(String motionModeId) {
+        SenMotionMode mode = SenMotionMode.fromId(motionModeId);
+        queueRenderer(() -> renderer.startMotionDiagnostic(mode));
+    }
+
+    public void stopMotionDiagnostic() {
+        queueRenderer(renderer::stopMotionDiagnostic);
     }
 
     @Override

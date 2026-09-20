@@ -37,6 +37,11 @@ import java.util.Map;
 import java.util.Set;
 
 final class SenLive2DModel extends CubismUserModel {
+    interface MotionDiagnosticListener {
+        void onStep(String label, int index, int total);
+        void onComplete(String report);
+    }
+
     private static final String[] AHOGE_PART_IDS = {
             "Part13", "Part220", "ArtMesh140_Skinning2", "ArtMesh140_Skinning"
     };
@@ -68,6 +73,13 @@ final class SenLive2DModel extends CubismUserModel {
             new CubismExpressionMotionManager();
     private volatile float lipSyncValue;
     private final SenPerformanceEngine performance = new SenPerformanceEngine();
+    private EvMotionPack evMotionPack;
+    private EvFaithfulMotionEngine evFaithfulMotion;
+    private SenNaturalMotionEngine senNaturalMotion;
+    private SenMotionMode motionMode = SenMotionMode.ORIGINAL;
+    private boolean autoIdleEnabled;
+    private SenMotionDiagnostic motionDiagnostic;
+    private MotionDiagnosticListener motionDiagnosticListener;
     private ICubismModelSetting setting;
     private File homeDirectory;
     private String appearanceDetail = "";
@@ -107,7 +119,8 @@ final class SenLive2DModel extends CubismUserModel {
               SenRenderer.Listener listener, List<String> startupExpressions,
               SenVtsAppearance appearance, SenVtsProfile frozenProfile,
               SenRenderOptions requestedOptions,
-              SenOutfitPresets.Preset requestedOutfit) throws IOException {
+              SenOutfitPresets.Preset requestedOutfit,
+              EvMotionPack requestedEvMotionPack) throws IOException {
         homeDirectory = modelFile.getParentFile();
         if (homeDirectory == null) throw new IOException("model3 所在目录无效");
 
@@ -133,7 +146,13 @@ final class SenLive2DModel extends CubismUserModel {
         hasVtsBaseProfile = frozenProfile != null;
         outfitPreset = requestedOutfit == null ? SenOutfitPresets.MAID : requestedOutfit;
         renderOptions = requestedOptions == null ? renderOptions : requestedOptions;
-        performance.setAutoIdle(renderOptions.autoIdleEnabled);
+        evMotionPack = requestedEvMotionPack;
+        if (evMotionPack == null) throw new IOException("E.V动作包未加载");
+        evFaithfulMotion = new EvFaithfulMotionEngine(evMotionPack);
+        senNaturalMotion = new SenNaturalMotionEngine(evMotionPack);
+        motionMode = renderOptions.motionMode;
+        autoIdleEnabled = renderOptions.autoIdleEnabled;
+        applyMotionModeState();
         SenVtsHotkeySettings vtsHotkeys = SenVtsHotkeySettings.load(homeDirectory);
         // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
         // native physics are loaded in both modes so body motion, ears and tail can stay alive.
@@ -181,10 +200,25 @@ final class SenLive2DModel extends CubismUserModel {
 
     void update(float deltaSeconds) {
         if (model == null) return;
+        if (motionDiagnostic != null) motionDiagnostic.beforeFrame(deltaSeconds);
         // Always restore the captured appearance base. Dynamic features must never accumulate
         // into part-selection, opacity or colour parameters from a previous frame.
         model.loadParameters();
         captureArmPhysicsBase();
+        SenPerformanceEngine.ParameterWriter experimentalWriter =
+                new SenPerformanceEngine.ParameterWriter() {
+                    @Override public void add(String id, float value) {
+                        addParameter(id, value);
+                    }
+
+                    @Override public void set(String id, float value) {
+                        setParameter(id, value);
+                    }
+                };
+        if (evFaithfulMotion != null) evFaithfulMotion.update(deltaSeconds, experimentalWriter);
+        if (senNaturalMotion != null) senNaturalMotion.update(deltaSeconds, experimentalWriter);
+        // Sen's established layer stays above both experiments. Manual actions, emotions and
+        // touch-follow therefore keep their original priority and remain usable in all modes.
         performance.update(deltaSeconds, new SenPerformanceEngine.ParameterWriter() {
             @Override public void add(String id, float value) { addParameter(id, value); }
             @Override public void set(String id, float value) { setParameter(id, value); }
@@ -209,6 +243,13 @@ final class SenLive2DModel extends CubismUserModel {
         updateLoadingSpinner(deltaSeconds);
         updateModelWithOutfitShapeLock();
         applyRuntimeGeometry();
+        if (motionDiagnostic != null) {
+            motionDiagnostic.afterFrame(this);
+            if (motionDiagnostic.isFinished()) {
+                motionDiagnostic = null;
+                applyMotionModeState();
+            }
+        }
     }
 
     private boolean hasCompleteAhogeAnchor() {
@@ -338,7 +379,58 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     void setAutoIdle(boolean enabled) {
-        performance.setAutoIdle(enabled);
+        autoIdleEnabled = enabled;
+        applyMotionModeState();
+    }
+
+    void setMotionMode(SenMotionMode mode) {
+        motionMode = mode == null ? SenMotionMode.ORIGINAL : mode;
+        applyMotionModeState();
+    }
+
+    void setMotionDiagnosticListener(MotionDiagnosticListener listener) {
+        motionDiagnosticListener = listener;
+    }
+
+    void startMotionDiagnostic(SenMotionMode mode) {
+        if (evMotionPack == null || evFaithfulMotion == null || senNaturalMotion == null) return;
+        SenMotionMode requested = mode == SenMotionMode.SEN_ADAPTED
+                ? SenMotionMode.SEN_ADAPTED : SenMotionMode.EV_FAITHFUL;
+        if (motionDiagnostic != null) motionDiagnostic.stop();
+        performance.setAutoIdle(false);
+        motionDiagnostic = new SenMotionDiagnostic(requested, evMotionPack,
+                evFaithfulMotion, senNaturalMotion, new SenMotionDiagnostic.Listener() {
+            @Override public void onStep(String label, int index, int total) {
+                if (motionDiagnosticListener != null) {
+                    motionDiagnosticListener.onStep(label, index, total);
+                }
+            }
+
+            @Override public void onComplete(String report) {
+                if (motionDiagnosticListener != null) {
+                    motionDiagnosticListener.onComplete(report);
+                }
+            }
+        });
+    }
+
+    void stopMotionDiagnostic() {
+        if (motionDiagnostic != null) motionDiagnostic.stop();
+    }
+
+    private void applyMotionModeState() {
+        boolean diagnosticActive = motionDiagnostic != null && !motionDiagnostic.isFinished();
+        if (diagnosticActive) return;
+        performance.setAutoIdle(autoIdleEnabled && motionMode == SenMotionMode.ORIGINAL);
+        if (evFaithfulMotion != null) {
+            evFaithfulMotion.setEnabled(autoIdleEnabled
+                    && motionMode == SenMotionMode.EV_FAITHFUL);
+        }
+        if (senNaturalMotion != null) {
+            senNaturalMotion.setDiagnosticMode(false);
+            senNaturalMotion.setEnabled(autoIdleEnabled
+                    && motionMode == SenMotionMode.SEN_ADAPTED);
+        }
     }
 
     void selectOutfit(SenOutfitPresets.Preset preset) {
@@ -354,7 +446,34 @@ final class SenLive2DModel extends CubismUserModel {
     }
 
     boolean isAutoIdle() {
-        return performance.isAutoIdle();
+        return autoIdleEnabled;
+    }
+
+    boolean hasParameter(String id) {
+        return findParameterIndex(id) >= 0;
+    }
+
+    float getParameterValue(String id) {
+        int index = findParameterIndex(id);
+        return index < 0 ? Float.NaN
+                : model.getModel().getParameterViews()[index].getValue();
+    }
+
+    int countChangedVisibleDrawables() {
+        int changed = 0;
+        for (int i = 0; i < model.getDrawableCount(); i++) {
+            if (isDrawableVisible(i)
+                    && model.getDrawableDynamicFlagVertexPositionsDidChange(i)) changed++;
+        }
+        return changed;
+    }
+
+    int countVisibleDrawables() {
+        int visible = 0;
+        for (int i = 0; i < model.getDrawableCount(); i++) {
+            if (isDrawableVisible(i)) visible++;
+        }
+        return visible;
     }
 
     float getCanvasWidth() {

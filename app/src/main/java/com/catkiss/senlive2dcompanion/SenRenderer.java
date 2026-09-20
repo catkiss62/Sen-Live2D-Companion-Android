@@ -22,6 +22,8 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         void onStatus(String status);
         void onReady(String detail);
         void onError(Throwable error);
+        void onMotionDiagnosticStep(String label, int index, int total);
+        void onMotionDiagnosticComplete(String report);
     }
 
     private static final String TAG = "SenNativeCubism";
@@ -140,6 +142,18 @@ final class SenRenderer implements GLSurfaceView.Renderer {
 
     void setAutoIdle(boolean enabled) {
         if (model != null) model.setAutoIdle(enabled);
+    }
+
+    void setMotionMode(SenMotionMode mode) {
+        if (model != null) model.setMotionMode(mode);
+    }
+
+    void startMotionDiagnostic(SenMotionMode mode) {
+        if (model != null) model.startMotionDiagnostic(mode);
+    }
+
+    void stopMotionDiagnostic() {
+        if (model != null) model.stopMotionDiagnostic();
     }
 
     void selectOutfit(SenOutfitPresets.Preset preset) {
@@ -273,9 +287,20 @@ final class SenRenderer implements GLSurfaceView.Renderer {
             listener.onStatus("原生渲染：准备加载 Sen 模型…");
             SenLive2DModel next = new SenLive2DModel();
             model = next;
+            next.setMotionDiagnosticListener(new SenLive2DModel.MotionDiagnosticListener() {
+                @Override public void onStep(String label, int index, int total) {
+                    listener.onMotionDiagnosticStep(label, index, total);
+                }
+
+                @Override public void onComplete(String report) {
+                    listener.onMotionDiagnosticComplete(report);
+                }
+            });
+            EvMotionPack evMotionPack = EvMotionPack.load(context.getAssets());
             next.load(request.modelFile, surfaceWidth, surfaceHeight, textures,
                     listener, request.startupExpressions, request.appearance,
-                    request.frozenProfile, request.options, request.outfitPreset);
+                    request.frozenProfile, request.options, request.outfitPreset,
+                    evMotionPack);
             next.setTouchFollowEnabled(touchFollowEnabled);
             next.setEarTuning(SenRenderOptions.EAR_SPEED_PERCENT,
                     SenRenderOptions.EAR_AMPLITUDE_PERCENT);
