@@ -48,7 +48,7 @@ import java.util.zip.ZipInputStream;
 public class MainActivity extends AppCompatActivity implements SenCompanionView.Listener {
     private static final String PREFS = "sen_live2d_renderer_test";
     private static final int HEAD_ZONE_CONFIRMED_PRESET_VERSION = 3;
-    private static final String APP_VERSION_LABEL = "v0.5.24 · E.V双模式动作实验";
+    private static final String APP_VERSION_LABEL = "v0.5.25 · E.V增强身体动作实验";
     private static final float DEFAULT_HEAD_ZONE_LEFT = .4927f;
     private static final float DEFAULT_HEAD_ZONE_TOP = .0482f;
     private static final float DEFAULT_HEAD_ZONE_RIGHT = .7095f;
@@ -86,10 +86,14 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
     private Button autoIdleButton;
     private Button touchFollowButton;
     private TextView motionModeStatus;
+    private TextView bodyFollowStatus;
     private TextView motionDiagnosticOverlay;
     private boolean autoIdleEnabled;
     private boolean touchFollowEnabled = true;
     private SenMotionMode selectedMotionMode = SenMotionMode.ORIGINAL;
+    private float evBodyFollowStrength = SenRenderOptions.DEFAULT_EV_BODY_FOLLOW_STRENGTH;
+    private SenMotionMode diagnosticModeInProgress = SenMotionMode.EV_FAITHFUL;
+    private String lastMotionDiagnosticModeId = "";
     private boolean motionDiagnosticRunning;
     private String lastMotionDiagnosticReport = "";
     private String pendingMotionDiagnosticExport = "";
@@ -169,7 +173,11 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         touchFollowEnabled = prefs.getBoolean("touch_follow_enabled", true);
         selectedMotionMode = SenMotionMode.fromId(
                 prefs.getString("motion_mode", SenMotionMode.ORIGINAL.id));
+        evBodyFollowStrength = Math.max(.25f, Math.min(.60f,
+                prefs.getFloat("ev_body_follow_strength",
+                        SenRenderOptions.DEFAULT_EV_BODY_FOLLOW_STRENGTH)));
         lastMotionDiagnosticReport = prefs.getString("last_motion_diagnostic_report", "");
+        lastMotionDiagnosticModeId = prefs.getString("last_motion_diagnostic_mode", "");
         selectedOutfit = SenOutfitPresets.fromId(
                 prefs.getString("outfit_preset", SenOutfitPresets.MAID.id));
         modelRoot = new File(getFilesDir(), "sen-live2d-model");
@@ -377,15 +385,32 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
 
         LinearLayout motionModeRow = new LinearLayout(this);
         motionModeRow.setOrientation(LinearLayout.HORIZONTAL);
-        for (SenMotionMode mode : SenMotionMode.values()) {
-            Button button = panelButton(mode == SenMotionMode.ORIGINAL
-                    ? "原Sen" : mode == SenMotionMode.EV_FAITHFUL ? "E.V忠实" : "Sen适配");
-            button.setOnClickListener(v -> selectMotionMode(mode));
-            motionModeRow.addView(button, weightedButtonParams());
-        }
+        addMotionModeButton(motionModeRow, SenMotionMode.ORIGINAL, "原Sen");
+        addMotionModeButton(motionModeRow, SenMotionMode.EV_FAITHFUL, "E.V忠实");
         panel.addView(motionModeRow);
+        LinearLayout motionModeRow2 = new LinearLayout(this);
+        motionModeRow2.setOrientation(LinearLayout.HORIZONTAL);
+        addMotionModeButton(motionModeRow2, SenMotionMode.SEN_ADAPTED, "Sen适配");
+        addMotionModeButton(motionModeRow2, SenMotionMode.EV_BODY_ENHANCED,
+                "E.V头部＋身体");
+        panel.addView(motionModeRow2);
         motionModeStatus = adjustmentStatusText();
         panel.addView(motionModeStatus);
+
+        TextView bodyStrengthHeading = new TextView(this);
+        bodyStrengthHeading.setText("E.V增强身体跟随（只影响“E.V头部＋身体”模式）");
+        bodyStrengthHeading.setTextColor(Color.rgb(238, 207, 255));
+        bodyStrengthHeading.setTextSize(12);
+        bodyStrengthHeading.setPadding(0, dp(7), 0, dp(3));
+        panel.addView(bodyStrengthHeading);
+        LinearLayout bodyStrengthRow = new LinearLayout(this);
+        bodyStrengthRow.setOrientation(LinearLayout.HORIZONTAL);
+        addBodyStrengthButton(bodyStrengthRow, .25f, "25%");
+        addBodyStrengthButton(bodyStrengthRow, .40f, "40%");
+        addBodyStrengthButton(bodyStrengthRow, .60f, "60%");
+        panel.addView(bodyStrengthRow);
+        bodyFollowStatus = adjustmentStatusText();
+        panel.addView(bodyFollowStatus);
 
         TextView diagnosticHeading = new TextView(this);
         diagnosticHeading.setText("E.V动作强制诊断（屏幕显示中文动作；完成后导出TXT）");
@@ -406,6 +431,11 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         diagnosticStartRow.addView(adaptedDiagnosticButton, weightedButtonParams());
         panel.addView(diagnosticStartRow);
 
+        Button enhancedDiagnosticButton = panelButton("诊断E.V头部＋增强身体（含三轴阶梯）");
+        enhancedDiagnosticButton.setOnClickListener(v ->
+                startMotionDiagnostic(SenMotionMode.EV_BODY_ENHANCED));
+        panel.addView(enhancedDiagnosticButton);
+
         LinearLayout diagnosticControlRow = new LinearLayout(this);
         diagnosticControlRow.setOrientation(LinearLayout.HORIZONTAL);
         Button stopDiagnosticButton = panelButton("停止并生成报告");
@@ -417,7 +447,7 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         panel.addView(diagnosticControlRow);
 
         TextView emotionHeading = new TextView(this);
-        emotionHeading.setText("AI伴侣情绪（21个语义入口；含暧昧羞涩实验组合）");
+        emotionHeading.setText("AI伴侣强烈情绪（21个保留入口；后续不再每轮强制触发）");
         emotionHeading.setTextColor(Color.rgb(238, 207, 255));
         emotionHeading.setTextSize(12);
         emotionHeading.setPadding(0, dp(7), 0, dp(3));
@@ -659,14 +689,39 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         toastLong("自主动作层已切换：" + mode.displayName);
     }
 
+    private void addMotionModeButton(LinearLayout row, SenMotionMode mode, String label) {
+        Button button = panelButton(label);
+        button.setOnClickListener(v -> selectMotionMode(mode));
+        row.addView(button, weightedButtonParams());
+    }
+
+    private void addBodyStrengthButton(LinearLayout row, float strength, String label) {
+        Button button = panelButton(label);
+        button.setOnClickListener(v -> selectBodyFollowStrength(strength));
+        row.addView(button, weightedButtonParams());
+    }
+
+    private void selectBodyFollowStrength(float strength) {
+        evBodyFollowStrength = Math.max(.25f, Math.min(.60f, strength));
+        prefs.edit().putFloat("ev_body_follow_strength", evBodyFollowStrength).apply();
+        companionView.setEvBodyFollowStrength(evBodyFollowStrength);
+        updateCustomizationControls();
+        toastLong(String.format(java.util.Locale.ROOT,
+                "E.V增强身体跟随已设为头部幅度的 %.0f%%",
+                evBodyFollowStrength * 100.0f));
+    }
+
     private void startMotionDiagnostic(SenMotionMode mode) {
+        diagnosticModeInProgress = mode;
         motionDiagnosticRunning = true;
         if (motionDiagnosticOverlay != null) {
             motionDiagnosticOverlay.setVisibility(View.VISIBLE);
             motionDiagnosticOverlay.setText("准备诊断：" + mode.displayName);
         }
         companionView.startMotionDiagnostic(mode.id);
-        toastLong("将逐项强制执行E.V动作；诊断期间请不要切换模式或点击动作按钮");
+        toastLong(mode == SenMotionMode.EV_BODY_ENHANCED
+                ? "将执行39项E.V动作和18项身体三轴阶梯；请不要切换模式或点击动作按钮"
+                : "将逐项强制执行E.V动作；诊断期间请不要切换模式或点击动作按钮");
     }
 
     private void exportMotionDiagnostic() {
@@ -675,8 +730,11 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
             return;
         }
         pendingMotionDiagnosticExport = lastMotionDiagnosticReport;
-        String suffix = selectedMotionMode == SenMotionMode.SEN_ADAPTED
-                ? "sen-adapted" : "ev-faithful";
+        SenMotionMode reportMode = SenMotionMode.fromId(lastMotionDiagnosticModeId);
+        String suffix;
+        if (reportMode == SenMotionMode.SEN_ADAPTED) suffix = "sen-adapted";
+        else if (reportMode == SenMotionMode.EV_BODY_ENHANCED) suffix = "ev-body-enhanced";
+        else suffix = "ev-faithful";
         motionDiagnosticExporter.launch("sen-motion-diagnostic-" + suffix + ".txt");
     }
 
@@ -692,6 +750,11 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         if (motionModeStatus != null) {
             motionModeStatus.setText("当前动作层：" + selectedMotionMode.displayName
                     + "；自主待机总开关：" + (autoIdleEnabled ? "开启" : "关闭"));
+        }
+        if (bodyFollowStatus != null) {
+            bodyFollowStatus.setText(String.format(java.util.Locale.ROOT,
+                    "增强身体跟随：头部语义幅度的 %.0f%%（可在25%%/40%%/60%%间切换）",
+                    evBodyFollowStrength * 100.0f));
         }
         updateHeadZoneStatus();
     }
@@ -869,7 +932,7 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         rendererDetail = "";
         updateSummary();
         companionView.loadModel(modelFile, autoIdleEnabled, selectedMotionMode.id,
-                selectedOutfit.id);
+                evBodyFollowStrength, selectedOutfit.id);
     }
 
     private List<String> registerExpressions(File modelFile) throws Exception {
@@ -1091,8 +1154,11 @@ public class MainActivity extends AppCompatActivity implements SenCompanionView.
         runOnUiThread(() -> {
             motionDiagnosticRunning = false;
             lastMotionDiagnosticReport = report == null ? "" : report;
-            prefs.edit().putString("last_motion_diagnostic_report",
-                    lastMotionDiagnosticReport).apply();
+            lastMotionDiagnosticModeId = diagnosticModeInProgress.id;
+            prefs.edit()
+                    .putString("last_motion_diagnostic_report", lastMotionDiagnosticReport)
+                    .putString("last_motion_diagnostic_mode", lastMotionDiagnosticModeId)
+                    .apply();
             if (motionDiagnosticOverlay != null) {
                 motionDiagnosticOverlay.setVisibility(View.VISIBLE);
                 motionDiagnosticOverlay.setText("动作诊断已完成\n可点击“导出最近报告”");

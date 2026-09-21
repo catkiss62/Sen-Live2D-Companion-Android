@@ -148,6 +148,10 @@ final class SenRenderer implements GLSurfaceView.Renderer {
         if (model != null) model.setMotionMode(mode);
     }
 
+    void setEvBodyFollowStrength(float strength) {
+        if (model != null) model.setEvBodyFollowStrength(strength);
+    }
+
     void startMotionDiagnostic(SenMotionMode mode) {
         if (model != null) model.startMotionDiagnostic(mode);
     }

@@ -78,6 +78,7 @@ final class SenLive2DModel extends CubismUserModel {
     private SenNaturalMotionEngine senNaturalMotion;
     private SenMotionMode motionMode = SenMotionMode.ORIGINAL;
     private boolean autoIdleEnabled;
+    private float evBodyFollowStrength = SenRenderOptions.DEFAULT_EV_BODY_FOLLOW_STRENGTH;
     private SenMotionDiagnostic motionDiagnostic;
     private MotionDiagnosticListener motionDiagnosticListener;
     private ICubismModelSetting setting;
@@ -152,6 +153,7 @@ final class SenLive2DModel extends CubismUserModel {
         senNaturalMotion = new SenNaturalMotionEngine(evMotionPack);
         motionMode = renderOptions.motionMode;
         autoIdleEnabled = renderOptions.autoIdleEnabled;
+        evBodyFollowStrength = renderOptions.evBodyFollowStrength;
         applyMotionModeState();
         SenVtsHotkeySettings vtsHotkeys = SenVtsHotkeySettings.load(homeDirectory);
         // A VTS profile is now the appearance base, not a frozen final frame. Expressions and
@@ -388,18 +390,30 @@ final class SenLive2DModel extends CubismUserModel {
         applyMotionModeState();
     }
 
+    void setEvBodyFollowStrength(float strength) {
+        evBodyFollowStrength = Math.max(0.0f, Math.min(.60f, strength));
+        applyMotionModeState();
+    }
+
     void setMotionDiagnosticListener(MotionDiagnosticListener listener) {
         motionDiagnosticListener = listener;
     }
 
     void startMotionDiagnostic(SenMotionMode mode) {
         if (evMotionPack == null || evFaithfulMotion == null || senNaturalMotion == null) return;
-        SenMotionMode requested = mode == SenMotionMode.SEN_ADAPTED
-                ? SenMotionMode.SEN_ADAPTED : SenMotionMode.EV_FAITHFUL;
+        SenMotionMode requested;
+        if (mode == SenMotionMode.SEN_ADAPTED) {
+            requested = SenMotionMode.SEN_ADAPTED;
+        } else if (mode == SenMotionMode.EV_BODY_ENHANCED) {
+            requested = SenMotionMode.EV_BODY_ENHANCED;
+        } else {
+            requested = SenMotionMode.EV_FAITHFUL;
+        }
         if (motionDiagnostic != null) motionDiagnostic.stop();
         performance.setAutoIdle(false);
         motionDiagnostic = new SenMotionDiagnostic(requested, evMotionPack,
-                evFaithfulMotion, senNaturalMotion, new SenMotionDiagnostic.Listener() {
+                evFaithfulMotion, senNaturalMotion, evBodyFollowStrength,
+                new SenMotionDiagnostic.Listener() {
             @Override public void onStep(String label, int index, int total) {
                 if (motionDiagnosticListener != null) {
                     motionDiagnosticListener.onStep(label, index, total);
@@ -423,8 +437,12 @@ final class SenLive2DModel extends CubismUserModel {
         if (diagnosticActive) return;
         performance.setAutoIdle(autoIdleEnabled && motionMode == SenMotionMode.ORIGINAL);
         if (evFaithfulMotion != null) {
+            evFaithfulMotion.setBodyFollowStrength(
+                    motionMode == SenMotionMode.EV_BODY_ENHANCED
+                            ? evBodyFollowStrength : 0.0f);
             evFaithfulMotion.setEnabled(autoIdleEnabled
-                    && motionMode == SenMotionMode.EV_FAITHFUL);
+                    && (motionMode == SenMotionMode.EV_FAITHFUL
+                    || motionMode == SenMotionMode.EV_BODY_ENHANCED));
         }
         if (senNaturalMotion != null) {
             senNaturalMotion.setDiagnosticMode(false);

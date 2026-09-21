@@ -78,6 +78,29 @@ final class EvMotionPack {
         return Collections.unmodifiableList(result);
     }
 
+    /**
+     * Sen-only calibration sweep. E.V's source pack has no torso semantic, so these steps stay
+     * outside the byte-for-byte upstream clips and test the model's native BodyAngle axes
+     * directly. Each signed level is held long enough for visual comparison on a phone.
+     */
+    List<TestStep> bodyDiagnosticSteps() {
+        List<TestStep> result = new ArrayList<>();
+        addBodyAxisSteps(result, "ParamBodyAngleX", "身体左右倾斜");
+        addBodyAxisSteps(result, "ParamBodyAngleY", "身体前后倾斜");
+        addBodyAxisSteps(result, "ParamBodyAngleZ", "身体侧向旋转");
+        return Collections.unmodifiableList(result);
+    }
+
+    private static void addBodyAxisSteps(List<TestStep> target, String parameter,
+                                         String chineseName) {
+        float[] levels = {-5.0f, 5.0f, -10.0f, 10.0f, -15.0f, 15.0f};
+        for (float level : levels) {
+            String signed = level > 0.0f ? "+" + (int) level : Integer.toString((int) level);
+            target.add(new TestStep("body", chineseName + " " + signed + "°",
+                    parameter, 1.7f, level));
+        }
+    }
+
     String label(String clipId) {
         Entry entry = entriesByClip.get(clipId);
         if (entry != null) return entry.word + "（" + clipId + "）";
@@ -339,12 +362,19 @@ final class EvMotionPack {
         final String label;
         final String id;
         final float durationSeconds;
+        final float diagnosticValue;
 
         TestStep(String kind, String label, String id, float durationSeconds) {
+            this(kind, label, id, durationSeconds, 0.0f);
+        }
+
+        TestStep(String kind, String label, String id, float durationSeconds,
+                 float diagnosticValue) {
             this.kind = kind;
             this.label = label;
             this.id = id;
             this.durationSeconds = durationSeconds;
+            this.diagnosticValue = diagnosticValue;
         }
     }
 }

@@ -29,6 +29,8 @@ final class EvFaithfulMotionEngine {
     private static final float BLINK_GAP_MIN_SECONDS = 2.0f;
     private static final float BLINK_GAP_MEAN_SECONDS = 2.5f;
     private static final float STATE_FADE_SECONDS = .300f;
+    private static final float BODY_FOLLOW_RESPONSE = 7.0f;
+    private static final float BODY_LIMIT_DEGREES = 20.0f;
 
     private final EvMotionPack pack;
     private final Random random = new Random();
@@ -64,6 +66,13 @@ final class EvFaithfulMotionEngine {
     private float shiftDuration;
     private float nextBlinkAt;
     private float blinkStartedAt = -1000.0f;
+    private float bodyFollowStrength;
+    private float bodyX;
+    private float bodyY;
+    private float bodyZ;
+    private String forcedBodyParameter;
+    private float forcedBodyValue;
+    private float forcedBodyStartedAt;
 
     EvFaithfulMotionEngine(EvMotionPack pack) {
         this.pack = pack;
@@ -78,6 +87,19 @@ final class EvFaithfulMotionEngine {
 
     boolean isEnabled() {
         return enabled;
+    }
+
+    void setBodyFollowStrength(float strength) {
+        float next = clamp(strength, 0.0f, .60f);
+        if (Math.abs(next - bodyFollowStrength) < .0001f) return;
+        bodyFollowStrength = next;
+        bodyX = 0.0f;
+        bodyY = 0.0f;
+        bodyZ = 0.0f;
+    }
+
+    float getBodyFollowStrength() {
+        return bodyFollowStrength;
     }
 
     void setDiagnosticKind(String kind) {
@@ -101,6 +123,12 @@ final class EvFaithfulMotionEngine {
         nextFixAt = elapsed;
         nextBlinkAt = elapsed + BLINK_GAP_MIN_SECONDS + expo(BLINK_GAP_MEAN_SECONDS);
         blinkStartedAt = -1000.0f;
+        bodyX = 0.0f;
+        bodyY = 0.0f;
+        bodyZ = 0.0f;
+        forcedBodyParameter = null;
+        forcedBodyValue = 0.0f;
+        forcedBodyStartedAt = elapsed;
         lastWrites.clear();
     }
 
@@ -140,6 +168,15 @@ final class EvFaithfulMotionEngine {
                 + expo(BLINK_GAP_MEAN_SECONDS);
     }
 
+    void forceBodySweep(String parameter, float value) {
+        if (!"ParamBodyAngleX".equals(parameter)
+                && !"ParamBodyAngleY".equals(parameter)
+                && !"ParamBodyAngleZ".equals(parameter)) return;
+        forcedBodyParameter = parameter;
+        forcedBodyValue = clamp(value, -BODY_LIMIT_DEGREES, BODY_LIMIT_DEGREES);
+        forcedBodyStartedAt = elapsed;
+    }
+
     Map<String, Float> getLastWrites() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(lastWrites));
     }
@@ -164,6 +201,8 @@ final class EvFaithfulMotionEngine {
             result.add("ParamAngleY");
             result.add("ParamEyeBallX");
             result.add("ParamEyeBallY");
+        } else if ("body".equals(step.kind)) {
+            result.add(step.id);
         }
         return result;
     }
@@ -173,6 +212,10 @@ final class EvFaithfulMotionEngine {
         if (!enabled) return;
         float dt = clamp(deltaSeconds, .001f, .05f);
         elapsed += dt;
+        if ("body".equals(diagnosticKind)) {
+            applyForcedBodySweep(writer);
+            return;
+        }
         Map<String, Float> semantic = new LinkedHashMap<>();
 
         if (diagnosticKind == null || "ambient".equals(diagnosticKind)) {
@@ -197,7 +240,7 @@ final class EvFaithfulMotionEngine {
                 add(semantic, "EyeOpenRight", -blink);
             }
         }
-        writeMapped(semantic, writer);
+        writeMapped(semantic, dt, writer);
     }
 
     private void applyPose(Map<String, Float> semantic) {
@@ -310,11 +353,26 @@ final class EvFaithfulMotionEngine {
         return smoothStep(progress);
     }
 
-    private void writeMapped(Map<String, Float> semantic,
+    private void writeMapped(Map<String, Float> semantic, float dt,
                              SenPerformanceEngine.ParameterWriter writer) {
         writeAdd(writer, "ParamAngleX", semantic.get("FaceAngleX"));
         writeAdd(writer, "ParamAngleY", semantic.get("FaceAngleY"));
         writeAdd(writer, "ParamAngleZ", semantic.get("FaceAngleZ"));
+        if (bodyFollowStrength > 0.0f) {
+            float targetX = valueOrZero(semantic.get("FaceAngleX")) * bodyFollowStrength;
+            float targetY = valueOrZero(semantic.get("FaceAngleY")) * bodyFollowStrength;
+            float targetZ = valueOrZero(semantic.get("FaceAngleZ")) * bodyFollowStrength;
+            float follow = 1.0f - (float) Math.exp(-dt * BODY_FOLLOW_RESPONSE);
+            bodyX += (targetX - bodyX) * follow;
+            bodyY += (targetY - bodyY) * follow;
+            bodyZ += (targetZ - bodyZ) * follow;
+            bodyX = clamp(bodyX, -BODY_LIMIT_DEGREES, BODY_LIMIT_DEGREES);
+            bodyY = clamp(bodyY, -BODY_LIMIT_DEGREES, BODY_LIMIT_DEGREES);
+            bodyZ = clamp(bodyZ, -BODY_LIMIT_DEGREES, BODY_LIMIT_DEGREES);
+            writeAdd(writer, "ParamBodyAngleX", bodyX);
+            writeAdd(writer, "ParamBodyAngleY", bodyY);
+            writeAdd(writer, "ParamBodyAngleZ", bodyZ);
+        }
         writeAdd(writer, "ParamMouthOpenY", semantic.get("MouthOpen"));
         writeAdd(writer, "ParamMouthForm", semantic.get("MouthSmile"));
         writeAdd(writer, "ParamEyeLOpen", semantic.get("EyeOpenLeft"));
@@ -338,6 +396,22 @@ final class EvFaithfulMotionEngine {
             writeAdd(writer, "ParamEyeBallX", eyeX);
             writeAdd(writer, "ParamEyeBallY", eyeY);
         }
+    }
+
+    private void applyForcedBodySweep(SenPerformanceEngine.ParameterWriter writer) {
+        if (forcedBodyParameter == null) return;
+        float time = Math.max(0.0f, elapsed - forcedBodyStartedAt);
+        float weight;
+        if (time < .30f) {
+            weight = smoothStep(time / .30f);
+        } else if (time < 1.10f) {
+            weight = 1.0f;
+        } else if (time < 1.45f) {
+            weight = 1.0f - smoothStep((time - 1.10f) / .35f);
+        } else {
+            weight = 0.0f;
+        }
+        writeAdd(writer, forcedBodyParameter, forcedBodyValue * weight);
     }
 
     private void writeAdd(SenPerformanceEngine.ParameterWriter writer, String id, Float value) {
@@ -388,6 +462,10 @@ final class EvFaithfulMotionEngine {
         if (first == null) return second;
         if (second == null) return first;
         return (first + second) * .5f;
+    }
+
+    private static float valueOrZero(Float value) {
+        return value == null ? 0.0f : value;
     }
 
     private static void add(Map<String, Float> values, String id, float amount) {

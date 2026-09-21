@@ -101,6 +101,12 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
         loadModel(modelFile, Collections.emptyList(), autoIdle, motionModeId, outfitId);
     }
 
+    public void loadModel(File modelFile, boolean autoIdle, String motionModeId,
+                          float evBodyFollowStrength, String outfitId) {
+        loadModel(modelFile, Collections.emptyList(), autoIdle, motionModeId,
+                evBodyFollowStrength, outfitId);
+    }
+
     /** Loads the imported model and optionally enables named ZIP expressions at startup. */
     public void loadModel(File modelFile, List<String> startupExpressions,
                           boolean autoIdle, String outfitId) {
@@ -109,6 +115,13 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
 
     public void loadModel(File modelFile, List<String> startupExpressions,
                           boolean autoIdle, String motionModeId, String outfitId) {
+        loadModel(modelFile, startupExpressions, autoIdle, motionModeId,
+                SenRenderOptions.DEFAULT_EV_BODY_FOLLOW_STRENGTH, outfitId);
+    }
+
+    public void loadModel(File modelFile, List<String> startupExpressions,
+                          boolean autoIdle, String motionModeId,
+                          float evBodyFollowStrength, String outfitId) {
         if (released) {
             listener.onError(new IllegalStateException("SenCompanionView 已释放，不能再次加载"));
             return;
@@ -129,7 +142,8 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
                 ? Collections.emptyList() : startupExpressions;
         queueRenderer(() -> renderer.requestModel(
                 modelFile, expressions, outfit.appearance, profile,
-                new SenRenderOptions(autoIdle, SenMotionMode.fromId(motionModeId)), outfit));
+                new SenRenderOptions(autoIdle, SenMotionMode.fromId(motionModeId),
+                        evBodyFollowStrength), outfit));
     }
 
     @Override
@@ -160,6 +174,10 @@ public final class SenCompanionView extends GLSurfaceView implements SenCompanio
     public void setMotionMode(String motionModeId) {
         SenMotionMode mode = SenMotionMode.fromId(motionModeId);
         queueRenderer(() -> renderer.setMotionMode(mode));
+    }
+
+    public void setEvBodyFollowStrength(float strength) {
+        queueRenderer(() -> renderer.setEvBodyFollowStrength(strength));
     }
 
     public void startMotionDiagnostic(String motionModeId) {

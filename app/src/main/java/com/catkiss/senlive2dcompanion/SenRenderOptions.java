@@ -16,6 +16,7 @@ final class SenRenderOptions {
     static final float AHOGE_ROTATION_DEGREES = -49.0f;
     static final float AHOGE_OFFSET_X = -0.006f;
     static final float AHOGE_OFFSET_Y = 0.0f;
+    static final float DEFAULT_EV_BODY_FOLLOW_STRENGTH = 0.40f;
     static final String AHOGE_ANCHOR_JSON =
             "{\"schema\":\"sen-ahoge-anchor\",\"schemaVersion\":2,"
                     + "\"coordinateSystem\":\"Cubism model-local barycentric triangle coordinates\","
@@ -31,13 +32,20 @@ final class SenRenderOptions {
 
     final boolean autoIdleEnabled;
     final SenMotionMode motionMode;
+    final float evBodyFollowStrength;
 
     SenRenderOptions(boolean autoIdleEnabled) {
-        this(autoIdleEnabled, SenMotionMode.ORIGINAL);
+        this(autoIdleEnabled, SenMotionMode.ORIGINAL, DEFAULT_EV_BODY_FOLLOW_STRENGTH);
     }
 
     SenRenderOptions(boolean autoIdleEnabled, SenMotionMode motionMode) {
+        this(autoIdleEnabled, motionMode, DEFAULT_EV_BODY_FOLLOW_STRENGTH);
+    }
+
+    SenRenderOptions(boolean autoIdleEnabled, SenMotionMode motionMode,
+                     float evBodyFollowStrength) {
         this.autoIdleEnabled = autoIdleEnabled;
         this.motionMode = motionMode == null ? SenMotionMode.ORIGINAL : motionMode;
+        this.evBodyFollowStrength = Math.max(0.0f, Math.min(.60f, evBodyFollowStrength));
     }
 }

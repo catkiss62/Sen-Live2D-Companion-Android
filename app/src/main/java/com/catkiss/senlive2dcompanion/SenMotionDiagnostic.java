@@ -1,6 +1,7 @@
 package com.catkiss.senlive2dcompanion;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -24,6 +25,7 @@ final class SenMotionDiagnostic {
     private final List<EvMotionPack.TestStep> steps;
     private final EvFaithfulMotionEngine faithful;
     private final SenNaturalMotionEngine adapted;
+    private final float enhancedBodyStrength;
     private final Listener listener;
     private final StringBuilder report = new StringBuilder();
 
@@ -35,11 +37,17 @@ final class SenMotionDiagnostic {
     SenMotionDiagnostic(SenMotionMode mode, EvMotionPack pack,
                         EvFaithfulMotionEngine faithful,
                         SenNaturalMotionEngine adapted,
+                        float enhancedBodyStrength,
                         Listener listener) {
         this.mode = mode;
-        this.steps = pack.diagnosticSteps();
+        List<EvMotionPack.TestStep> selectedSteps = new ArrayList<>(pack.diagnosticSteps());
+        if (mode == SenMotionMode.EV_BODY_ENHANCED) {
+            selectedSteps.addAll(pack.bodyDiagnosticSteps());
+        }
+        this.steps = selectedSteps;
         this.faithful = faithful;
         this.adapted = adapted;
+        this.enhancedBodyStrength = enhancedBodyStrength;
         this.listener = listener;
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT);
         format.setTimeZone(TimeZone.getTimeZone("UTC"));
@@ -48,6 +56,10 @@ final class SenMotionDiagnostic {
                 .append("测试模式：").append(mode.displayName).append(" (")
                 .append(mode.id).append(")\n")
                 .append("E.V参考提交：").append(EV_SOURCE_COMMIT).append('\n')
+                .append(mode == SenMotionMode.EV_BODY_ENHANCED
+                        ? String.format(Locale.ROOT,
+                        "身体跟随强度：头部语义幅度的 %.0f%%；另附身体三轴 ±5°/±10°/±15° 直驱测试\n",
+                        enhancedBodyStrength * 100.0f) : "")
                 .append("判定说明：写入范围证明程序实际输出；Core变化帧证明至少有可见网格响应。")
                 .append("最终观感仍以屏幕肉眼记录为准。\n\n");
     }
@@ -66,6 +78,7 @@ final class SenMotionDiagnostic {
     void afterFrame(SenLive2DModel model) {
         if (finished || metrics == null) return;
         Map<String, Float> writes = mode == SenMotionMode.EV_FAITHFUL
+                || mode == SenMotionMode.EV_BODY_ENHANCED
                 ? faithful.getLastWrites() : adapted.getLastWrites();
         metrics.frames++;
         for (Map.Entry<String, Float> entry : writes.entrySet()) {
@@ -110,7 +123,9 @@ final class SenMotionDiagnostic {
         faithful.setDiagnosticKind(step.kind);
         adapted.setDiagnosticMode(true);
         adapted.setDiagnosticKind(step.kind);
-        if (mode == SenMotionMode.EV_FAITHFUL) {
+        if (mode == SenMotionMode.EV_FAITHFUL || mode == SenMotionMode.EV_BODY_ENHANCED) {
+            faithful.setBodyFollowStrength(mode == SenMotionMode.EV_BODY_ENHANCED
+                    ? enhancedBodyStrength : 0.0f);
             faithful.setEnabled(true);
             adapted.setEnabled(false);
             prepareFaithful(step);
@@ -130,6 +145,11 @@ final class SenMotionDiagnostic {
                 if (expected.contains("ParamAngleY")) expected.add("ParamBodyAngleY");
                 if (expected.contains("ParamAngleZ")) expected.add("ParamBodyAngleZ");
             }
+        } else if (mode == SenMotionMode.EV_BODY_ENHANCED
+                && !"body".equals(step.kind)) {
+            if (expected.contains("ParamAngleX")) expected.add("ParamBodyAngleX");
+            if (expected.contains("ParamAngleY")) expected.add("ParamBodyAngleY");
+            if (expected.contains("ParamAngleZ")) expected.add("ParamBodyAngleZ");
         }
         metrics = new StepMetrics(step, expected);
         if (listener != null) listener.onStep(step.label, stepIndex + 1, steps.size());
@@ -141,6 +161,7 @@ final class SenMotionDiagnostic {
             case "blink": faithful.forceBlink(); break;
             case "pulse": faithful.playPulse(step.id); break;
             case "sustain": faithful.setPose(step.id); break;
+            case "body": faithful.forceBodySweep(step.id, step.diagnosticValue); break;
             default: break;
         }
     }
